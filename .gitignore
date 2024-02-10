@@ -3,4 +3,4 @@ __pycache__
 logs
 tensorboard_logs
 .idea
-*.bin
+test
