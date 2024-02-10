@@ -54,11 +54,11 @@ class Postprocessor(object):
         self.output_path = args.output_path
         self.audio_path = args.audio_path
         self.beatmap_config = BeatmapConfig(
-            title=str(args.title).encode("ascii", "ignore"),
-            artist=str(args.artist).encode("ascii", "ignore"),
+            title=str(args.title),
+            artist=str(args.artist),
             title_unicode=str(args.title),
             artist_unicode=str(args.artist),
-            beat_length=float(60000 / args.bpm),
+            beat_length=int(60000 / args.bpm),
             audio_filename=f"audio{pathlib.Path(args.audio_path).suffix}",
         )
 
