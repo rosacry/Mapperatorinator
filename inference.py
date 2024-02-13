@@ -4,8 +4,7 @@ from omegaconf import DictConfig
 
 from osuT5.inference import Preprocessor, Pipeline, Postprocessor
 from osuT5.tokenizer import Tokenizer
-from osuT5.model import T5
-from osuT5.utils import get_config
+from osuT5.utils import get_config, get_model
 
 
 @hydra.main(config_path="configs", config_name="inference", version_base="1.1")
@@ -15,8 +14,8 @@ def main(args: DictConfig):
     checkpoint = torch.load(args.model_path, map_location=device)
     t5_config = get_config(args)
 
-    model = T5(t5_config)
-    model.load_state_dict(checkpoint)
+    model = get_model(t5_config)
+    model.load_state_dict_old(checkpoint)
     model.eval()
     model.to(device)
 
