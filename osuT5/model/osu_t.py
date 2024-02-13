@@ -19,7 +19,7 @@ class OsuT(nn.Module):
             config.sample_rate, config.n_fft, config.n_mels, config.hop_length
         )
         self.encoder_embedder = nn.Linear(config.n_mels, config.d_model)
-        self.transformer = T5ForConditionalGeneration(config)
+        self.transformer = T5(config)
 
     def forward(
             self,
@@ -41,7 +41,8 @@ class OsuT(nn.Module):
 
         output = self.transformer.forward(inputs_embeds=inputs_embeds, encoder_outputs=encoder_outputs, **kwargs)
 
-        if not hasattr(output, "encoder_outputs"):
+        if isinstance(output, Seq2SeqLMOutput) and not hasattr(output, "encoder_outputs"):
+            # noinspection PyUnresolvedReferences
             output.encoder_outputs = (
                 output.encoder_last_hidden_state, output.encoder_hidden_states, output.encoder_attentions)
 
@@ -51,7 +52,7 @@ class OsuT(nn.Module):
         if "shared.weight" not in state_dict and "decoder_embedder.weight" in state_dict:
             state_dict["shared.weight"] = state_dict["decoder_embedder.weight"]
 
-            if self.transformer is not T5:
+            if not isinstance(self.transformer, T5):
                 state_dict["encoder.embed_tokens.weight"] = state_dict["decoder_embedder.weight"]
 
             self.transformer.load_state_dict(state_dict, False, assign)
