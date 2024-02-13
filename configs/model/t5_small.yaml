@@ -8,6 +8,8 @@ add_config:
   hop_length: ${..spectrogram.hop_length}
   n_fft: ${..spectrogram.n_fft}
   n_mels: ${..spectrogram.n_mels}
+  num_classes: ${..style.num_classes}
+  class_dropout_prob: ${..style.class_dropout_prob}
 
 max_seq_len: 512
 max_target_len: 256
@@ -16,3 +18,6 @@ spectrogram:
   hop_length: 128
   n_fft: 2048
   n_mels: 512
+style:
+  num_classes: 64821
+  class_dropout_prob: 0.2
