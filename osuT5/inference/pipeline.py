@@ -51,7 +51,7 @@ class Pipeline(object):
 
             for _ in tqdm(range(self.tgt_seq_len - 1), leave=False):
                 out = model.forward(
-                    frames=sources,
+                    samples=sources,
                     decoder_input_ids=targets,
                     encoder_outputs=encoder_outputs,
                 )
