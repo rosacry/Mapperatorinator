@@ -1,1 +1,1 @@
-from .t5 import T5
+from .osu_t import OsuT

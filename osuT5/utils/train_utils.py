@@ -9,11 +9,11 @@ from accelerate import Accelerator
 from omegaconf import DictConfig
 
 from .log_utils import Averager
-from osuT5.model import T5
+from osuT5.model import OsuT
 from osuT5.tokenizer import Tokenizer
 
 
-def forward(model: T5, batch):
+def forward(model: OsuT, batch):
     batch["frames"] = torch.flatten(batch["frames"], start_dim=1)
     outputs = model(**batch)
     loss = outputs.loss
@@ -38,7 +38,7 @@ def maybe_save_checkpoint(accelerator: Accelerator, args: DictConfig):
 
 
 def maybe_eval(
-    model: T5,
+    model: OsuT,
     accelerator: Accelerator,
     dataloader: DataLoader,
     args: DictConfig,
@@ -57,7 +57,7 @@ def maybe_eval(
 
 
 def maybe_logging(
-    model: T5,
+    model: OsuT,
     accelerator: Accelerator,
     optimizer: Optimizer,
     averager: Averager,
@@ -92,7 +92,7 @@ def maybe_logging(
 
 
 def maybe_grad_clip_and_grad_calc(
-    model: T5,
+    model: OsuT,
     accelerator: Accelerator,
     args: DictConfig,
 ):
@@ -120,7 +120,7 @@ def maybe_grad_clip_and_grad_calc(
 
 
 def eval(
-    model: T5,
+    model: OsuT,
     accelerator: Accelerator,
     dataloader: DataLoader,
     args: DictConfig,
@@ -142,7 +142,7 @@ def eval(
 
 
 def train(
-    model: T5,
+    model: OsuT,
     train_dataloader: DataLoader,
     test_dataloader: DataLoader,
     accelerator: Accelerator,

@@ -384,12 +384,15 @@ class T5Stack(nn.Module, ModuleUtilsMixin):
         attention_mask=None,
         encoder_hidden_states=None,
         encoder_attention_mask=None,
+        inputs_embeds: Optional[torch.FloatTensor] = None,
     ) -> EncoderOutput:
-        input_shape = input_ids.size()
+        if inputs_embeds is None:
+            inputs_embeds = self.embed_tokens(input_ids)
+
+        input_shape = inputs_embeds.size()
         batch_size = input_shape[0]
         seq_length = input_shape[1]
-
-        inputs_embeds = self.embed_tokens(input_ids)
+        input_shape = (batch_size, seq_length)
 
         if hasattr(self.config, "is_bf16") and self.config.is_bf16:
             inputs_embeds = inputs_embeds.to(torch.bfloat16)
@@ -552,6 +555,7 @@ class T5(nn.Module):
         decoder_attention_mask: Optional[torch.BoolTensor] = None,
         tokens: Optional[torch.LongTensor] = None,
         encoder_outputs=None,
+        inputs_embeds: Optional[torch.FloatTensor] = None,
     ) -> Seq2SeqLMOutput:
         """
         frames: B x L_encoder x mel_bins, float32
@@ -560,10 +564,10 @@ class T5(nn.Module):
         tokens: B x L_decoder, int64
         """
         if encoder_outputs is None:
-            frames = self.spectrogram(frames)
             encoder_outputs = self.encoder(
                 frames,
                 attention_mask=attention_mask,
+                inputs_embeds=inputs_embeds,
             )
 
         hidden_states = encoder_outputs.hidden_states

@@ -11,8 +11,8 @@ from torch.optim.lr_scheduler import (
     CosineAnnealingLR,
 )
 
-from osuT5.model import T5
 from osuT5.dataset import OszDataset, OszLoader, OsuParser
+from osuT5.model.osu_t import OsuT
 from osuT5.tokenizer import Tokenizer
 
 
@@ -34,8 +34,8 @@ def get_config(args: DictConfig) -> T5Config:
     return config
 
 
-def get_model(config: T5Config) -> T5:
-    model = T5(config)
+def get_model(config: T5Config) -> OsuT:
+    model = OsuT(config)
     return model
 
 
@@ -43,7 +43,7 @@ def get_tokenizer() -> Tokenizer:
     return Tokenizer()
 
 
-def get_optimizer(model: T5, args: DictConfig) -> Optimizer:
+def get_optimizer(model: OsuT, args: DictConfig) -> Optimizer:
     no_decay = ["bias", "LayerNorm", "layernorm", "layer_norm", "ln"]
 
     optimizer_grouped_parameters = [
