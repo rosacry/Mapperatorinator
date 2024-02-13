@@ -23,12 +23,12 @@ class OsuT(nn.Module):
 
     def forward(
             self,
-            frames: Optional[torch.FloatTensor] = None,
+            samples: Optional[torch.FloatTensor] = None,
             encoder_outputs=None,
             **kwargs
     ) -> Seq2SeqLMOutput:
         """
-        frames: B x L_encoder x mel_bins, float32
+        frames: B x samples_per_sequence, float32
         attention_mask: B x L_encoder, int64
             1 for tokens to attend to, 0 for tokens to ignore
         tokens: B x L_decoder, int64
@@ -36,7 +36,7 @@ class OsuT(nn.Module):
         inputs_embeds = None
 
         if encoder_outputs is None:
-            frames = self.spectrogram(frames)
+            frames = self.spectrogram(samples)
             inputs_embeds = self.encoder_embedder(frames)
 
         output = self.transformer.forward(inputs_embeds=inputs_embeds, encoder_outputs=encoder_outputs, **kwargs)
