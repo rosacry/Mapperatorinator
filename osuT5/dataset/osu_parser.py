@@ -1,164 +1,174 @@
 from __future__ import annotations
 
-from osuT5.tokenizer import Event, EventType
+from datetime import timedelta
 
-STEPS_PER_MILLISECOND = 0.1
+import numpy as np
+import numpy.typing as npt
+from slider import Beatmap, Circle, Slider, Spinner
+from slider.curve import Linear, Catmull, Perfect, MultiBezier
+
+from osuT5.tokenizer import Event, EventType
 
 
 class OsuParser:
     def __init__(self) -> None:
         pass
 
-    def parse(self, beatmap: list[str]) -> tuple[list[list[Event]], list[int]]:
+    def parse(self, beatmap: Beatmap) -> list[Event]:
+        # noinspection PyUnresolvedReferences
         """Parse an .osu beatmap.
 
-        Each hit object is parsed into a list of Event objects.
-        Each list of Event objects is appended into a list, in order of its
+        Each hit object is parsed into a list of Event objects, in order of its
         appearance in the beatmap. In other words, in ascending order of time.
 
         Args:
-            beatmap: List of strings parsed from an .osu file.
+            beatmap: Beatmap object parsed from an .osu file.
 
         Returns:
             events: List of Event object lists.
-            event_times: Corresponding event times of Event object lists in miliseconds.
 
         Example::
             >>> beatmap = [
                 "64,80,11000,1,0",
-                "100,100,12600,2,0,B|200:200|250:200|250:200|300:150,2"
+                "100,100,16000,2,0,B|200:200|250:200|250:200|300:150,2"
             ]
-            >>> event, event_times = parse_osu(beatmap)
-            >>> print(event)
+            >>> events = parse(beatmap)
+            >>> print(events)
             [
-                [p64, p80, circle],
-                [p100, p100, slider_b, cp200, cp200, cp250, cp200, cp260, cp200, cp300, cp150, slides2]
-            ]
-            >>> print(event_times)
-            [
-                11000,
-                12600
+                Event(EventType.TIME_SHIFT, 11000), Event(EventType.DISTANCE, 36), Event(EventType.CIRCLE),
+                Event(EventType.TIME_SHIFT, 16000), Event(EventType.DISTANCE, 42), Event(EventType.SLIDER_HEAD),
+                Event(EventType.TIME_SHIFT, 16500), Event(EventType.DISTANCE, 141), Event(EventType.BEZIER_ANCHOR),
+                Event(EventType.TIME_SHIFT, 17000), Event(EventType.DISTANCE, 50), Event(EventType.BEZIER_ANCHOR),
+                Event(EventType.TIME_SHIFT, 17500), Event(EventType.DISTANCE, 10), Event(EventType.BEZIER_ANCHOR),
+                Event(EventType.TIME_SHIFT, 18000), Event(EventType.DISTANCE, 64), Event(EventType.LAST _ANCHOR),
+                Event(EventType.TIME_SHIFT, 20000), Event(EventType.DISTANCE, 11), Event(EventType.SLIDER_END)
             ]
         """
-        parsing = False
+        hit_objects = beatmap.hit_objects(stacking=False)
+        last_pos = np.array((256, 192))
         events = []
-        event_times = []
 
-        for line in beatmap:
-            if line == "[HitObjects]":
-                parsing = True
-                continue
-            if not parsing:
-                continue
-            else:
-                elements = line.split(",")
-                type = int(elements[3])
-                if type & 1:
-                    circle, time = self._parse_circle(elements)
-                    events.append(circle)
-                    event_times.append(time)
-                elif type & 2:
-                    slider, time = self._parse_slider(elements)
-                    events.append(slider)
-                    event_times.append(time)
-                elif type & 8:
-                    spinner, time = self._parse_spinner(elements)
-                    events.append(spinner)
-                    event_times.append(time)
+        for hit_object in hit_objects:
+            if isinstance(hit_object, Circle):
+                last_pos = self._parse_circle(hit_object, events, last_pos)
+            elif isinstance(hit_object, Slider):
+                last_pos = self._parse_slider(hit_object, events, last_pos)
+            elif isinstance(hit_object, Spinner):
+                last_pos = self._parse_spinner(hit_object, events)
 
-        return events, event_times
+        return events
 
-    def _parse_circle(self, elements: list[str]) -> tuple[list[Event], int]:
+    def _parse_circle(self, circle: Circle, events: list[Event], last_pos: npt.NDArray) -> npt.NDArray:
         """Parse a circle hit object.
 
         Args:
-            elements: List of strings extracted from .osu file.
+            circle: Circle object.
+            events: List of events to add to.
+            last_pos: Last position of the hit objects.
 
         Returns:
-            events: List of events, format: [x, y, new_combo, circle].
-            time: Time when circle is to be hit, in miliseconds from the beginning of the beatmap's audio.
+            pos: Position of the circle.
         """
-        new_combo = min(1, int(elements[3]) & 4)
-        pos_x = int(elements[0])
-        pos_y = int(elements[1])
-        time = int(elements[2])
+        time = int(circle.time.total_seconds() * 1000)
+        pos = np.array(circle.position)
+        dist = int(np.linalg.norm(pos - last_pos))
 
-        events = [
-            Event(EventType.POINT, pos_x),
-            Event(EventType.POINT, pos_y),
-            Event(EventType.NEW_COMBO, new_combo),
-            Event(EventType.CIRCLE),
-        ]
+        events.append(Event(EventType.TIME_SHIFT, time))
+        events.append(Event(EventType.DISTANCE, dist))
+        if circle.new_combo:
+            events.append(Event(EventType.NEW_COMBO))
+        events.append(Event(EventType.CIRCLE))
 
-        return events, time
+        return pos
 
-    def _parse_slider(self, elements: list[str]) -> tuple[list[Event], int]:
+    def _parse_slider(self, slider: Slider, events: list[Event], last_pos: npt.NDArray) -> npt.NDArray:
         """Parse a slider hit object.
 
         Args:
-            elements: List of strings extracted from .osu file.
+            slider: Slider object.
+            events: List of events to add to.
+            last_pos: Last position of the hit objects.
 
         Returns:
-            events: A list of events, format: [x, y, new_combo, slider_type, curve_points, slides].
-            time: Time when slider is to be dragged, in miliseconds from the beginning of the beatmap's audio.
+            pos: Last position of the slider.
         """
-        curve_types = {
-            "B": EventType.SLIDER_BEZIER,
-            "C": EventType.SLIDER_CATMULI,
-            "L": EventType.SLIDER_LINEAR,
-            "P": EventType.SLIDER_PERFECT_CIRCLE,
-        }
+        time = int(slider.time.total_seconds() * 1000)
+        pos = np.array(slider.position)
+        dist = int(np.linalg.norm(pos - last_pos))
+        last_pos = pos
 
-        new_combo = min(1, int(elements[3]) & 4)
-        pos_x = int(elements[0])
-        pos_y = int(elements[1])
-        time = int(elements[2])
+        events.append(Event(EventType.TIME_SHIFT, time))
+        events.append(Event(EventType.DISTANCE, dist))
+        if slider.new_combo:
+            events.append(Event(EventType.NEW_COMBO))
+        events.append(Event(EventType.SLIDER_HEAD))
 
-        events = [
-            Event(EventType.POINT, pos_x),
-            Event(EventType.POINT, pos_y),
-            Event(EventType.NEW_COMBO, new_combo),
-        ]
+        duration: timedelta = (slider.end_time - slider.time) / slider.repeat
+        control_point_count = len(slider.curve.points)
 
-        curve = elements[5].split("|")
-        curve_type = curve_types[curve[0].capitalize()]
-        events.append(Event(curve_type))
+        def append_control_points(event_type: EventType, last_pos: npt.NDArray = last_pos) -> npt.NDArray:
+            for i in range(1, control_point_count - 1):
+                last_pos = add_anchor_time_dist(i, last_pos)
+                events.append(Event(event_type))
 
-        for curve_point in curve[1:]:
-            curve_point = curve_point.split(":")
-            curve_x = abs(int(curve_point[0]))
-            curve_y = abs(int(curve_point[1]))
-            events.append(Event(EventType.CONTROL_POINT, curve_x))
-            events.append(Event(EventType.CONTROL_POINT, curve_y))
+            return last_pos
 
-        slides = int(elements[6])
-        events.append(Event(EventType.SLIDES, slides))
+        def add_anchor_time_dist(i: int, last_pos: npt.NDArray) -> npt.NDArray:
+            time = int((slider.time + i / (control_point_count - 1) * duration).total_seconds() * 1000)
+            pos = np.array(slider.curve.points[i])
+            dist = int(np.linalg.norm(pos - last_pos))
+            last_pos = pos
 
-        return events, time
+            events.append(Event(EventType.TIME_SHIFT, time))
+            events.append(Event(EventType.DISTANCE, dist))
 
-    def _parse_spinner(self, elements: list[str]) -> tuple[list[Event], int]:
-        """Parse a slider hit object.
+            return last_pos
+
+        if isinstance(slider.curve, Linear):
+            last_pos = append_control_points(EventType.RED_ANCHOR, last_pos)
+        elif isinstance(slider.curve, Catmull):
+            last_pos = append_control_points(EventType.CATMULL_ANCHOR, last_pos)
+        elif isinstance(slider.curve, Perfect):
+            last_pos = append_control_points(EventType.PERFECT_ANCHOR, last_pos)
+        elif isinstance(slider.curve, MultiBezier):
+            for i in range(1, control_point_count - 1):
+                last_pos = add_anchor_time_dist(i, last_pos)
+
+                if slider.curve.points[i] == slider.curve.points[i + 1]:
+                    events.append(Event(EventType.RED_ANCHOR))
+                elif slider.curve.points[i] != slider.curve.points[i - 1]:
+                    events.append(Event(EventType.BEZIER_ANCHOR))
+
+        last_pos = add_anchor_time_dist(control_point_count - 1, last_pos)
+        events.append(Event(EventType.LAST_ANCHOR))
+
+        time = int(slider.end_time.total_seconds() * 1000)
+        pos = np.array(slider.curve(1))
+        dist = int(np.linalg.norm(pos - last_pos))
+        last_pos = pos
+
+        events.append(Event(EventType.TIME_SHIFT, time))
+        events.append(Event(EventType.DISTANCE, dist))
+        events.append(Event(EventType.SLIDER_END))
+
+        return last_pos
+
+    def _parse_spinner(self, spinner: Spinner, events: list[Event]) -> npt.NDArray:
+        """Parse a spinner hit object.
 
         Args:
-            elements: List of strings extracted from .osu file.
+            spinner: Spinner object.
+            events: List of events to add to.
 
         Returns:
-            events: A list of events, format: [x, y, new_combo, spinner].
-            time: Time when slider is to be dragged, in miliseconds from the beginning of the beatmap's audio.
+            pos: Last position of the spinner.
         """
-        new_combo = min(1, int(elements[3]) & 4)
-        pos_x = 256
-        pos_y = 192
-        start_time = int(elements[2])
-        end_time = int(elements[5])
-        length = round((end_time - start_time) * STEPS_PER_MILLISECOND)
+        time = int(spinner.time.total_seconds() * 1000)
+        events.append(Event(EventType.TIME_SHIFT, time))
+        events.append(Event(EventType.SPINNER))
 
-        events = [
-            Event(EventType.POINT, pos_x),
-            Event(EventType.POINT, pos_y),
-            Event(EventType.NEW_COMBO, new_combo),
-            Event(EventType.SPINNER),
-            Event(EventType.SPINNER_LENGTH, length),
-        ]
+        time = int(spinner.end_time.total_seconds() * 1000)
+        events.append(Event(EventType.TIME_SHIFT, time))
+        events.append(Event(EventType.SPINNER_END))
 
-        return events, start_time
+        return np.array((256, 192))

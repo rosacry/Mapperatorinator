@@ -6,17 +6,18 @@ from enum import Enum
 
 class EventType(Enum):
     TIME_SHIFT = "t"
-    POINT = "p"
+    DISTANCE = "dist"
     NEW_COMBO = "new_combo"
     CIRCLE = "circle"
-    SLIDER_BEZIER = "slide_b"
-    SLIDER_CATMULI = "slide_c"
-    SLIDER_LINEAR = "slide_l"
-    SLIDER_PERFECT_CIRCLE = "slide_p"
-    CONTROL_POINT = "cp"
-    SLIDES = "slides"
     SPINNER = "spinner"
-    SPINNER_LENGTH = "spinner_length"
+    SPINNER_END = "spinner_end"
+    SLIDER_HEAD = "slider_head"
+    BEZIER_ANCHOR = "bezier_anchor"
+    PERFECT_ANCHOR = "perfect_anchor"
+    CATMULL_ANCHOR = "catmull_anchor"
+    RED_ANCHOR = "red_anchor"
+    LAST_ANCHOR = "last_anchor"
+    SLIDER_END = "slider_end"
 
 
 @dataclasses.dataclass
@@ -41,15 +42,16 @@ class Event:
 def get_event_ranges() -> list[EventRange]:
     return [
         EventRange(EventType.TIME_SHIFT, 0, 512),
-        EventRange(EventType.POINT, 0, 512),
+        EventRange(EventType.DISTANCE, 0, 640),
+        EventRange(EventType.NEW_COMBO, 0, 0),
         EventRange(EventType.CIRCLE, 0, 0),
-        EventRange(EventType.NEW_COMBO, 0, 1),
-        EventRange(EventType.SLIDER_BEZIER, 0, 0),
-        EventRange(EventType.SLIDER_CATMULI, 0, 0),
-        EventRange(EventType.SLIDER_LINEAR, 0, 0),
-        EventRange(EventType.SLIDER_PERFECT_CIRCLE, 0, 0),
-        EventRange(EventType.CONTROL_POINT, -256, 768),
-        EventRange(EventType.SLIDES, 0, 100),
         EventRange(EventType.SPINNER, 0, 0),
-        EventRange(EventType.SPINNER_LENGTH, 0, 1024),
+        EventRange(EventType.SPINNER_END, 0, 0),
+        EventRange(EventType.SLIDER_HEAD, 0, 0),
+        EventRange(EventType.BEZIER_ANCHOR, 0, 0),
+        EventRange(EventType.PERFECT_ANCHOR, 0, 0),
+        EventRange(EventType.CATMULL_ANCHOR, 0, 0),
+        EventRange(EventType.RED_ANCHOR, 0, 0),
+        EventRange(EventType.LAST_ANCHOR, 0, 0),
+        EventRange(EventType.SLIDER_END, 0, 0),
     ]
