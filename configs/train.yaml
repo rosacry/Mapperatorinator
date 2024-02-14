@@ -9,7 +9,11 @@ seed: 42                # Project seed
 
 checkpoint_path: ''     # Project checkpoint directory (to resume training)
 train_dataset_path: ''  # Training dataset directory
+train_dataset_start: 0   # Training dataset start index
+train_dataset_end: 0   # Training dataset end index
 test_dataset_path: ''   # Testing/validation dataset directory
+test_dataset_start: 0    # Testing/validation dataset start index
+test_dataset_end: 0    # Testing/validation dataset end index
 
 loader:                 # OszLoader settings
   min_difficulty: 0
@@ -23,6 +27,7 @@ optim:                  # Optimizer settings
   name: adafactor
   base_lr: 2e-2
   batch_size: 32
+  cycle_length: 16
   total_steps: 65536
   warmup_steps: 10000
   lr_scheduler: cosine

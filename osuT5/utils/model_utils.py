@@ -1,9 +1,9 @@
 import torch
 import numpy as np
 from transformers import T5Config, Adafactor
-from omegaconf import open_dict, DictConfig
+from omegaconf import DictConfig
 from torch.optim import Optimizer
-from torch.utils.data import DataLoader, get_worker_info
+from torch.utils.data import DataLoader
 from torch.optim.lr_scheduler import (
     LRScheduler,
     SequentialLR,
@@ -11,7 +11,7 @@ from torch.optim.lr_scheduler import (
     CosineAnnealingLR,
 )
 
-from osuT5.dataset import OrsDataset, OrsLoader, OsuParser
+from osuT5.dataset import OrsDataset, OsuParser
 from osuT5.model.osu_t import OsuT
 from osuT5.tokenizer import Tokenizer
 
@@ -99,31 +99,29 @@ def get_scheduler(optimizer: Optimizer, args: DictConfig) -> LRScheduler:
 
 
 def get_dataloaders(tokenizer: Tokenizer, args: DictConfig) -> tuple[DataLoader, DataLoader]:
-    loader = OrsLoader(
-        args.model.spectrogram.sample_rate,
-        args.loader.min_difficulty,
-        args.loader.max_difficulty,
-        args.loader.mode,
-    )
     parser = OsuParser()
     dataset = {
         "train": OrsDataset(
             args.train_dataset_path,
+            args.train_dataset_start,
+            args.train_dataset_end,
             args.model.spectrogram.sample_rate,
             args.model.spectrogram.hop_length,
             args.model.max_seq_len,
             args.model.max_target_len,
-            loader,
             parser,
             tokenizer,
+            args.optim.cycle_length,
+            True,
         ),
         "test": OrsDataset(
             args.test_dataset_path,
+            args.test_dataset_start,
+            args.test_dataset_end,
             args.model.spectrogram.sample_rate,
             args.model.spectrogram.hop_length,
             args.model.max_seq_len,
             args.model.max_target_len,
-            loader,
             parser,
             tokenizer,
         ),
