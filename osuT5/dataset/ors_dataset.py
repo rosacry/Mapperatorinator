@@ -1,10 +1,8 @@
 from __future__ import annotations
 
 import os
-import sys
 import random
 import logging
-from glob import glob
 from typing import Optional, Callable
 from pathlib import Path
 
@@ -25,22 +23,35 @@ STEPS_PER_MILLISECOND = 0.1
 
 
 class OrsDataset(IterableDataset):
-    __slots__ = ("path", "loader", "parser", "tokenizer", "sample_rate", "frame_size", "src_seq_len")
+    __slots__ = (
+        "path",
+        "start",
+        "end",
+        "sample_rate",
+        "frame_size",
+        "src_seq_len",
+        "tgt_seq_len",
+        "parser",
+        "tokenizer",
+        "cycle_length",
+        "shuffle",
+        "beatmap_files",
+    )
 
     def __init__(
-        self,
-        path: str,
-        start: int,
-        end: int,
-        sample_rate: int,
-        frame_size: int,
-        src_seq_len: int,
-        tgt_seq_len: int,
-        parser: OsuParser,
-        tokenizer: Tokenizer,
-        cycle_length: int = 1,
-        shuffle: bool = False,
-        beatmap_files: Optional[list[Path]] = None,
+            self,
+            path: str,
+            start: int,
+            end: int,
+            sample_rate: int,
+            frame_size: int,
+            src_seq_len: int,
+            tgt_seq_len: int,
+            parser: OsuParser,
+            tokenizer: Tokenizer,
+            cycle_length: int = 1,
+            shuffle: bool = False,
+            beatmap_files: Optional[list[Path]] = None,
     ):
         """Manage and process ORS dataset.
 
@@ -50,7 +61,6 @@ class OrsDataset(IterableDataset):
             frame_size: Samples per audio frame (samples/frame).
             src_seq_len: Maximum length of source sequence.
             tgt_seq_len: Maximum length of target sequence.
-            loader: Instance of OszLoader class.
             parser: Instance of OsuParser class.
             tokenizer: Instance of Tokenizer class.
         """
@@ -67,14 +77,6 @@ class OrsDataset(IterableDataset):
         self.frame_size = frame_size
         self.src_seq_len = src_seq_len
         self.tgt_seq_len = tgt_seq_len
-        # let N = |src_seq_len|
-        # N-1 frames creates N mel-spectrogram frames
-        self.frame_seq_len = src_seq_len - 1
-        # let N = |tgt_seq_len|
-        # [SOS] token + event_tokens + [EOS] token creates N+1 tokens
-        # [SOS] token + event_tokens[:-1] creates N target sequence
-        # event_tokens[1:] + [EOS] token creates N label sequence
-        self.token_seq_len = tgt_seq_len
 
     def _get_beatmap_files(self) -> list[Path]:
         if self.beatmap_files is not None:
@@ -131,10 +133,10 @@ class InterleavingBeatmapDatasetIterable:
     __slots__ = ("workers", "cycle_length", "index")
 
     def __init__(
-        self,
-        beatmap_files: list[Path],
-        iterable_factory: Callable,
-        cycle_length: int,
+            self,
+            beatmap_files: list[Path],
+            iterable_factory: Callable,
+            cycle_length: int,
     ):
         per_worker = int(np.ceil(len(beatmap_files) / float(cycle_length)))
         self.workers = [
@@ -165,15 +167,27 @@ class InterleavingBeatmapDatasetIterable:
 
 
 class BeatmapDatasetIterable:
+    __slots__ = (
+        "beatmap_files",
+        "parser",
+        "tokenizer",
+        "sample_rate",
+        "frame_size",
+        "src_seq_len",
+        "tgt_seq_len",
+        "frame_seq_len",
+        "token_seq_len",
+    )
+
     def __init__(
-        self,
-        beatmap_files: list[Path],
-        sample_rate: int,
-        frame_size: int,
-        src_seq_len: int,
-        tgt_seq_len: int,
-        parser: OsuParser,
-        tokenizer: Tokenizer,
+            self,
+            beatmap_files: list[Path],
+            sample_rate: int,
+            frame_size: int,
+            src_seq_len: int,
+            tgt_seq_len: int,
+            parser: OsuParser,
+            tokenizer: Tokenizer,
     ):
         self.beatmap_files = beatmap_files
         self.parser = parser
@@ -189,9 +203,10 @@ class BeatmapDatasetIterable:
         # [SOS] token + event_tokens + [EOS] token creates N+1 tokens
         # [SOS] token + event_tokens[:-1] creates N target sequence
         # event_tokens[1:] + [EOS] token creates N label sequence
-        self.token_seq_len = tgt_seq_len
+        self.token_seq_len = tgt_seq_len + 1
 
-    def _get_audio_and_osu(self, audio_path: Path, beatmap_path: Path) -> tuple[npt.NDArray, Beatmap] | tuple[None, None]:
+    def _get_audio_and_osu(self, audio_path: Path, beatmap_path: Path) -> (tuple[npt.NDArray, Beatmap]
+                                                                           | tuple[None, None]):
         """Load an .osz archive and get its audio samples and .osu beatmap.
 
         An .osz archive may have multiple .osu beatmaps, only one is selected based
@@ -201,7 +216,8 @@ class BeatmapDatasetIterable:
         we index the selection result as `None`, which will be skipped on subsequent queries.
 
         Args:
-            osz_path: Path to the .osz archive.
+            audio_path: Path to audio file.
+            beatmap_path: Path to .osu beatmap file.
 
         Returns:
             audio_samples: Audio time series.
@@ -250,170 +266,122 @@ class BeatmapDatasetIterable:
         samples = np.pad(samples, [0, self.frame_size - len(samples) % self.frame_size])
         frames = np.reshape(samples, (-1, self.frame_size))
         frames_per_milisecond = (
-            self.sample_rate / self.frame_size / MILISECONDS_PER_SECOND
+                self.sample_rate / self.frame_size / MILISECONDS_PER_SECOND
         )
         frame_times = np.arange(len(frames)) / frames_per_milisecond
         return frames, frame_times
 
-    def _create_sequences_and_trim_timeshifts(
-        self,
-        events: list[Event],
-        frames: npt.NDArray,
-        frame_times: npt.NDArray,
-        frames_per_split: int = 1024,
-    ) -> list[dict[npt.NDArray, list[int]]]:
+    def _create_sequences(
+            self,
+            events: list[Event],
+            frames: npt.NDArray,
+            frame_times: npt.NDArray,
+            beatmap_idx: int,
+            beatmap_id: int,
+    ) -> list[dict[str, int | npt.NDArray | list[Event]]]:
         """Create frame and token sequences for training/testing.
 
         Args:
-            event_tokens: Tokenized Events and time shifts.
-            event_start_indices: Corresponding start event index for every audio frame.
-            event_end_indices: Corresponding end event index for every audio frame.
+            events: Events and time shifts.
             frames: Audio frames.
-            frames_per_split: Maximum number of frames in each split.
 
         Returns:
             A list of source and target sequences.
         """
+        # Corresponding start event index for every audio frame.
+        event_start_indices = []
+        event_index = 0
+        event_time = -np.inf
+
+        for current_time in range(frame_times):
+            while event_time < current_time and event_index < len(events):
+                if events[event_index].type == EventType.TIME_SHIFT:
+                    event_time = events[event_index].value
+                event_index += 1
+            event_start_indices.append(event_index - 1)
+
+        # Corresponding end event index for every audio frame.
+        event_end_indices = event_start_indices[1:] + [len(events)]
+
         sequences = []
         n_frames = len(frames)
+        offset = random.randint(0, self.frame_seq_len)
         # Divide audio frames into splits
-        for split_start_idx in range(0, n_frames, frames_per_split):
-            split_end_idx = min(split_start_idx + frames_per_split, n_frames)
-            split_frames = frames[split_start_idx:split_end_idx]
-            split_event_starts = event_start_indices[split_start_idx:split_end_idx]
-            split_event_ends = event_end_indices[split_start_idx:split_end_idx]
-
-            # For each split, randomly select a contiguous sequence of frames and events
-            max_offset = len(split_frames) - self.frame_seq_len
-            if max_offset < 1:
-                sequence_start_idx = 0
-                sequence_end_idx = len(split_frames)
-            else:
-                sequence_start_idx = random.randint(0, max_offset)
-                sequence_end_idx = sequence_start_idx + self.frame_seq_len
+        for split_start_idx in range(offset, n_frames, self.frame_seq_len):
+            split_end_idx = min(split_start_idx + self.frame_seq_len, n_frames)
+            target_start_idx = event_start_indices[split_start_idx]
+            target_end_idx = event_end_indices[split_end_idx - 1]
 
             # Create the sequence
-            sequence = {}
-            sequence_event_starts = split_event_starts[
-                sequence_start_idx:sequence_end_idx
-            ]
-            sequence_event_ends = split_event_ends[sequence_start_idx:sequence_end_idx]
-            target_start_idx = sequence_event_starts[0]
-            target_end_idx = sequence_event_ends[-1]
-            sequence["frames"] = split_frames[sequence_start_idx:sequence_end_idx]
-            sequence["tokens"] = event_tokens[target_start_idx:target_end_idx]
+            sequence = {
+                "time": frame_times[split_start_idx],
+                "frames": frames[split_start_idx:split_end_idx],
+                "events": events[target_start_idx:target_end_idx],
+                "beatmap_idx": beatmap_idx,
+                "beatmap_id": beatmap_id,
+            }
             sequences.append(sequence)
 
         return sequences
 
-    def _tokenize_sequence(self, sequence):
-        pass
-
-    def _tokenize_and_index_events(
-        self,
-        events: list[list[Event]],
-        event_times: list[int],
-        frame_times: npt.NDArray,
-    ) -> tuple[list[int], list[int], list[int]]:
-        """Tokenize Event objects and index them to audio frame times.
-
-        Tokenize every time shift as multiple single time steps.
-        It should always be true that event_end_indices[i] = event_start_indices[i + 1].
-
-        Args:
-            events: List of Event object lists
-            event_times: Time of each Event object list, in miliseconds
-            frame_times: Audio frame times, in miliseconds
-
-        Returns:
-            event_tokens: Tokenized Events and time shifts
-            event_start_indices: Corresponding start event index for every audio frame
-            event_end_indices: Corresponding end event index for every audio frame
-        """
-        TIME_STEP_TOKEN = self.tokenizer.time_step_id
-        event_steps = [round(t * STEPS_PER_MILLISECOND) for t in event_times]
-
-        cur_step = 0
-        cur_event_idx = 0
-
-        event_tokens = []
-        event_start_indices = []
-        event_end_indices = []
-
-        def fill_event_start_indices_to_cur_step():
-            while (
-                len(event_start_indices) < len(frame_times)
-                and frame_times[len(event_start_indices)]
-                < cur_step / STEPS_PER_MILLISECOND
-            ):
-                event_start_indices.append(cur_event_idx)
-
-        for event_step, event_list in zip(event_steps, events):
-            while event_step > cur_step:
-                event_tokens.append(TIME_STEP_TOKEN)
-                cur_step += 1
-                fill_event_start_indices_to_cur_step()
-                cur_event_idx = len(event_tokens)
-
-            try:
-                new_tokens = []
-                for event in event_list:
-                    token = self.tokenizer.encode(event)
-                    new_tokens.append(token)
-                event_tokens += new_tokens
-            except Exception as e:
-                logging.warn(f"tokenization failed: {e}")
-
-        while cur_step / STEPS_PER_MILLISECOND <= frame_times[-1]:
-            event_tokens.append(TIME_STEP_TOKEN)
-            cur_step += 1
-            fill_event_start_indices_to_cur_step()
-            cur_event_idx = len(event_tokens)
-
-        event_end_indices = event_start_indices[1:] + [len(event_tokens)]
-
-        return event_tokens, event_start_indices, event_end_indices
-
-    def _merge_time_step_tokens(self, sequence):
-        """Merge time steps into time shifts.
-
-        Convert relative time shifts into absolute time shifts.
-        Each time shift token now indicates the amount of time from the beginning of the sequence.
+    @staticmethod
+    def _trim_time_shifts(sequence: dict) -> dict:
+        """Make all time shifts in the sequence relative to the start time of the sequence and remove any time shifts for anchor events.
 
         Args:
             sequence: The input sequence.
 
         Returns:
-            The same sequence with relative time steps converted into absolute time shifts.
+            The same sequence with trimmed time shifts.
         """
-        total_time_shift = 0
-        tokens = []
-        is_redundant = False
+        start_time = sequence["time"]
+        for event in sequence["events"]:
+            if event.type == EventType.TIME_SHIFT:
+                event.value -= start_time
 
-        for token in sequence["tokens"]:
-            if token == self.tokenizer.time_step_id:
-                total_time_shift += 1
-                is_redundant = False
-            else:
-                if not is_redundant:
-                    shift_event = Event(EventType.TIME_SHIFT, total_time_shift)
-                    shift_token = self.tokenizer.encode(shift_event)
-                    tokens.append(shift_token)
-                    is_redundant = True
-                tokens.append(token)
+        # Loop through the events in reverse to remove any time shifts that occur before anchor events
+        events = sequence["events"]
+        delete_next_time_shift = False
+        for i in range(len(events) - 1, -1, -1):
+            if events[i].type == EventType.TIME_SHIFT and delete_next_time_shift:
+                delete_next_time_shift = False
+                del events[i]
+                continue
+            elif events[i].type in [EventType.BEZIER_ANCHOR, EventType.PERFECT_ANCHOR, EventType.CATMULL_ANCHOR,
+                                    EventType.RED_ANCHOR]:
+                delete_next_time_shift = True
+        sequence["events"] = events
 
-        sequence["tokens"] = tokens
         return sequence
 
-    def _pad_token_sequence(self, sequence):
+    def _tokenize_sequence(self, sequence: dict) -> dict:
+        """Tokenize the event sequence.
+
+        Begin token sequence with `[SOS]` token (start-of-sequence).
+        End token sequence with `[EOS]` token (end-of-sequence).
+
+        Args:
+            sequence: The input sequence.
+
+        Returns:
+            The same sequence with tokenized events.
+        """
+        tokens = torch.empty(len(sequence["tokens"] + 2), dtype=torch.long)
+        tokens[0] = self.tokenizer.sos_id
+        for i, event in enumerate(sequence["events"]):
+            tokens[i + 1] = self.tokenizer.encode(event)
+        tokens[-1] = self.tokenizer.eos_id
+        sequence["tokens"] = tokens
+        del sequence["events"]
+        return sequence
+
+    def _pad_and_split_token_sequence(self, sequence: dict) -> dict:
         """Pad token sequence to a fixed length.
 
-        Begin token sequence with `[PAD]` token (start-of-sequence).
-        End token sequence with `[EOS]` token (end-of-sequence).
-        Then, pad with `[PAD]` tokens until `token_seq_len`.
+        Pad with `[PAD]` tokens until `token_seq_len`.
 
         Token sequence (w/o last token) is the input to the transformer decoder,
-        token sequence (w/o first token) is the label, a.k.a decoder ground truth.
+        token sequence (w/o first token) is the label, a.k.a. decoder ground truth.
 
         Args:
             sequence: The input sequence.
@@ -421,23 +389,19 @@ class BeatmapDatasetIterable:
         Returns:
             The same sequence with padded tokens.
         """
-        tokens = torch.tensor(sequence["tokens"], dtype=torch.long)
-        n = min(self.tgt_seq_len - 1, len(tokens))
-        eos = (
-            torch.ones(1, dtype=tokens.dtype, device=tokens.device)
-            * self.tokenizer.eos_id
-        )
+        tokens = sequence["tokens"]
+        n = min(self.token_seq_len, len(tokens))
         padded_tokens = (
-            torch.ones(self.token_seq_len, dtype=tokens.dtype, device=tokens.device)
-            * self.tokenizer.pad_id
+                torch.ones(self.token_seq_len, dtype=tokens.dtype, device=tokens.device)
+                * self.tokenizer.pad_id
         )
-        padded_tokens[0:n] = tokens[:n]
-        padded_tokens[n : n + 1] = eos
-        sequence["tokens"] = padded_tokens
-        sequence["decoder_attention_mask"] = padded_tokens != self.tokenizer.pad_id
+        padded_tokens[:n] = tokens[:n]
+        sequence["decoder_input_ids"] = padded_tokens[:-1]
+        sequence["labels"] = padded_tokens[1:]
+        del sequence["tokens"]
         return sequence
 
-    def _pad_frame_sequence(self, sequence):
+    def _pad_frame_sequence(self, sequence: dict) -> dict:
         """Pad frame sequence with zeros until `frame_seq_len`.
 
         Frame sequence can be further processed into Mel spectrogram frames,
@@ -483,25 +447,30 @@ class BeatmapDatasetIterable:
         """
         for beatmap_path in self.beatmap_files:
             audio_path = beatmap_path.parent / list(beatmap_path.parent.glob('audio.*'))[0]
-
             audio_samples, osu_beatmap = self._get_audio_and_osu(audio_path, beatmap_path)
 
             if audio_samples is None or osu_beatmap is None:
                 continue
 
+            current_idx = int(os.path.basename(beatmap_path)[:6])
+            current_id = osu_beatmap.beatmap_id
+
             frames, frame_times = self._get_frames(audio_samples)
             events = self.parser.parse(osu_beatmap)
 
-            sequences = self._create_sequences_and_trim_timeshifts(
+            sequences = self._create_sequences(
                 events,
                 frames,
                 frame_times,
+                current_idx,
+                current_id,
             )
 
             for sequence in sequences:
+                sequence = self._trim_time_shifts(sequence)
                 sequence = self._tokenize_sequence(sequence)
                 sequence = self._pad_frame_sequence(sequence)
-                sequence = self._pad_token_sequence(sequence)
+                sequence = self._pad_and_split_token_sequence(sequence)
                 # if sequence["tokens"][1] == self.tokenizer.eos_id:
                 #    continue
                 yield sequence

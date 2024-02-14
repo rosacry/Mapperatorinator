@@ -6,7 +6,7 @@ from .event import get_event_ranges, Event, EventType
 class Tokenizer:
     def __init__(self):
         """Fixed vocabulary tokenizer."""
-        self._offset = 3
+        self._offset = 2
         self._event_ranges = get_event_ranges()
 
     @property
@@ -23,11 +23,6 @@ class Tokenizer:
     def eos_id(self) -> int:
         """[EOS] token for end-of-sequence."""
         return 1
-
-    @property
-    def time_step_id(self) -> int:
-        """[STEP] token for a single time step."""
-        return 2
 
     def decode(self, id: int) -> Event:
         """Converts token ids into Event objects."""
