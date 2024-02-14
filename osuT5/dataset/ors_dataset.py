@@ -326,7 +326,9 @@ class BeatmapDatasetIterable:
 
     @staticmethod
     def _trim_time_shifts(sequence: dict) -> dict:
-        """Make all time shifts in the sequence relative to the start time of the sequence and remove any time shifts for anchor events.
+        """Make all time shifts in the sequence relative to the start time of the sequence,
+        and normalize time values,
+        and remove any time shifts for anchor events.
 
         Args:
             sequence: The input sequence.
@@ -337,7 +339,7 @@ class BeatmapDatasetIterable:
         start_time = sequence["time"]
         for event in sequence["events"]:
             if event.type == EventType.TIME_SHIFT:
-                event.value -= start_time
+                event.value = int((event.value - start_time) * STEPS_PER_MILLISECOND)
 
         # Loop through the events in reverse to remove any time shifts that occur before anchor events
         events = sequence["events"]
