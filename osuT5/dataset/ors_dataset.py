@@ -1,40 +1,51 @@
 from __future__ import annotations
 
+import os
 import sys
 import random
 import logging
 from glob import glob
+from typing import Optional, Callable
+from pathlib import Path
 
 import numpy as np
 import numpy.typing as npt
 import torch
+from pydub import AudioSegment
+from slider import Beatmap
 from torch.utils.data import IterableDataset
 
 from .osu_parser import OsuParser
-from .osz_loader import OszLoader
 from osuT5.tokenizer import Event, EventType, Tokenizer
 
 OSZ_FILE_EXTENSION = ".osz"
+AUDIO_FILE_NAME = "audio.mp3"
 MILISECONDS_PER_SECOND = 1000
 STEPS_PER_MILLISECOND = 0.1
 
 
-class OszDataset(IterableDataset):
+class OrsDataset(IterableDataset):
+    __slots__ = ("path", "loader", "parser", "tokenizer", "sample_rate", "frame_size", "src_seq_len")
+
     def __init__(
         self,
         path: str,
+        start: int,
+        end: int,
         sample_rate: int,
         frame_size: int,
         src_seq_len: int,
         tgt_seq_len: int,
-        loader: OszLoader,
         parser: OsuParser,
         tokenizer: Tokenizer,
+        cycle_length: int = 1,
+        shuffle: bool = False,
+        beatmap_files: Optional[list[Path]] = None,
     ):
-        """Manage and process .osz archives.
+        """Manage and process ORS dataset.
 
         Attributes:
-            path: Location of .osz files to load.
+            path: Location of ORS dataset to load.
             sample_rate: Sampling rate of audio file (samples/second).
             frame_size: Samples per audio frame (samples/frame).
             src_seq_len: Maximum length of source sequence.
@@ -44,11 +55,127 @@ class OszDataset(IterableDataset):
             tokenizer: Instance of Tokenizer class.
         """
         super().__init__()
-        self.dataset = np.array(
-            glob(f"{path}/**/*{OSZ_FILE_EXTENSION}", recursive=True), dtype=np.string_
+        self.path = path
+        self.start = start
+        self.end = end
+        self.parser = parser
+        self.tokenizer = tokenizer
+        self.cycle_length = cycle_length
+        self.shuffle = shuffle
+        self.beatmap_files = beatmap_files
+        self.sample_rate = sample_rate
+        self.frame_size = frame_size
+        self.src_seq_len = src_seq_len
+        self.tgt_seq_len = tgt_seq_len
+        # let N = |src_seq_len|
+        # N-1 frames creates N mel-spectrogram frames
+        self.frame_seq_len = src_seq_len - 1
+        # let N = |tgt_seq_len|
+        # [SOS] token + event_tokens + [EOS] token creates N+1 tokens
+        # [SOS] token + event_tokens[:-1] creates N target sequence
+        # event_tokens[1:] + [EOS] token creates N label sequence
+        self.token_seq_len = tgt_seq_len
+
+    def _get_beatmap_files(self) -> list[Path]:
+        if self.beatmap_files is not None:
+            return self.beatmap_files
+
+        # Get a list of all beatmap files in the dataset path in the track index range between start and end
+        beatmap_files = []
+        track_names = ["Track" + str(i).zfill(5) for i in range(self.start, self.end)]
+        for track_name in track_names:
+            for beatmap_file in os.listdir(
+                    os.path.join(self.path, track_name, "beatmaps"),
+            ):
+                beatmap_files.append(
+                    Path(
+                        os.path.join(
+                            self.path,
+                            track_name,
+                            "beatmaps",
+                            beatmap_file,
+                        )
+                    ),
+                )
+
+        return beatmap_files
+
+    def __iter__(self) -> InterleavingBeatmapDatasetIterable | BeatmapDatasetIterable:
+        beatmap_files = self._get_beatmap_files()
+
+        if self.shuffle:
+            random.shuffle(beatmap_files)
+
+        if self.cycle_length > 1:
+            return InterleavingBeatmapDatasetIterable(
+                beatmap_files,
+                self._iterable_factory,
+                self.cycle_length,
+            )
+
+        return self._iterable_factory(beatmap_files)
+
+    def _iterable_factory(self, beatmap_files: list[Path]):
+        return BeatmapDatasetIterable(
+            beatmap_files,
+            self.sample_rate,
+            self.frame_size,
+            self.src_seq_len,
+            self.tgt_seq_len,
+            self.parser,
+            self.tokenizer,
         )
-        np.random.shuffle(self.dataset)
-        self.loader = loader
+
+
+class InterleavingBeatmapDatasetIterable:
+    __slots__ = ("workers", "cycle_length", "index")
+
+    def __init__(
+        self,
+        beatmap_files: list[Path],
+        iterable_factory: Callable,
+        cycle_length: int,
+    ):
+        per_worker = int(np.ceil(len(beatmap_files) / float(cycle_length)))
+        self.workers = [
+            iterable_factory(
+                beatmap_files[
+                    i * per_worker: min(len(beatmap_files), (i + 1) * per_worker)
+                ]
+            )
+            for i in range(cycle_length)
+        ]
+        self.cycle_length = cycle_length
+        self.index = 0
+
+    def __iter__(self) -> "InterleavingBeatmapDatasetIterable":
+        return self
+
+    def __next__(self) -> tuple[any, int]:
+        num = len(self.workers)
+        for _ in range(num):
+            try:
+                self.index = self.index % len(self.workers)
+                item = self.workers[self.index].__next__()
+                self.index += 1
+                return item
+            except StopIteration:
+                self.workers.remove(self.workers[self.index])
+        raise StopIteration
+
+
+class BeatmapDatasetIterable:
+    def __init__(
+        self,
+        beatmap_files: list[Path],
+        sample_rate: int,
+        frame_size: int,
+        src_seq_len: int,
+        tgt_seq_len: int,
+        parser: OsuParser,
+        tokenizer: Tokenizer,
+    ):
+        self.beatmap_files = beatmap_files
         self.parser = parser
         self.tokenizer = tokenizer
         self.sample_rate = sample_rate
@@ -63,9 +190,8 @@ class OszDataset(IterableDataset):
         # [SOS] token + event_tokens[:-1] creates N target sequence
         # event_tokens[1:] + [EOS] token creates N label sequence
         self.token_seq_len = tgt_seq_len
-        self.encoding = sys.getfilesystemencoding()
 
-    def _get_audio_and_osu(self, osz_path: str) -> tuple[npt.NDArray, list[str]]:
+    def _get_audio_and_osu(self, audio_path: Path, beatmap_path: Path) -> tuple[npt.NDArray, Beatmap] | tuple[None, None]:
         """Load an .osz archive and get its audio samples and .osu beatmap.
 
         An .osz archive may have multiple .osu beatmaps, only one is selected based
@@ -82,17 +208,33 @@ class OszDataset(IterableDataset):
             osu_beatmap: A list of strings (osu beatmap data).
         """
         try:
-            audio_samples, osu_beatmap, _, _ = self.loader.load_osz(
-                osz_path,
-            )
+            audio_samples = self._load_audio_file(audio_path)
+            osu_beatmap = Beatmap.from_path(beatmap_path)
         except Exception as e:
-            logging.warn(f"skipped: {osz_path}")
-            logging.warn(f"reason: {e}")
+            logging.warning(f"skipped: {beatmap_path}")
+            logging.warning(f"reason: {e}")
             return None, None
 
         return audio_samples, osu_beatmap
 
-    def _get_frames(self, samples: npt.NDArray) -> list[float]:
+    def _load_audio_file(self, file: Path) -> npt.NDArray:
+        """Load an audio file as a numpy time-series array
+
+        The signals are resampled, converted to mono channel, and normalized.
+
+        Args:
+            file: Path to audio file.
+        Returns:
+            samples: Audio time series.
+        """
+        audio = AudioSegment.from_file(file, format=file.suffix[1:])
+        audio = audio.set_frame_rate(self.sample_rate)
+        audio = audio.set_channels(1)
+        samples = np.array(audio.get_array_of_samples()).astype(np.float32)
+        samples *= 1.0 / np.max(np.abs(samples))
+        return samples
+
+    def _get_frames(self, samples: npt.NDArray) -> tuple[npt.NDArray, npt.NDArray]:
         """Segment audio samples into frames.
 
         Each frame has `frame_size` audio samples.
@@ -113,11 +255,65 @@ class OszDataset(IterableDataset):
         frame_times = np.arange(len(frames)) / frames_per_milisecond
         return frames, frame_times
 
+    def _create_sequences_and_trim_timeshifts(
+        self,
+        events: list[Event],
+        frames: npt.NDArray,
+        frame_times: npt.NDArray,
+        frames_per_split: int = 1024,
+    ) -> list[dict[npt.NDArray, list[int]]]:
+        """Create frame and token sequences for training/testing.
+
+        Args:
+            event_tokens: Tokenized Events and time shifts.
+            event_start_indices: Corresponding start event index for every audio frame.
+            event_end_indices: Corresponding end event index for every audio frame.
+            frames: Audio frames.
+            frames_per_split: Maximum number of frames in each split.
+
+        Returns:
+            A list of source and target sequences.
+        """
+        sequences = []
+        n_frames = len(frames)
+        # Divide audio frames into splits
+        for split_start_idx in range(0, n_frames, frames_per_split):
+            split_end_idx = min(split_start_idx + frames_per_split, n_frames)
+            split_frames = frames[split_start_idx:split_end_idx]
+            split_event_starts = event_start_indices[split_start_idx:split_end_idx]
+            split_event_ends = event_end_indices[split_start_idx:split_end_idx]
+
+            # For each split, randomly select a contiguous sequence of frames and events
+            max_offset = len(split_frames) - self.frame_seq_len
+            if max_offset < 1:
+                sequence_start_idx = 0
+                sequence_end_idx = len(split_frames)
+            else:
+                sequence_start_idx = random.randint(0, max_offset)
+                sequence_end_idx = sequence_start_idx + self.frame_seq_len
+
+            # Create the sequence
+            sequence = {}
+            sequence_event_starts = split_event_starts[
+                sequence_start_idx:sequence_end_idx
+            ]
+            sequence_event_ends = split_event_ends[sequence_start_idx:sequence_end_idx]
+            target_start_idx = sequence_event_starts[0]
+            target_end_idx = sequence_event_ends[-1]
+            sequence["frames"] = split_frames[sequence_start_idx:sequence_end_idx]
+            sequence["tokens"] = event_tokens[target_start_idx:target_end_idx]
+            sequences.append(sequence)
+
+        return sequences
+
+    def _tokenize_sequence(self, sequence):
+        pass
+
     def _tokenize_and_index_events(
         self,
         events: list[list[Event]],
         event_times: list[int],
-        frame_times: list[int],
+        frame_times: npt.NDArray,
     ) -> tuple[list[int], list[int], list[int]]:
         """Tokenize Event objects and index them to audio frame times.
 
@@ -177,58 +373,6 @@ class OszDataset(IterableDataset):
         event_end_indices = event_start_indices[1:] + [len(event_tokens)]
 
         return event_tokens, event_start_indices, event_end_indices
-
-    def _create_sequences(
-        self,
-        event_tokens: list[int],
-        event_start_indices: list[int],
-        event_end_indices: list[int],
-        frames: npt.NDArray,
-        frames_per_split: int = 1024,
-    ) -> list[dict[npt.NDArray, list[int]]]:
-        """Create frame and token sequences for training/testing.
-
-        Args:
-            event_tokens: Tokenized Events and time shifts.
-            event_start_indices: Corresponding start event index for every audio frame.
-            event_end_indices: Corresponding end event index for every audio frame.
-            frames: Audio frames.
-            frames_per_split: Maximum number of frames in each split.
-
-        Returns:
-            A list of source and target sequences.
-        """
-        sequences = []
-        n_frames = len(frames)
-        # Divide audio frames into splits
-        for split_start_idx in range(0, n_frames, frames_per_split):
-            split_end_idx = min(split_start_idx + frames_per_split, n_frames)
-            split_frames = frames[split_start_idx:split_end_idx]
-            split_event_starts = event_start_indices[split_start_idx:split_end_idx]
-            split_event_ends = event_end_indices[split_start_idx:split_end_idx]
-
-            # For each split, randomly select a contiguous sequence of frames and events
-            max_offset = len(split_frames) - self.frame_seq_len
-            if max_offset < 1:
-                sequence_start_idx = 0
-                sequence_end_idx = len(split_frames)
-            else:
-                sequence_start_idx = random.randint(0, max_offset)
-                sequence_end_idx = sequence_start_idx + self.frame_seq_len
-
-            # Create the sequence
-            sequence = {}
-            sequence_event_starts = split_event_starts[
-                sequence_start_idx:sequence_end_idx
-            ]
-            sequence_event_ends = split_event_ends[sequence_start_idx:sequence_end_idx]
-            target_start_idx = sequence_event_starts[0]
-            target_end_idx = sequence_event_ends[-1]
-            sequence["frames"] = split_frames[sequence_start_idx:sequence_end_idx]
-            sequence["tokens"] = event_tokens[target_start_idx:target_end_idx]
-            sequences.append(sequence)
-
-        return sequences
 
     def _merge_time_step_tokens(self, sequence):
         """Merge time steps into time shifts.
@@ -322,6 +466,9 @@ class OszDataset(IterableDataset):
 
         return sequence
 
+    def __iter__(self):
+        return self._get_next()
+
     def _get_next(self) -> dict[int, int]:
         """Generate samples.
 
@@ -334,38 +481,27 @@ class OszDataset(IterableDataset):
             A sample, which contains a source sequence of `frame_seq_len` audio frames
             and target sequence of `token_seq_len` event tokens.
         """
-        while True:
-            for osz_path in np.nditer(self.dataset):
-                osz_path = str(osz_path, encoding=self.encoding)
-                audio_samples, osu_beatmap = self._get_audio_and_osu(osz_path)
+        for beatmap_path in self.beatmap_files:
+            audio_path = beatmap_path.parent / list(beatmap_path.parent.glob('audio.*'))[0]
 
-                if audio_samples is None or osu_beatmap is None:
-                    continue
+            audio_samples, osu_beatmap = self._get_audio_and_osu(audio_path, beatmap_path)
 
-                frames, frame_times = self._get_frames(audio_samples)
-                events, event_times = self.parser.parse(osu_beatmap)
+            if audio_samples is None or osu_beatmap is None:
+                continue
 
-                (
-                    event_tokens,
-                    event_start_indices,
-                    event_end_indices,
-                ) = self._tokenize_and_index_events(events, event_times, frame_times)
+            frames, frame_times = self._get_frames(audio_samples)
+            events = self.parser.parse(osu_beatmap)
 
-                sequences = self._create_sequences(
-                    event_tokens,
-                    event_start_indices,
-                    event_end_indices,
-                    frames,
-                )
+            sequences = self._create_sequences_and_trim_timeshifts(
+                events,
+                frames,
+                frame_times,
+            )
 
-                for sequence in sequences:
-                    sequence = self._merge_time_step_tokens(sequence)
-                    sequence = self._pad_frame_sequence(sequence)
-                    sequence = self._pad_token_sequence(sequence)
-                    # if sequence["tokens"][1] == self.tokenizer.eos_id:
-                    #    continue
-                    yield sequence
-
-    def __iter__(self):
-        """Get a single sample from the dataset."""
-        return self._get_next()
+            for sequence in sequences:
+                sequence = self._tokenize_sequence(sequence)
+                sequence = self._pad_frame_sequence(sequence)
+                sequence = self._pad_token_sequence(sequence)
+                # if sequence["tokens"][1] == self.tokenizer.eos_id:
+                #    continue
+                yield sequence

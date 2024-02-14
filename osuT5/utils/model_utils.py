@@ -11,7 +11,7 @@ from torch.optim.lr_scheduler import (
     CosineAnnealingLR,
 )
 
-from osuT5.dataset import OszDataset, OszLoader, OsuParser
+from osuT5.dataset import OrsDataset, OrsLoader, OsuParser
 from osuT5.model.osu_t import OsuT
 from osuT5.tokenizer import Tokenizer
 
@@ -99,7 +99,7 @@ def get_scheduler(optimizer: Optimizer, args: DictConfig) -> LRScheduler:
 
 
 def get_dataloaders(tokenizer: Tokenizer, args: DictConfig) -> dict[str, DataLoader]:
-    loader = OszLoader(
+    loader = OrsLoader(
         args.model.spectrogram.sample_rate,
         args.loader.min_difficulty,
         args.loader.max_difficulty,
@@ -107,7 +107,7 @@ def get_dataloaders(tokenizer: Tokenizer, args: DictConfig) -> dict[str, DataLoa
     )
     parser = OsuParser()
     dataset = {
-        "train": OszDataset(
+        "train": OrsDataset(
             args.train_dataset_path,
             args.model.spectrogram.sample_rate,
             args.model.spectrogram.hop_length,
@@ -117,7 +117,7 @@ def get_dataloaders(tokenizer: Tokenizer, args: DictConfig) -> dict[str, DataLoa
             parser,
             tokenizer,
         ),
-        "test": OszDataset(
+        "test": OrsDataset(
             args.test_dataset_path,
             args.model.spectrogram.sample_rate,
             args.model.spectrogram.hop_length,
@@ -148,10 +148,15 @@ def get_dataloaders(tokenizer: Tokenizer, args: DictConfig) -> dict[str, DataLoa
 
 def worker_init_fn(worker_id: int) -> None:
     """
-    Give each dataloader worker a unique seed.
-    This ensures that each worker loads the .osz archives
-    in a different sequential order.
+    Give each dataloader a unique slice of the full dataset.
     """
-    worker_seed = get_worker_info().seed
-    numpy_seed = (worker_id + worker_seed) % 2**32 - 1
-    np.random.seed(numpy_seed)
+    worker_info = torch.utils.data.get_worker_info()
+    dataset = worker_info.dataset  # the dataset copy in this worker process
+    overall_start = dataset.start
+    overall_end = dataset.end
+    # configure the dataset to only process the split workload
+    per_worker = int(
+        np.ceil((overall_end - overall_start) / float(worker_info.num_workers)),
+    )
+    dataset.start = overall_start + worker_id * per_worker
+    dataset.end = min(dataset.start + per_worker, overall_end)
