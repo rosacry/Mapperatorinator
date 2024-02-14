@@ -12,13 +12,17 @@ from osuT5.model.t5 import T5
 
 
 class OsuT(nn.Module):
+    __slots__ = ["num_classes", "class_ids", "spectrogram", "style_embedder", "encoder_embedder", "transformer"]
+
     def __init__(self, config: T5Config):
         super().__init__()
 
+        self.num_classes = config.num_classes
+        self.class_ids = torch.full([self.num_classes + 1], -1, dtype=torch.long)
+        self.style_embedder = LabelEmbedder(self.num_classes, config.d_model, config.class_dropout_prob)
         self.spectrogram = MelSpectrogram(
             config.sample_rate, config.n_fft, config.n_mels, config.hop_length
         )
-        self.style_embedder = LabelEmbedder(config.num_classes, config.d_model, config.class_dropout_prob)
         self.encoder_embedder = nn.Linear(config.n_mels + config.d_model, config.d_model)
 
         # Initialize label embedding table:
@@ -28,26 +32,35 @@ class OsuT(nn.Module):
 
     def forward(
             self,
-            samples: Optional[torch.FloatTensor] = None,
-            styles: Optional[torch.LongTensor] = None,
-            encoder_outputs=None,
+            frames: Optional[torch.FloatTensor] = None,
+            decoder_input_ids: Optional[torch.LongTensor] = None,
+            beatmap_idx: Optional[torch.LongTensor] = None,
+            beatmap_id: Optional[torch.LongTensor] = None,
+            encoder_outputs: Optional[torch.FloatTensor] = None,
             **kwargs
     ) -> Seq2SeqLMOutput:
         """
-        frames: B x samples_per_sequence, float32
-        attention_mask: B x L_encoder, int64
-            1 for tokens to attend to, 0 for tokens to ignore
-        tokens: B x L_decoder, int64
+        frames: B x L_encoder x mel_bins, float32
+        decoder_input_ids: B x L_decoder, int64
+        beatmap_idx: B, int64
+        beatmap_id: B, int64
+        encoder_outputs: B x L_encoder x D, float32
         """
-        inputs_embeds = None
+        if beatmap_idx is None:
+            batch_size = frames.shape[0] if frames is not None else decoder_input_ids.shape[0]
+            beatmap_idx = torch.full([batch_size], self.num_classes, dtype=torch.long, device=self.device)
 
+        if beatmap_id is not None and self.training:
+            self.class_ids[beatmap_idx] = beatmap_id
+
+        inputs_embeds = None
         if encoder_outputs is None:
-            frames = self.spectrogram(samples)  # (N, L, M)
-            style_embeds = self.style_embedder(styles, self.training)  # (N, D)
+            frames = self.spectrogram(frames)  # (N, L, M)
+            style_embeds = self.style_embedder(beatmap_idx, self.training)  # (N, D)
             frames_concat = torch.concatenate((frames, style_embeds.unsqueeze(1)), -1)
             inputs_embeds = self.encoder_embedder(frames_concat)
 
-        output = self.transformer.forward(inputs_embeds=inputs_embeds, encoder_outputs=encoder_outputs, **kwargs)
+        output = self.transformer.forward(inputs_embeds=inputs_embeds, decoder_input_ids=decoder_input_ids, encoder_outputs=encoder_outputs, **kwargs)
 
         if isinstance(output, Seq2SeqLMOutput) and not hasattr(output, "encoder_outputs"):
             # noinspection PyUnresolvedReferences

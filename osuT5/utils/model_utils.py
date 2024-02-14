@@ -98,7 +98,7 @@ def get_scheduler(optimizer: Optimizer, args: DictConfig) -> LRScheduler:
     return scheduler
 
 
-def get_dataloaders(tokenizer: Tokenizer, args: DictConfig) -> dict[str, DataLoader]:
+def get_dataloaders(tokenizer: Tokenizer, args: DictConfig) -> tuple[DataLoader, DataLoader]:
     loader = OrsLoader(
         args.model.spectrogram.sample_rate,
         args.loader.min_difficulty,
