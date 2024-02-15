@@ -68,7 +68,7 @@ def maybe_logging(
 
         if args.logging.weights_l2:
             weights_l2 = (
-                sum(p.detach().norm(2).item() ** 2 for p in model.parameters()) ** 0.5
+                sum(p.detach().norm(2).item() ** 2 for p in model.parameters() if p.requires_grad) ** 0.5
             )
             stats["weights_l2"] = weights_l2
 

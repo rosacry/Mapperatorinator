@@ -137,7 +137,7 @@ def get_dataloaders(tokenizer: Tokenizer, args: DictConfig) -> tuple[DataLoader,
             num_workers=args.dataloader.num_workers,
             pin_memory=True,
             drop_last=False,
-            persistent_workers=True,
+            persistent_workers=args.dataloader.num_workers > 0,
             worker_init_fn=worker_init_fn,
         )
 
