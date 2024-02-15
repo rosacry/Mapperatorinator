@@ -132,11 +132,11 @@ class OsuParser:
             last_pos = append_control_points(EventType.PERFECT_ANCHOR, last_pos)
         elif isinstance(slider.curve, MultiBezier):
             for i in range(1, control_point_count - 1):
-                last_pos = add_anchor_time_dist(i, last_pos)
-
                 if slider.curve.points[i] == slider.curve.points[i + 1]:
+                    last_pos = add_anchor_time_dist(i, last_pos)
                     events.append(Event(EventType.RED_ANCHOR))
                 elif slider.curve.points[i] != slider.curve.points[i - 1]:
+                    last_pos = add_anchor_time_dist(i, last_pos)
                     events.append(Event(EventType.BEZIER_ANCHOR))
 
         last_pos = add_anchor_time_dist(control_point_count - 1, last_pos)
