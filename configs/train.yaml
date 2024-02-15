@@ -4,21 +4,16 @@ defaults:
 
 compile: false          # PyTorch 2.0 optimization
 device: gpu             # Training device (cpu/gpu)
-precision: 'no'         # Enable mixed precision
+precision: 'no'         # Enable mixed precision (no/fp16/bf16/fp8)
 seed: 42                # Project seed
 
 checkpoint_path: ''     # Project checkpoint directory (to resume training)
 train_dataset_path: ''  # Training dataset directory
-train_dataset_start: 0   # Training dataset start index
-train_dataset_end: 0   # Training dataset end index
+train_dataset_start: 0  # Training dataset start index
+train_dataset_end: 0    # Training dataset end index
 test_dataset_path: ''   # Testing/validation dataset directory
-test_dataset_start: 0    # Testing/validation dataset start index
-test_dataset_end: 0    # Testing/validation dataset end index
-
-loader:                 # OszLoader settings
-  min_difficulty: 0
-  max_difficulty: 10
-  mode: 'center'
+test_dataset_start: 0   # Testing/validation dataset start index
+test_dataset_end: 0     # Testing/validation dataset end index
 
 dataloader:             # Dataloader settings
   num_workers: 8

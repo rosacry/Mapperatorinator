@@ -4,6 +4,7 @@ from typing import Optional, Mapping, Any, OrderedDict
 
 import torch
 import torch.nn as nn
+from torch.nn.parameter import Parameter
 from transformers import T5Config, T5ForConditionalGeneration
 from transformers.modeling_outputs import Seq2SeqLMOutput
 
@@ -18,7 +19,7 @@ class OsuT(nn.Module):
         super().__init__()
 
         self.num_classes = config.num_classes
-        self.class_ids = torch.full([self.num_classes + 1], -1, dtype=torch.long)
+        self.class_ids = Parameter(torch.full([self.num_classes + 1], -1, dtype=torch.long), requires_grad=False)
         self.style_embedder = LabelEmbedder(self.num_classes, config.d_model, config.class_dropout_prob)
         self.spectrogram = MelSpectrogram(
             config.sample_rate, config.n_fft, config.n_mels, config.hop_length
@@ -28,7 +29,7 @@ class OsuT(nn.Module):
         # Initialize label embedding table:
         nn.init.normal_(self.style_embedder.embedding_table.weight, std=0.02)
 
-        self.transformer = T5(config)
+        self.transformer = T5ForConditionalGeneration(config)
 
     def forward(
             self,
@@ -57,7 +58,7 @@ class OsuT(nn.Module):
         if encoder_outputs is None:
             frames = self.spectrogram(frames)  # (N, L, M)
             style_embeds = self.style_embedder(beatmap_idx, self.training)  # (N, D)
-            frames_concat = torch.concatenate((frames, style_embeds.unsqueeze(1)), -1)
+            frames_concat = torch.concatenate((frames, style_embeds.unsqueeze(1).expand((-1, frames.shape[2], -1))), -1)
             inputs_embeds = self.encoder_embedder(frames_concat)
 
         output = self.transformer.forward(inputs_embeds=inputs_embeds, decoder_input_ids=decoder_input_ids, encoder_outputs=encoder_outputs, **kwargs)

@@ -144,7 +144,7 @@ class InterleavingBeatmapDatasetIterable:
                 beatmap_files[
                     i * per_worker: min(len(beatmap_files), (i + 1) * per_worker)
                 ]
-            )
+            ).__iter__()
             for i in range(cycle_length)
         ]
         self.cycle_length = cycle_length
@@ -293,7 +293,7 @@ class BeatmapDatasetIterable:
         event_index = 0
         event_time = -np.inf
 
-        for current_time in range(frame_times):
+        for current_time in frame_times:
             while event_time < current_time and event_index < len(events):
                 if events[event_index].type == EventType.TIME_SHIFT:
                     event_time = events[event_index].value
@@ -352,7 +352,9 @@ class BeatmapDatasetIterable:
             elif events[i].type in [EventType.BEZIER_ANCHOR, EventType.PERFECT_ANCHOR, EventType.CATMULL_ANCHOR,
                                     EventType.RED_ANCHOR]:
                 delete_next_time_shift = True
+
         sequence["events"] = events
+        del sequence["time"]
 
         return sequence
 
@@ -368,7 +370,7 @@ class BeatmapDatasetIterable:
         Returns:
             The same sequence with tokenized events.
         """
-        tokens = torch.empty(len(sequence["tokens"] + 2), dtype=torch.long)
+        tokens = torch.empty(len(sequence["events"]) + 2, dtype=torch.long)
         tokens[0] = self.tokenizer.sos_id
         for i, event in enumerate(sequence["events"]):
             tokens[i + 1] = self.tokenizer.encode(event)
@@ -400,6 +402,7 @@ class BeatmapDatasetIterable:
         padded_tokens[:n] = tokens[:n]
         sequence["decoder_input_ids"] = padded_tokens[:-1]
         sequence["labels"] = padded_tokens[1:]
+        sequence["decoder_attention_mask"] = padded_tokens[:-1] != self.tokenizer.pad_id
         del sequence["tokens"]
         return sequence
 
@@ -448,7 +451,7 @@ class BeatmapDatasetIterable:
             and target sequence of `token_seq_len` event tokens.
         """
         for beatmap_path in self.beatmap_files:
-            audio_path = beatmap_path.parent / list(beatmap_path.parent.glob('audio.*'))[0]
+            audio_path = beatmap_path.parents[1] / list(beatmap_path.parents[1].glob('audio.*'))[0]
             audio_samples, osu_beatmap = self._get_audio_and_osu(audio_path, beatmap_path)
 
             if audio_samples is None or osu_beatmap is None:
