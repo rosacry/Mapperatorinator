@@ -35,6 +35,7 @@ class OrsDataset(IterableDataset):
         "tokenizer",
         "cycle_length",
         "shuffle",
+        "per_track",
         "beatmap_files",
     )
 
@@ -51,6 +52,7 @@ class OrsDataset(IterableDataset):
             tokenizer: Tokenizer,
             cycle_length: int = 1,
             shuffle: bool = False,
+            per_track: bool = False,
             beatmap_files: Optional[list[Path]] = None,
     ):
         """Manage and process ORS dataset.
@@ -72,6 +74,7 @@ class OrsDataset(IterableDataset):
         self.tokenizer = tokenizer
         self.cycle_length = cycle_length
         self.shuffle = shuffle
+        self.per_track = per_track and beatmap_files is None
         self.beatmap_files = beatmap_files
         self.sample_rate = sample_rate
         self.frame_size = frame_size
@@ -102,8 +105,15 @@ class OrsDataset(IterableDataset):
 
         return beatmap_files
 
+    def _get_track_paths(self) -> list[Path]:
+        track_paths = []
+        track_names = ["Track" + str(i).zfill(5) for i in range(self.start, self.end)]
+        for track_name in track_names:
+            track_paths.append(Path(os.path.join(self.path, track_name)))
+        return track_paths
+
     def __iter__(self) -> InterleavingBeatmapDatasetIterable | BeatmapDatasetIterable:
-        beatmap_files = self._get_beatmap_files()
+        beatmap_files = self._get_track_paths() if self.per_track else self._get_beatmap_files()
 
         if self.shuffle:
             random.shuffle(beatmap_files)
@@ -126,6 +136,7 @@ class OrsDataset(IterableDataset):
             self.tgt_seq_len,
             self.parser,
             self.tokenizer,
+            self.per_track,
         )
 
 
@@ -177,6 +188,7 @@ class BeatmapDatasetIterable:
         "tgt_seq_len",
         "frame_seq_len",
         "token_seq_len",
+        "per_track",
     )
 
     def __init__(
@@ -188,10 +200,12 @@ class BeatmapDatasetIterable:
             tgt_seq_len: int,
             parser: OsuParser,
             tokenizer: Tokenizer,
+            per_track: bool,
     ):
         self.beatmap_files = beatmap_files
         self.parser = parser
         self.tokenizer = tokenizer
+        self.per_track = per_track
         self.sample_rate = sample_rate
         self.frame_size = frame_size
         self.src_seq_len = src_seq_len
@@ -204,34 +218,6 @@ class BeatmapDatasetIterable:
         # [SOS] token + event_tokens[:-1] creates N target sequence
         # event_tokens[1:] + [EOS] token creates N label sequence
         self.token_seq_len = tgt_seq_len + 1
-
-    def _get_audio_and_osu(self, audio_path: Path, beatmap_path: Path) -> (tuple[npt.NDArray, Beatmap]
-                                                                           | tuple[None, None]):
-        """Load an .osz archive and get its audio samples and .osu beatmap.
-
-        An .osz archive may have multiple .osu beatmaps, only one is selected based
-        on OszLoader's criteria.
-
-        If an archive is corrupted (bad audio, bad metadata, missing files etc.),
-        we index the selection result as `None`, which will be skipped on subsequent queries.
-
-        Args:
-            audio_path: Path to audio file.
-            beatmap_path: Path to .osu beatmap file.
-
-        Returns:
-            audio_samples: Audio time series.
-            osu_beatmap: A list of strings (osu beatmap data).
-        """
-        try:
-            audio_samples = self._load_audio_file(audio_path)
-            osu_beatmap = Beatmap.from_path(beatmap_path)
-        except Exception as e:
-            logging.warning(f"skipped: {beatmap_path}")
-            logging.warning(f"reason: {e}")
-            return None, None
-
-        return audio_samples, osu_beatmap
 
     def _load_audio_file(self, file: Path) -> npt.NDArray:
         """Load an audio file as a numpy time-series array
@@ -436,46 +422,47 @@ class BeatmapDatasetIterable:
         return sequence
 
     def __iter__(self):
-        return self._get_next()
+        return self._get_next_tracks() if self.per_track else self._get_next_beatmaps()
 
-    def _get_next(self) -> dict[int, int]:
-        """Generate samples.
-
-        A single .osz archive may yield multiple samples.
-
-        This is a generator that provides unlimited samples. When all .osz archives are
-        read, it will cycle to the beginning and repeat the samples.
-
-        Yields:
-            A sample, which contains a source sequence of `frame_seq_len` audio frames
-            and target sequence of `token_seq_len` event tokens.
-        """
+    def _get_next_beatmaps(self) -> dict:
         for beatmap_path in self.beatmap_files:
             audio_path = beatmap_path.parents[1] / list(beatmap_path.parents[1].glob('audio.*'))[0]
-            audio_samples, osu_beatmap = self._get_audio_and_osu(audio_path, beatmap_path)
+            audio_samples = self._load_audio_file(audio_path)
 
-            if audio_samples is None or osu_beatmap is None:
-                continue
+            for sample in self._get_next_beatmap(audio_samples, beatmap_path):
+                yield sample
 
-            current_idx = int(os.path.basename(beatmap_path)[:6])
-            current_id = osu_beatmap.beatmap_id
+    def _get_next_tracks(self) -> dict:
+        for track_path in self.beatmap_files:
+            beatmap_files = track_path.glob("beatmaps/*")
+            audio_path = track_path / list(track_path.glob('audio.*'))[0]
+            audio_samples = self._load_audio_file(audio_path)
 
-            frames, frame_times = self._get_frames(audio_samples)
-            events = self.parser.parse(osu_beatmap)
+            for beatmap_path in beatmap_files:
+                for sample in self._get_next_beatmap(audio_samples, beatmap_path):
+                    yield sample
 
-            sequences = self._create_sequences(
-                events,
-                frames,
-                frame_times,
-                current_idx,
-                current_id,
-            )
+    def _get_next_beatmap(self, audio_samples, beatmap_path) -> dict:
+        osu_beatmap = Beatmap.from_path(beatmap_path)
+        current_idx = int(os.path.basename(beatmap_path)[:6])
+        current_id = osu_beatmap.beatmap_id
 
-            for sequence in sequences:
-                sequence = self._trim_time_shifts(sequence)
-                sequence = self._tokenize_sequence(sequence)
-                sequence = self._pad_frame_sequence(sequence)
-                sequence = self._pad_and_split_token_sequence(sequence)
-                # if sequence["tokens"][1] == self.tokenizer.eos_id:
-                #    continue
-                yield sequence
+        frames, frame_times = self._get_frames(audio_samples)
+        events = self.parser.parse(osu_beatmap)
+
+        sequences = self._create_sequences(
+            events,
+            frames,
+            frame_times,
+            current_idx,
+            current_id,
+        )
+
+        for sequence in sequences:
+            sequence = self._trim_time_shifts(sequence)
+            sequence = self._tokenize_sequence(sequence)
+            sequence = self._pad_frame_sequence(sequence)
+            sequence = self._pad_and_split_token_sequence(sequence)
+            # if sequence["tokens"][1] == self.tokenizer.eos_id:
+            #    continue
+            yield sequence
