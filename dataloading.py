@@ -31,7 +31,6 @@ def main(args: DictConfig):
         tokenizer,
         args.optim.cycle_length,
         True,
-        beatmap_files=[Path("C:\\Users\\Olivier\\Documents\\Collections\\Beatmap ML Datasets\\ORS16291\\Track04755\\beatmaps\\020144M000.osu")]
     )
 
     dataloader = DataLoader(
