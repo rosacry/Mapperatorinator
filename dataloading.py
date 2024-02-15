@@ -31,6 +31,7 @@ def main(args: DictConfig):
         tokenizer,
         args.optim.cycle_length,
         True,
+        args.optim.per_track,
     )
 
     dataloader = DataLoader(

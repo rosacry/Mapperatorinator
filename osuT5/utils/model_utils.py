@@ -113,6 +113,7 @@ def get_dataloaders(tokenizer: Tokenizer, args: DictConfig) -> tuple[DataLoader,
             tokenizer,
             args.optim.cycle_length,
             True,
+            args.optim.per_track,
         ),
         "test": OrsDataset(
             args.test_dataset_path,
@@ -124,6 +125,7 @@ def get_dataloaders(tokenizer: Tokenizer, args: DictConfig) -> tuple[DataLoader,
             args.model.max_target_len,
             parser,
             tokenizer,
+            per_track=args.optim.per_track,
         ),
     }
 

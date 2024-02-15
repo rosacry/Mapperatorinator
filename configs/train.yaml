@@ -23,6 +23,7 @@ optim:                  # Optimizer settings
   base_lr: 2e-2
   batch_size: 32
   cycle_length: 16
+  per_track: false      # Loads all beatmaps in a track sequentially which optimizes audio data loading
   total_steps: 65536
   warmup_steps: 10000
   lr_scheduler: cosine
