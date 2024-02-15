@@ -92,6 +92,10 @@ class OsuParser:
         Returns:
             pos: Last position of the slider.
         """
+        # Ignore sliders which are too big
+        if len(slider.curve.points) >= 100:
+            return last_pos
+
         time = int(slider.time.total_seconds() * 1000)
         pos = np.array(slider.position)
         dist = int(np.linalg.norm(pos - last_pos))
