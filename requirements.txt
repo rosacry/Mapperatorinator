@@ -5,4 +5,3 @@ PyYAML
 transformers
 hydra-core
 tensorboard
-slider
