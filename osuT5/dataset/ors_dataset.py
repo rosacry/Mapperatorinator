@@ -112,7 +112,7 @@ class OrsDataset(IterableDataset):
             track_paths.append(Path(os.path.join(self.path, track_name)))
         return track_paths
 
-    def __iter__(self) -> InterleavingBeatmapDatasetIterable | BeatmapDatasetIterable:
+    def __iter__(self):
         beatmap_files = self._get_track_paths() if self.per_track else self._get_beatmap_files()
 
         if self.shuffle:
@@ -416,9 +416,9 @@ class BeatmapDatasetIterable:
                 device=frames.device,
             )
             padded_frames[:n] = frames[:n]
-            sequence["frames"] = padded_frames
+            sequence["frames"] = torch.flatten(padded_frames)
         else:
-            sequence["frames"] = frames
+            sequence["frames"] = torch.flatten(frames)
 
         return sequence
 

@@ -14,7 +14,6 @@ from osuT5.tokenizer import Tokenizer
 
 
 def forward(model: OsuT, batch):
-    batch["frames"] = torch.flatten(batch["frames"], start_dim=1)
     outputs = model(**batch)
     loss = outputs.loss
 
