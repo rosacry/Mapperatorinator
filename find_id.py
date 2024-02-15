@@ -35,7 +35,7 @@ def main(args: DictConfig):
     beatmaps = dataset._get_beatmap_files()
     for beatmap_path in beatmaps:
         beatmap = Beatmap.from_path(beatmap_path)
-        if beatmap.beatmap_id == 1473252:
+        if beatmap.beatmap_id == 3135149:
             print(beatmap_path)
 
 

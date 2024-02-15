@@ -2,10 +2,12 @@ from pathlib import Path
 
 import hydra
 import tqdm
+from matplotlib import pyplot as plt
 from omegaconf import DictConfig
 from torch.utils.data import DataLoader
 
 from osuT5.dataset import OsuParser, OrsDataset
+from osuT5.model.spectrogram import MelSpectrogram
 from osuT5.utils import (
     setup_args,
     get_tokenizer,
@@ -44,9 +46,21 @@ def main(args: DictConfig):
         worker_init_fn=worker_init_fn,
     )
 
-    for _ in tqdm.tqdm(dataloader, smoothing=0.01):
-        pass
+    transform = MelSpectrogram(
+        args.model.spectrogram.sample_rate,
+        args.model.spectrogram.n_fft,
+        args.model.spectrogram.n_mels,
+        args.model.spectrogram.hop_length,
+    )
 
+    for b in tqdm.tqdm(dataloader, smoothing=0.01):
+        mels = transform(b["frames"])
+        print(b["beatmap_id"][0])
+        # plot the melspectrogram
+        for i in range(len(mels)):
+            plt.imshow(mels[i].numpy().T, aspect="auto", origin="lower", norm="log")
+            plt.show()
+        break
 
 if __name__ == "__main__":
     main()
