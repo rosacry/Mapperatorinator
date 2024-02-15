@@ -58,7 +58,7 @@ class OsuT(nn.Module):
         if encoder_outputs is None:
             frames = self.spectrogram(frames)  # (N, L, M)
             style_embeds = self.style_embedder(beatmap_idx, self.training)  # (N, D)
-            frames_concat = torch.concatenate((frames, style_embeds.unsqueeze(1).expand((-1, frames.shape[2], -1))), -1)
+            frames_concat = torch.concatenate((frames, style_embeds.unsqueeze(1).expand((-1, frames.shape[1], -1))), -1)
             inputs_embeds = self.encoder_embedder(frames_concat)
 
         output = self.transformer.forward(inputs_embeds=inputs_embeds, decoder_input_ids=decoder_input_ids, encoder_outputs=encoder_outputs, **kwargs)
