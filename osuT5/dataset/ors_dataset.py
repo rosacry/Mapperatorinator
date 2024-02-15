@@ -125,7 +125,7 @@ class OrsDataset(IterableDataset):
                 self.cycle_length,
             )
 
-        return self._iterable_factory(beatmap_files)
+        return self._iterable_factory(beatmap_files).__iter__()
 
     def _iterable_factory(self, beatmap_files: list[Path]):
         return BeatmapDatasetIterable(
