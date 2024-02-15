@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import os
 import random
-import logging
 from typing import Optional, Callable
 from pathlib import Path
 
@@ -20,6 +19,7 @@ OSZ_FILE_EXTENSION = ".osz"
 AUDIO_FILE_NAME = "audio.mp3"
 MILISECONDS_PER_SECOND = 1000
 STEPS_PER_MILLISECOND = 0.1
+LABEL_IGNORE_ID = -100
 
 
 class OrsDataset(IterableDataset):
@@ -387,7 +387,8 @@ class BeatmapDatasetIterable:
         )
         padded_tokens[:n] = tokens[:n]
         sequence["decoder_input_ids"] = padded_tokens[:-1]
-        sequence["labels"] = padded_tokens[1:]
+        # noinspection PyTypeChecker
+        sequence["labels"] = torch.where(padded_tokens[1:] == self.tokenizer.pad_id, LABEL_IGNORE_ID, padded_tokens[1:])
         sequence["decoder_attention_mask"] = padded_tokens[:-1] != self.tokenizer.pad_id
         del sequence["tokens"]
         return sequence
