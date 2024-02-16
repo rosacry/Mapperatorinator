@@ -38,6 +38,7 @@ def main(args: DictConfig):
     scheduler = get_scheduler(optimizer, args)
     train_dataloader, test_dataloader = get_dataloaders(tokenizer, args)
 
+    # noinspection PyTypeChecker
     (
         model,
         optimizer,
