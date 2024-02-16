@@ -49,7 +49,8 @@ class OsuT(nn.Module):
         """
         if beatmap_idx is None:
             batch_size = frames.shape[0] if frames is not None else decoder_input_ids.shape[0]
-            beatmap_idx = torch.full([batch_size], self.num_classes, dtype=torch.long, device=self.device)
+            device = frames.device if frames is not None else decoder_input_ids.device
+            beatmap_idx = torch.full([batch_size], self.num_classes, dtype=torch.long, device=device)
 
         if beatmap_id is not None and self.training:
             self.class_ids[beatmap_idx] = beatmap_id
