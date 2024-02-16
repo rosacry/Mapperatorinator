@@ -13,7 +13,6 @@ class Preprocessor(object):
         self.frame_size = args.model.spectrogram.hop_length
         self.sample_rate = args.model.spectrogram.sample_rate
         self.samples_per_sequence = self.frame_seq_len * self.frame_size
-        self.batch_size = args.batch_size
 
     def load(self, path: str) -> npt.ArrayLike:
         """Load an audio file as audio frames. Convert stereo to mono, normalize.
@@ -31,7 +30,7 @@ class Preprocessor(object):
         samples *= 1.0 / np.max(np.abs(samples))
         return samples
 
-    def segment(self, samples: npt.ArrayLike) -> tuple[torch.Tensor]:
+    def segment(self, samples: npt.ArrayLike) -> torch.Tensor:
         """Segment audio samples into sequences. Sequences are flattened frames.
 
         Args:
@@ -46,4 +45,4 @@ class Preprocessor(object):
         )
         sequences = np.reshape(samples, (-1, self.samples_per_sequence))
         sequences = torch.from_numpy(sequences).to(torch.float32)
-        return torch.split(sequences, self.batch_size)
+        return sequences

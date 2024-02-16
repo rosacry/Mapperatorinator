@@ -15,7 +15,7 @@ def main(args: DictConfig):
     t5_config = get_config(args)
 
     model = get_model(t5_config)
-    model.load_state_dict_old(checkpoint)
+    model.load_state_dict(checkpoint)
     model.eval()
     model.to(device)
 

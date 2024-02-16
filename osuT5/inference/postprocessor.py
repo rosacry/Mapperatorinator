@@ -45,10 +45,10 @@ class Postprocessor(object):
     def __init__(self, args: DictConfig):
         """Postprocessing stage that converts a list of Event objects to a beatmap file."""
         self.curve_types = {
-            EventType.SLIDER_BEZIER: "B",
-            EventType.SLIDER_CATMULI: "C",
-            EventType.SLIDER_LINEAR: "L",
-            EventType.SLIDER_PERFECT_CIRCLE: "P",
+            EventType.BEZIER_ANCHOR: "B",
+            EventType.CATMULL_ANCHOR: "C",
+            EventType.RED_ANCHOR: "B",
+            EventType.PERFECT_ANCHOR: "P",
         }
 
         self.output_path = args.output_path

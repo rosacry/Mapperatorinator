@@ -27,7 +27,7 @@ class Pipeline(object):
         )
 
     def generate(
-        self, model: nn.Module, sequences: tuple[torch.Tensor]
+        self, model: nn.Module, sequences: torch.Tensor
     ) -> tuple[list[list[Event]], list[int]]:
         """Generate a list of Event object lists and their timestamps given source sequences.
 
