@@ -34,7 +34,8 @@ def maybe_save_checkpoint(accelerator: Accelerator, args: DictConfig):
         or args.current_train_step % args.checkpoint.every_steps == 0
     ):
         output_dir = f"checkpoint-{args.current_train_step}"
-        accelerator.save_state(output_dir=output_dir)
+        # Saving T5 has an issue that safe serialization removes shared tensors and then the model can't be loaded.
+        accelerator.save_state(output_dir=output_dir, safe_serialization=False)
 
 
 def maybe_eval(
