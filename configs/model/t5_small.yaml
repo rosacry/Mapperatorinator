@@ -12,7 +12,7 @@ add_config:
   class_dropout_prob: ${..style.class_dropout_prob}
 
 max_seq_len: 512
-max_target_len: 256
+max_target_len: 512
 spectrogram:
   sample_rate: 16000
   hop_length: 128
