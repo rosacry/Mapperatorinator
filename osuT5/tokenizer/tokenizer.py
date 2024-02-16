@@ -1,13 +1,12 @@
 from __future__ import annotations
 
-from .event import get_event_ranges, Event, EventType
+from .event import event_ranges, Event, EventType, event_offset, event_range
 
 
 class Tokenizer:
     def __init__(self):
         """Fixed vocabulary tokenizer."""
         self._offset = 3
-        self._event_ranges = get_event_ranges()
 
     @property
     def pad_id(self) -> int:
@@ -24,43 +23,43 @@ class Tokenizer:
         """[EOS] token for end-of-sequence."""
         return 2
 
-    def decode(self, id: int) -> Event:
+    def decode(self, token_id: int) -> Event:
         """Converts token ids into Event objects."""
         offset = self._offset
-        for er in self._event_ranges:
-            if offset <= id <= offset + er.max_value - er.min_value:
-                return Event(type=er.type, value=er.min_value + id - offset)
+        for er in event_ranges:
+            if offset <= token_id <= offset + er.max_value - er.min_value:
+                return Event(type=er.type, value=er.min_value + token_id - offset)
             offset += er.max_value - er.min_value + 1
 
-        raise ValueError(f"id {id} is not mapped to any event")
+        raise ValueError(f"id {token_id} is not mapped to any event")
 
     def encode(self, event: Event) -> int:
         """Converts Event objects into token ids."""
-        offset = self._offset
-        for er in self._event_ranges:
-            if event.type is er.type:
-                if not er.min_value <= event.value <= er.max_value:
-                    raise ValueError(
-                        f"event value {event.value} is not within range "
-                        f"[{er.min_value}, {er.max_value}] for event type {event.type}"
-                    )
-                return offset + event.value - er.min_value
-            offset += er.max_value - er.min_value + 1
+        if event.type not in event_range:
+            raise ValueError(f"unknown event type: {event.type}")
 
-        raise ValueError(f"unknown event type: {event.type}")
+        er = event_range[event.type]
+        offset = self._offset + event_offset[event.type]
+
+        if not er.min_value <= event.value <= er.max_value:
+            raise ValueError(
+                f"event value {event.value} is not within range "
+                f"[{er.min_value}, {er.max_value}] for event type {event.type}"
+            )
+
+        return offset + event.value - er.min_value
 
     def event_type_range(self, event_type: EventType) -> tuple[int, int]:
         """Get the token id range of each Event type."""
-        offset = self._offset
-        for er in self._event_ranges:
-            if event_type is er.type:
-                return offset, offset + (er.max_value - er.min_value)
-            offset += er.max_value - er.min_value + 1
+        if event_type not in event_range:
+            raise ValueError(f"unknown event type: {event_type}")
 
-        raise ValueError(f"Unknown event type: {event_type}")
+        er = event_range[event_type]
+        offset = self._offset + event_offset[event_type]
+        return offset, offset + (er.max_value - er.min_value)
 
     def vocab_size(self) -> int:
         """Get the total number of token ids."""
         return self._offset + sum(
-            er.max_value - er.min_value + 1 for er in self._event_ranges
+            er.max_value - er.min_value + 1 for er in event_ranges
         )
