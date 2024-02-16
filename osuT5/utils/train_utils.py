@@ -2,6 +2,7 @@ import time
 
 import torch
 from accelerate import Accelerator
+from accelerate.logging import get_logger
 from omegaconf import DictConfig
 from torch.optim import Optimizer
 from torch.optim.lr_scheduler import LRScheduler
@@ -9,6 +10,9 @@ from torch.utils.data import DataLoader
 
 from osuT5.model import OsuT
 from .log_utils import Averager
+
+
+logger = get_logger(__name__)
 
 
 def forward(model: OsuT, batch):
@@ -83,7 +87,7 @@ def maybe_logging(
         averaged_stats = add_prefix("train", averaged_stats)
         accelerator.log(averaged_stats, step=args.current_train_step)
         averaged_stats["step"] = args.current_train_step
-        print(averaged_stats)
+        logger.info(averaged_stats)
 
         args.last_log = time.time()
 
@@ -139,6 +143,7 @@ def eval(
     averaged_stats = averager.average()
     averaged_stats = add_prefix("test", averaged_stats)
     accelerator.log(averaged_stats, step=args.current_train_step)
+    logger.info(averaged_stats)
 
 
 def train(
