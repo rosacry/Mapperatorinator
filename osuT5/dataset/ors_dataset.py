@@ -187,7 +187,7 @@ class BeatmapDatasetIterable:
         "src_seq_len",
         "tgt_seq_len",
         "frame_seq_len",
-        "token_seq_len",
+        "pre_token_len",
         "per_track",
     )
 
@@ -217,7 +217,7 @@ class BeatmapDatasetIterable:
         # [SOS] token + event_tokens + [EOS] token creates N+1 tokens
         # [SOS] token + event_tokens[:-1] creates N target sequence
         # event_tokens[1:] + [EOS] token creates N label sequence
-        self.token_seq_len = tgt_seq_len + 1
+        self.pre_token_len = self.tgt_seq_len // 2
 
     def _load_audio_file(self, file: Path) -> npt.NDArray:
         """Load an audio file as a numpy time-series array
@@ -298,11 +298,15 @@ class BeatmapDatasetIterable:
             target_start_idx = event_start_indices[split_start_idx]
             target_end_idx = event_end_indices[split_end_idx - 1]
 
+            split_pre_idx = max(split_start_idx - self.frame_seq_len, 0)
+            target_pre_idx = event_start_indices[split_pre_idx]
+
             # Create the sequence
             sequence = {
                 "time": frame_times[split_start_idx],
                 "frames": frames[split_start_idx:split_end_idx],
                 "events": events[target_start_idx:target_end_idx],
+                "pre_events": events[target_pre_idx:target_start_idx],
                 "beatmap_idx": beatmap_idx,
                 "beatmap_id": beatmap_id,
             }
@@ -322,24 +326,28 @@ class BeatmapDatasetIterable:
         Returns:
             The same sequence with trimmed time shifts.
         """
+        def process(events: list[Event]) -> list[Event]:
+            for i, event in enumerate(events):
+                if event.type == EventType.TIME_SHIFT:
+                    # We cant modify the event objects themselves because that will affect subsequent sequences
+                    events[i] = Event(EventType.TIME_SHIFT, int((event.value - start_time) * STEPS_PER_MILLISECOND))
+
+            # Loop through the events in reverse to remove any time shifts that occur before anchor events
+            delete_next_time_shift = False
+            for i in range(len(events) - 1, -1, -1):
+                if events[i].type == EventType.TIME_SHIFT and delete_next_time_shift:
+                    delete_next_time_shift = False
+                    del events[i]
+                    continue
+                elif events[i].type in [EventType.BEZIER_ANCHOR, EventType.PERFECT_ANCHOR, EventType.CATMULL_ANCHOR,
+                                        EventType.RED_ANCHOR]:
+                    delete_next_time_shift = True
+
+            return events
+
         start_time = sequence["time"]
-        for event in sequence["events"]:
-            if event.type == EventType.TIME_SHIFT:
-                event.value = int((event.value - start_time) * STEPS_PER_MILLISECOND)
-
-        # Loop through the events in reverse to remove any time shifts that occur before anchor events
-        events = sequence["events"]
-        delete_next_time_shift = False
-        for i in range(len(events) - 1, -1, -1):
-            if events[i].type == EventType.TIME_SHIFT and delete_next_time_shift:
-                delete_next_time_shift = False
-                del events[i]
-                continue
-            elif events[i].type in [EventType.BEZIER_ANCHOR, EventType.PERFECT_ANCHOR, EventType.CATMULL_ANCHOR,
-                                    EventType.RED_ANCHOR]:
-                delete_next_time_shift = True
-
-        sequence["events"] = events
+        sequence["events"] = process(sequence["events"])
+        sequence["pre_events"] = process(sequence["pre_events"])
         del sequence["time"]
 
         return sequence
@@ -363,15 +371,24 @@ class BeatmapDatasetIterable:
         tokens[-1] = self.tokenizer.eos_id
         sequence["tokens"] = tokens
         del sequence["events"]
+
+        pre_tokens = torch.empty(len(sequence["pre_events"]), dtype=torch.long)
+        for i, event in enumerate(sequence["pre_events"]):
+            pre_tokens[i] = self.tokenizer.encode(event)
+        sequence["pre_tokens"] = pre_tokens
+        del sequence["pre_events"]
+
         return sequence
 
     def _pad_and_split_token_sequence(self, sequence: dict) -> dict:
-        """Pad token sequence to a fixed length.
+        """Pad token sequence to a fixed length and split decoder input and labels.
 
-        Pad with `[PAD]` tokens until `token_seq_len`.
+        Pad with `[PAD]` tokens until `tgt_seq_len`.
 
         Token sequence (w/o last token) is the input to the transformer decoder,
         token sequence (w/o first token) is the label, a.k.a. decoder ground truth.
+
+        Prefix the token sequence with the pre_tokens sequence.
 
         Args:
             sequence: The input sequence.
@@ -380,17 +397,23 @@ class BeatmapDatasetIterable:
             The same sequence with padded tokens.
         """
         tokens = sequence["tokens"]
-        n = min(self.token_seq_len, len(tokens))
-        padded_tokens = (
-                torch.ones(self.token_seq_len, dtype=tokens.dtype, device=tokens.device)
-                * self.tokenizer.pad_id
-        )
-        padded_tokens[:n] = tokens[:n]
-        sequence["decoder_input_ids"] = padded_tokens[:-1]
+        pre_tokens = sequence["pre_tokens"]
+        n = min(self.tgt_seq_len - self.pre_token_len + 1, len(tokens))
+        m = min(self.pre_token_len, len(pre_tokens))
+
+        input_tokens = torch.full((self.tgt_seq_len,), self.tokenizer.pad_id, dtype=tokens.dtype, device=tokens.device)
+        input_tokens[self.pre_token_len - m:self.pre_token_len] = pre_tokens[-m:]
+        input_tokens[self.pre_token_len:self.pre_token_len + n - 1] = tokens[:n - 1]
+
+        label_tokens = torch.full((self.tgt_seq_len,), LABEL_IGNORE_ID, dtype=tokens.dtype, device=tokens.device)
+        label_tokens[self.pre_token_len:self.pre_token_len + n - 1] = tokens[1:n]
+
+        sequence["decoder_input_ids"] = input_tokens
+        sequence["decoder_attention_mask"] = input_tokens != self.tokenizer.pad_id
         # noinspection PyTypeChecker
-        sequence["labels"] = torch.where(padded_tokens[1:] == self.tokenizer.pad_id, LABEL_IGNORE_ID, padded_tokens[1:])
-        sequence["decoder_attention_mask"] = padded_tokens[:-1] != self.tokenizer.pad_id
+        sequence["labels"] = label_tokens
         del sequence["tokens"]
+        del sequence["pre_tokens"]
         return sequence
 
     def _pad_frame_sequence(self, sequence: dict) -> dict:
@@ -464,6 +487,4 @@ class BeatmapDatasetIterable:
             sequence = self._tokenize_sequence(sequence)
             sequence = self._pad_frame_sequence(sequence)
             sequence = self._pad_and_split_token_sequence(sequence)
-            # if sequence["tokens"][1] == self.tokenizer.eos_id:
-            #    continue
             yield sequence

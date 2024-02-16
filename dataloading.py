@@ -55,7 +55,7 @@ def main(args: DictConfig):
 
     for b in tqdm.tqdm(dataloader, smoothing=0.01):
         mels = transform(b["frames"])
-        print(b["beatmap_id"][0])
+        print(b["beatmap_id"])
         # plot the melspectrogram
         for i in range(len(mels)):
             plt.imshow(mels[i].numpy().T, aspect="auto", origin="lower", norm="log")
