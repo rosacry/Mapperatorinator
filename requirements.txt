@@ -5,3 +5,4 @@ PyYAML
 transformers
 hydra-core
 tensorboard
+slider==0.8.1
