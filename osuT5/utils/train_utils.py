@@ -1,24 +1,21 @@
 import time
 
 import torch
-from torch.utils.data import DataLoader
-from torch.utils.data import IterableDataset
-from torch.optim import Optimizer
-from torch.optim.lr_scheduler import LRScheduler
 from accelerate import Accelerator
 from omegaconf import DictConfig
+from torch.optim import Optimizer
+from torch.optim.lr_scheduler import LRScheduler
+from torch.utils.data import DataLoader
 
-from .log_utils import Averager
 from osuT5.model import OsuT
-from osuT5.tokenizer import Tokenizer
+from .log_utils import Averager
 
 
 def forward(model: OsuT, batch):
     outputs = model(**batch)
     loss = outputs.loss
 
-    stats = {}
-    stats["loss"] = loss.detach().float().item()
+    stats = {"loss": loss.detach().float().item()}
 
     return loss, stats
 
@@ -85,6 +82,7 @@ def maybe_logging(
         averaged_stats = averager.average()
         averaged_stats = add_prefix("train", averaged_stats)
         accelerator.log(averaged_stats, step=args.current_train_step)
+        averaged_stats["step"] = args.current_train_step
         print(averaged_stats)
 
         args.last_log = time.time()
@@ -150,7 +148,6 @@ def train(
     accelerator: Accelerator,
     lr_scheduler: LRScheduler,
     optimizer: Optimizer,
-    tokenizer: Tokenizer,
     args: DictConfig,
 ):
     model.train()
@@ -160,6 +157,8 @@ def train(
     while args.current_train_step <= args.optim.total_steps:
         # In case there is a remainder from previous epoch, we need to reset the optimizer
         optimizer.zero_grad(set_to_none=True)
+
+        print(f"Epoch {args.current_epoch}")
 
         for batch_id, batch in enumerate(train_dataloader, start=1):
             if args.current_train_step > args.optim.total_steps:
