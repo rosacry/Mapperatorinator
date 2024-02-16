@@ -1,9 +1,7 @@
 name: 'google/t5-v1_1-small'
 overwrite:
   dropout_rate: 0.0
-  d_model: 512
 add_config:
-  is_bf16: false
   sample_rate: ${..spectrogram.sample_rate}
   hop_length: ${..spectrogram.hop_length}
   n_fft: ${..spectrogram.n_fft}
