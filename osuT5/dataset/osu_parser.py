@@ -7,12 +7,14 @@ import numpy.typing as npt
 from slider import Beatmap, Circle, Slider, Spinner
 from slider.curve import Linear, Catmull, Perfect, MultiBezier
 
-from osuT5.tokenizer import Event, EventType
+from osuT5.tokenizer import Event, EventType, event_range
 
 
 class OsuParser:
     def __init__(self) -> None:
-        pass
+        dist_range = event_range[EventType.DISTANCE]
+        self.dist_min = dist_range.min_value
+        self.dist_max = dist_range.max_value
 
     def parse(self, beatmap: Beatmap) -> list[Event]:
         # noinspection PyUnresolvedReferences
@@ -58,6 +60,10 @@ class OsuParser:
 
         return events
 
+    def _clip_dist(self, dist: int) -> int:
+        """Clip distance to valid range."""
+        return int(np.clip(dist, self.dist_min, self.dist_max))
+
     def _parse_circle(self, circle: Circle, events: list[Event], last_pos: npt.NDArray) -> npt.NDArray:
         """Parse a circle hit object.
 
@@ -71,7 +77,7 @@ class OsuParser:
         """
         time = int(circle.time.total_seconds() * 1000)
         pos = np.array(circle.position)
-        dist = int(np.linalg.norm(pos - last_pos))
+        dist = self._clip_dist(np.linalg.norm(pos - last_pos))
 
         events.append(Event(EventType.TIME_SHIFT, time))
         events.append(Event(EventType.DISTANCE, dist))
@@ -98,7 +104,7 @@ class OsuParser:
 
         time = int(slider.time.total_seconds() * 1000)
         pos = np.array(slider.position)
-        dist = int(np.linalg.norm(pos - last_pos))
+        dist = self._clip_dist(np.linalg.norm(pos - last_pos))
         last_pos = pos
 
         events.append(Event(EventType.TIME_SHIFT, time))
@@ -120,7 +126,7 @@ class OsuParser:
         def add_anchor_time_dist(i: int, last_pos: npt.NDArray) -> npt.NDArray:
             time = int((slider.time + i / (control_point_count - 1) * duration).total_seconds() * 1000)
             pos = np.array(slider.curve.points[i])
-            dist = int(np.linalg.norm(pos - last_pos))
+            dist = self._clip_dist(np.linalg.norm(pos - last_pos))
             last_pos = pos
 
             events.append(Event(EventType.TIME_SHIFT, time))
@@ -148,7 +154,7 @@ class OsuParser:
 
         time = int(slider.end_time.total_seconds() * 1000)
         pos = np.array(slider.curve(1))
-        dist = int(np.linalg.norm(pos - last_pos))
+        dist = self._clip_dist(np.linalg.norm(pos - last_pos))
         last_pos = pos
 
         events.append(Event(EventType.TIME_SHIFT, time))
