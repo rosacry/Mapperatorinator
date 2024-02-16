@@ -1,6 +1,8 @@
+import os.path
 import time
 
 import torch
+import wandb
 from accelerate import Accelerator
 from accelerate.logging import get_logger
 from omegaconf import DictConfig
@@ -36,6 +38,33 @@ def maybe_save_checkpoint(accelerator: Accelerator, args: DictConfig):
         output_dir = f"checkpoint-{args.current_train_step}"
         # Saving T5 has an issue that safe serialization removes shared tensors and then the model can't be loaded.
         accelerator.save_state(output_dir=output_dir, safe_serialization=False)
+
+        wandb_tracker = accelerator.get_tracker("wandb")
+        if wandb_tracker is not None:
+            art = wandb.Artifact(
+                f"osuT5-{wandb.run.id}",
+                type="model",
+                metadata={
+                    "format": "accelerate",
+                    "max_seq_len": args.model.max_seq_len,
+                    "max_target_len": args.model.max_target_len,
+                    "num_classes": args.model.style.num_classes,
+                    "spectrogram": args.model.spectrogram,
+                    "current_train_step": args.current_train_step,
+                    "current_epoch": args.current_epoch,
+                    "best_loss": args.best_loss,
+                },
+            )
+
+            art.add_file(os.path.join(output_dir, "optimizer.bin"))
+            art.add_file(os.path.join(output_dir, "scheduler.bin"))
+            art.add_file(os.path.join(output_dir, "pytorch_model.bin"))
+            art.add_file(os.path.join(output_dir, "random_states_0.pkl"))
+
+            wandb.log_artifact(art, aliases=["best"] if args.is_best else None)
+            logger.info(f"Logged checkpoint to wandb: {art.name}")
+
+            args.is_best = False
 
 
 def maybe_eval(
@@ -146,6 +175,12 @@ def eval(
     accelerator.log(averaged_stats, step=args.current_train_step)
     logger.info(averaged_stats)
 
+    if averaged_stats["test/loss"] < args.best_loss:
+        args.best_loss = averaged_stats["test/loss"]
+        args.is_best = True
+    else:
+        args.is_best = False
+
 
 def train(
     model: OsuT,
@@ -193,3 +228,5 @@ def train(
 
     maybe_eval(model, accelerator, test_dataloader, args)
     maybe_save_checkpoint(accelerator, args)
+
+    accelerator.end_training()

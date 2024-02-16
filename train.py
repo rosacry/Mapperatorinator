@@ -1,5 +1,6 @@
+import numpy as np
 from accelerate import Accelerator
-from accelerate.utils import LoggerType, ProjectConfiguration
+from accelerate.utils import ProjectConfiguration
 from omegaconf import open_dict, DictConfig
 import hydra
 import torch
@@ -22,12 +23,21 @@ def main(args: DictConfig):
     accelerator = Accelerator(
         cpu=args.device == "cpu",
         mixed_precision=args.precision,
-        log_with=LoggerType.TENSORBOARD,
+        log_with=args.logging.log_with,
         project_config=ProjectConfiguration(
             project_dir=".", logging_dir="tensorboard_logs"
         ),
     )
-    accelerator.init_trackers("project")
+    accelerator.init_trackers(
+        "osuT5",
+        init_kwargs={
+            "wandb": {
+                "entity": "mappingtools",
+                "job_type": "training",
+                "config": dict(args),
+            }
+        }
+    )
 
     setup_args(args)
 
@@ -59,6 +69,8 @@ def main(args: DictConfig):
         args.current_train_step = 1
         args.current_epoch = 1
         args.last_log = time.time()
+        args.best_loss = np.Infinity
+        args.is_best = False
 
     train(
         model,
