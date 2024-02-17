@@ -4,7 +4,7 @@ defaults:
 
 compile: true          # PyTorch 2.0 optimization
 device: gpu             # Training device (cpu/gpu)
-precision: 'no'         # Enable mixed precision (no/fp16/bf16/fp8)
+precision: 'bf16'         # Enable mixed precision (no/fp16/bf16/fp8)
 seed: 42                # Project seed
 
 checkpoint_path: ''     # Project checkpoint directory (to resume training)
@@ -19,17 +19,17 @@ dataloader:             # Dataloader settings
   num_workers: 8
 
 optim:                  # Optimizer settings
-  name: adafactor
+  name: adamwscale
   base_lr: 2e-2
   batch_size: 128
   cycle_length: 16
   per_track: false      # Loads all beatmaps in a track sequentially which optimizes audio data loading
-  total_steps: 400000
+  total_steps: 65536
   warmup_steps: 10000
   lr_scheduler: cosine
   weight_decay: 0.0
   grad_clip: 1.0
-  grad_acc: 4
+  grad_acc: 2
   final_cosine: 1e-5
 
 eval:                   # Evaluation settings 
