@@ -64,9 +64,6 @@ class OsuT(nn.Module):
 
         output = self.transformer.forward(inputs_embeds=inputs_embeds, decoder_input_ids=decoder_input_ids, encoder_outputs=encoder_outputs, **kwargs)
 
-        if isinstance(output, Seq2SeqLMOutput) and not hasattr(output, "encoder_outputs"):
-            setattr(output, "encoder_outputs", (output.encoder_last_hidden_state, output.encoder_hidden_states, output.encoder_attentions))
-
         return output
 
     def load_state_dict_old(self, state_dict: OrderedDict[str, Any], strict: bool = True, assign: bool = False):
