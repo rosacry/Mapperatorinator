@@ -35,6 +35,12 @@ def maybe_save_checkpoint(accelerator: Accelerator, args: DictConfig):
         args.current_train_step > args.optim.total_steps
         or args.current_train_step % args.checkpoint.every_steps == 0
     ):
+        if args.current_loss < args.best_loss:
+            args.best_loss = args.current_loss
+            is_best = True
+        else:
+            is_best = False
+
         output_dir = f"checkpoint-{args.current_train_step}"
         # Saving T5 has an issue that safe serialization removes shared tensors and then the model can't be loaded.
         accelerator.save_state(output_dir=output_dir, safe_serialization=False)
@@ -52,7 +58,7 @@ def maybe_save_checkpoint(accelerator: Accelerator, args: DictConfig):
                     "spectrogram": args.model.spectrogram,
                     "current_train_step": args.current_train_step,
                     "current_epoch": args.current_epoch,
-                    "best_loss": args.best_loss,
+                    "current_loss": args.current_loss,
                 },
             )
 
@@ -61,10 +67,8 @@ def maybe_save_checkpoint(accelerator: Accelerator, args: DictConfig):
             art.add_file(os.path.join(output_dir, "pytorch_model.bin"))
             art.add_file(os.path.join(output_dir, "random_states_0.pkl"))
 
-            wandb.log_artifact(art, aliases=["best"] if args.is_best else None)
+            wandb.log_artifact(art, aliases=["best"] if is_best else None)
             logger.info(f"Logged checkpoint to wandb: {art.name}")
-
-            args.is_best = False
 
 
 def maybe_eval(
@@ -114,6 +118,7 @@ def maybe_logging(
 
         averager.update(stats)
         averaged_stats = averager.average()
+        averaged_stats["epoch"] = args.current_epoch
         averaged_stats = add_prefix("train", averaged_stats)
         accelerator.log(averaged_stats, step=args.current_train_step)
         averaged_stats["step"] = args.current_train_step
@@ -175,11 +180,7 @@ def eval(
     accelerator.log(averaged_stats, step=args.current_train_step)
     logger.info(averaged_stats)
 
-    if averaged_stats["test/loss"] < args.best_loss:
-        args.best_loss = averaged_stats["test/loss"]
-        args.is_best = True
-    else:
-        args.is_best = False
+    args.current_loss = averaged_stats["test/loss"]
 
 
 def train(
