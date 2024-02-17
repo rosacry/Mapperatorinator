@@ -29,7 +29,7 @@ optim:                  # Optimizer settings
   lr_scheduler: cosine
   weight_decay: 0.0
   grad_clip: 1.0
-  grad_acc: 2
+  grad_acc: 3
   final_cosine: 1e-5
 
 eval:                   # Evaluation settings 
