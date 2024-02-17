@@ -21,7 +21,7 @@ dataloader:             # Dataloader settings
 optim:                  # Optimizer settings
   name: adamwscale
   base_lr: 2e-2
-  batch_size: 128
+  batch_size: 129
   cycle_length: 16
   per_track: false      # Loads all beatmaps in a track sequentially which optimizes audio data loading
   total_steps: 65536
