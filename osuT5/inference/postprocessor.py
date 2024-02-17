@@ -129,6 +129,10 @@ class Postprocessor(object):
                 curve_type = anchor_info[0][0]
                 span_duration = ho_info[4] - ho_info[2]
                 total_duration = time - ho_info[2]
+
+                if total_duration == 0:
+                    continue
+
                 slides = int(round(span_duration / total_duration))
                 control_points = "|".join(f"{cp[1]}:{cp[2]}" for cp in anchor_info)
                 length = -dist
