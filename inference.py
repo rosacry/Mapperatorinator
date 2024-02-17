@@ -26,8 +26,8 @@ def main(args: DictConfig):
 
     audio = preprocessor.load(args.audio_path)
     sequences = preprocessor.segment(audio)
-    events, event_times = pipeline.generate(model, sequences)
-    postprocessor.generate(events, event_times, args.output_path)
+    events = pipeline.generate(model, sequences)
+    postprocessor.generate(events)
 
 
 if __name__ == "__main__":

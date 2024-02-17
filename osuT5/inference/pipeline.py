@@ -16,7 +16,6 @@ class Pipeline(object):
         """Model inference stage that processes sequences."""
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.tokenizer = tokenizer
-        self.batch_size = args.batch_size
         self.tgt_seq_len = args.model.max_target_len
         self.frame_seq_len = args.model.max_seq_len - 1
         self.frame_size = args.model.spectrogram.hop_length
@@ -26,9 +25,7 @@ class Pipeline(object):
             self.samples_per_sequence * MILISECONDS_PER_SECOND / self.sample_rate
         )
 
-    def generate(
-        self, model: nn.Module, sequences: torch.Tensor
-    ) -> tuple[list[list[Event]], list[int]]:
+    def generate( self, model: nn.Module, sequences: torch.Tensor) -> list[Event]:
         """Generate a list of Event object lists and their timestamps given source sequences.
 
         Args:
@@ -39,61 +36,58 @@ class Pipeline(object):
             events: List of Event object lists.
             event_times: Corresponding event times of Event object lists in miliseconds.
         """
-        events, event_times = [], []
+        events = []
+        prev_targets = torch.full((1, self.tgt_seq_len // 2), self.tokenizer.pad_id, dtype=torch.long, device=self.device)
+        beatmap_idx = torch.full((1,), 171, dtype=torch.long, device=self.device)
 
-        for batch_index, sources in enumerate(tqdm(sequences)):
-            n = len(sources)
-            unfinished = torch.LongTensor([[1] for _ in range(n)])
-            targets = torch.LongTensor([[self.tokenizer.sos_id] for _ in range(n)])
-            targets = targets.to(self.device)
-            sources = sources.to(self.device)
+        for sequence_index, frames in enumerate(tqdm(sequences)):
+            targets = torch.tensor([[self.tokenizer.sos_id]], dtype=torch.long, device=self.device)
+            targets = torch.concatenate([prev_targets, targets], dim=-1)
+            frames = frames.to(self.device)
             encoder_outputs = None
 
-            for _ in tqdm(range(self.tgt_seq_len - 1), leave=False):
+            for _ in range(self.tgt_seq_len // 2):
                 out = model.forward(
-                    frames=sources,
+                    frames=frames.unsqueeze(0),
                     decoder_input_ids=targets,
                     encoder_outputs=encoder_outputs,
+                    beatmap_idx=beatmap_idx,
                 )
-                encoder_outputs = out.encoder_outputs
+                encoder_outputs = (out.encoder_last_hidden_state, out.encoder_hidden_states, out.encoder_attentions)
                 logits = out.logits
                 logits = logits[:, -1, :]
                 logits = self._filter(logits, 0.9)
                 probabilities = F.softmax(logits, dim=-1)
                 tokens = torch.multinomial(probabilities, 1)
 
-                # change next tokens of finished sentences to PAD token
-                tokens = tokens.cpu() * unfinished + 0 * (1 - unfinished)
                 targets = torch.cat([targets, tokens.to(self.device)], dim=-1)
 
                 # check if any sentence in batch has reached EOS, mark as finished
                 eos_in_sentence = tokens == self.tokenizer.eos_id
-                unfinished.mul_((~eos_in_sentence).long())
 
                 # stop preemptively when all sentences have finished
-                if unfinished.max() == 0:
+                if eos_in_sentence.all():
                     break
 
-            for seq_index, target in enumerate(targets):
-                index = batch_index * self.batch_size + seq_index
-                result = self._decode(target, index)
-                events += result[0]
-                event_times += result[1]
+            predicted_targets = targets[:, self.tgt_seq_len // 2 + 1:-1]
+            result = self._decode(predicted_targets[0], sequence_index)
+            events += result
 
-        return events, event_times
+            prev_targets = torch.full((1, self.tgt_seq_len // 2,), self.tokenizer.pad_id, dtype=torch.long, device=self.device)
+            if predicted_targets.shape[1] > 0:
+                prev_targets[:, -predicted_targets.shape[1]:] = predicted_targets
 
-    def _decode(
-        self, tokens: torch.Tensor, index: int
-    ) -> tuple[list[list[Event]], list[int]]:
-        """Converts a list of tokens into Event object lists and their timestamps.
+        return events
+
+    def _decode(self, tokens: torch.Tensor, index: int) -> list[Event]:
+        """Converts a list of tokens into Event objects and converts to absolute time values.
 
         Args:
             tokens: List of tokens.
             index: Index of current source sequence.
 
         Returns:
-            events: List of Event object lists.
-            event_times: Corresponding event times of Event object lists in miliseconds.
+            events: List of Event objects.
         """
         events, event_times = [], []
         for token in tokens:
@@ -108,16 +102,15 @@ class Pipeline(object):
                 continue
 
             if event.type == EventType.TIME_SHIFT:
-                timestamp = (
+                current_time = (
                     index * self.miliseconds_per_sequence
                     + event.value * MILISECONDS_PER_STEP
                 )
-                events.append([])
-                event_times.append(timestamp)
-            else:
-                events[-1].append(event)
+                event.value = current_time
 
-        return events, event_times
+            events.append(event)
+
+        return events
 
     def _filter(
         self, logits: torch.Tensor, top_p: float, filter_value: float = -float("Inf")
