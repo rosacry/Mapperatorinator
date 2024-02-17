@@ -69,8 +69,8 @@ def main(args: DictConfig):
         args.current_train_step = 1
         args.current_epoch = 1
         args.last_log = time.time()
+        args.current_loss = np.Infinity
         args.best_loss = np.Infinity
-        args.is_best = False
 
     train(
         model,
