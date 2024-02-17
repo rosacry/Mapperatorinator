@@ -65,11 +65,27 @@ def get_optimizer(model: OsuT, args: DictConfig) -> Optimizer:
         },
     ]
 
-    optimizer = Adafactor(
-        optimizer_grouped_parameters,
-        lr=args.optim.base_lr,
-        relative_step=False,
-    )
+    if args.optim.name == 'adamw':
+        from transformers import AdamW
+        optimizer = AdamW(
+            optimizer_grouped_parameters,
+            lr=args.optim.base_lr,
+        )
+    elif args.optim.name == 'adamwscale':
+        from .copied_utils import AdamWScale
+        optimizer = AdamWScale(
+            optimizer_grouped_parameters,
+            lr=args.optim.base_lr,
+        )
+    elif args.optim.name == 'adafactor':
+        from transformers import Adafactor
+        optimizer = Adafactor(
+            optimizer_grouped_parameters,
+            lr=args.optim.base_lr,
+            relative_step=False,
+        )
+    else:
+        raise NotImplementedError
 
     return optimizer
 
