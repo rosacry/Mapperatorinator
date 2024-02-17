@@ -46,7 +46,7 @@ SliderTickRate:1
 //Storyboard Sound Samples
 
 [TimingPoints]
-$offset,$beat_length,4,2,1,100,1,0
+$timing_points
 
 [Colours]
 
