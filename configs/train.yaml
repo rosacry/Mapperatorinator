@@ -2,18 +2,18 @@ defaults:
   - _self_
   - model: t5_small
 
-compile: false          # PyTorch 2.0 optimization
+compile: true          # PyTorch 2.0 optimization
 device: gpu             # Training device (cpu/gpu)
 precision: 'no'         # Enable mixed precision (no/fp16/bf16/fp8)
 seed: 42                # Project seed
 
 checkpoint_path: ''     # Project checkpoint directory (to resume training)
-train_dataset_path: ''  # Training dataset directory
+train_dataset_path: '/root/ORS16291'  # Training dataset directory
 train_dataset_start: 0  # Training dataset start index
-train_dataset_end: 0    # Training dataset end index
-test_dataset_path: ''   # Testing/validation dataset directory
-test_dataset_start: 0   # Testing/validation dataset start index
-test_dataset_end: 0     # Testing/validation dataset end index
+train_dataset_end: 16200    # Training dataset end index
+test_dataset_path: '/root/ORS16291'   # Testing/validation dataset directory
+test_dataset_start: 16200   # Testing/validation dataset start index
+test_dataset_end: 16291     # Testing/validation dataset end index
 
 dataloader:             # Dataloader settings
   num_workers: 8
@@ -21,10 +21,10 @@ dataloader:             # Dataloader settings
 optim:                  # Optimizer settings
   name: adafactor
   base_lr: 2e-2
-  batch_size: 32
+  batch_size: 128
   cycle_length: 16
   per_track: false      # Loads all beatmaps in a track sequentially which optimizes audio data loading
-  total_steps: 65536
+  total_steps: 400000
   warmup_steps: 10000
   lr_scheduler: cosine
   weight_decay: 0.0
@@ -33,11 +33,11 @@ optim:                  # Optimizer settings
   final_cosine: 1e-5
 
 eval:                   # Evaluation settings 
-  every_steps: 100000
+  every_steps: 1000
   steps: 500
 
 checkpoint:             # Checkpoint settings
-  every_steps: 100000
+  every_steps: 5000
 
 logging:                # Logging settings
   log_with: 'wandb'     # Logging service (wandb/tensorboard)
