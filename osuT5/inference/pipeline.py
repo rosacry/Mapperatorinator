@@ -50,6 +50,7 @@ class Pipeline(object):
                 out = model.forward(
                     frames=frames.unsqueeze(0),
                     decoder_input_ids=targets,
+                    decoder_attention_mask=targets.ne(self.tokenizer.pad_id),
                     encoder_outputs=encoder_outputs,
                     beatmap_idx=beatmap_idx,
                 )
