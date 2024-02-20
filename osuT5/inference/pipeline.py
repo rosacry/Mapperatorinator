@@ -6,6 +6,7 @@ from tqdm import tqdm
 
 from omegaconf import DictConfig
 from osuT5.tokenizer import Event, EventType, Tokenizer
+from osuT5.model import OsuT
 
 MILISECONDS_PER_SECOND = 1000
 MILISECONDS_PER_STEP = 10
@@ -24,8 +25,9 @@ class Pipeline(object):
         self.miliseconds_per_sequence = (
             self.samples_per_sequence * MILISECONDS_PER_SECOND / self.sample_rate
         )
+        self.beatmap_id = args.beatmap_id
 
-    def generate( self, model: nn.Module, sequences: torch.Tensor) -> list[Event]:
+    def generate( self, model: OsuT, sequences: torch.Tensor) -> list[Event]:
         """Generate a list of Event object lists and their timestamps given source sequences.
 
         Args:
@@ -38,7 +40,13 @@ class Pipeline(object):
         """
         events = []
         prev_targets = torch.full((1, self.tgt_seq_len // 2), self.tokenizer.pad_id, dtype=torch.long, device=self.device)
-        beatmap_idx = torch.full((1,), 171, dtype=torch.long, device=self.device)
+
+        idx_dict = model.get_beatmap_idx()
+        if self.beatmap_id in idx_dict:
+            beatmap_idx = torch.full((1,), idx_dict[self.beatmap_id], dtype=torch.long, device=self.device)
+        else:
+            print(f"Beatmap ID {self.beatmap_id} not found in dataset, using default beatmap.")
+            beatmap_idx = torch.full((1,), idx_dict[-1], dtype=torch.long, device=self.device)
 
         for sequence_index, frames in enumerate(tqdm(sequences)):
             targets = torch.tensor([[self.tokenizer.sos_id]], dtype=torch.long, device=self.device)

@@ -34,9 +34,9 @@ class OsuT(nn.Module):
     def forward(
             self,
             frames: Optional[torch.FloatTensor] = None,
-            decoder_input_ids: Optional[torch.LongTensor] = None,
-            beatmap_idx: Optional[torch.LongTensor] = None,
-            beatmap_id: Optional[torch.LongTensor] = None,
+            decoder_input_ids: Optional[torch.Tensor] = None,
+            beatmap_idx: Optional[torch.Tensor] = None,
+            beatmap_id: Optional[torch.Tensor] = None,
             encoder_outputs: Optional[torch.FloatTensor] = None,
             **kwargs
     ) -> Seq2SeqLMOutput:
@@ -78,6 +78,11 @@ class OsuT(nn.Module):
             self.spectrogram.load_state_dict(get_state_dict_part(state_dict, "spectrogram"), strict, assign)
         else:
             self.load_state_dict(state_dict, strict, assign)
+
+    def get_beatmap_idx(self):
+        beatmap_idx = {beatmap_id: idx for idx, beatmap_id in enumerate(self.class_ids.cpu().numpy()) if beatmap_id != -1}
+        beatmap_idx[-1] = self.num_classes
+        return beatmap_idx
 
 
 def get_state_dict_part(state_dict: Mapping[str, Any], part: str):

@@ -35,6 +35,26 @@ class BeatmapConfig:
     slider_multiplier: float = 1.8
 
 
+def calculate_coordinates(last_pos, dist, num_samples, playfield_size):
+    # Generate a set of angles
+    angles = np.linspace(0, 2*np.pi, num_samples)
+
+    # Calculate the x and y coordinates for each angle
+    x_coords = last_pos[0] + dist * np.cos(angles)
+    y_coords = last_pos[1] + dist * np.sin(angles)
+
+    # Combine the x and y coordinates into a list of tuples
+    coordinates = list(zip(x_coords, y_coords))
+
+    # Filter out coordinates that are outside the playfield
+    coordinates = [(x, y) for x, y in coordinates if 0 <= x <= playfield_size[0] and 0 <= y <= playfield_size[1]]
+
+    if len(coordinates) == 0:
+        return [playfield_size] if last_pos[0] + last_pos[1] > (playfield_size[0] + playfield_size[1]) / 2 else [(0, 0)]
+
+    return coordinates
+
+
 class Postprocessor(object):
     def __init__(self, args: DictConfig):
         """Postprocessing stage that converts a list of Event objects to a beatmap file."""
@@ -46,7 +66,7 @@ class Postprocessor(object):
             artist=str(args.artist),
             title_unicode=str(args.title),
             artist_unicode=str(args.artist),
-            audio_filename=f"audio{pathlib.Path(args.audio_path).suffix}",
+            audio_filename=pathlib.Path(args.audio_path).name,
             slider_multiplier=float(args.slider_multiplier),
         )
         self.offset = args.offset
@@ -69,6 +89,7 @@ class Postprocessor(object):
         new_combo = 0
         ho_info = []
         anchor_info = []
+        last_pos = (256, 192)
 
         timing_point_strings = [
             f"{self.offset},{self.beat_length},4,2,0,100,1,0"
@@ -88,8 +109,11 @@ class Postprocessor(object):
                 new_combo = 4
                 continue
 
-            x = int(np.clip(dist, 0, 512))
-            y = int(np.clip(dist - 512, 0, 384))
+            # Find a point which is dist away from the last point but still within the playfield
+            coordinates = calculate_coordinates(last_pos, dist, 500, (512, 384))
+            pos = coordinates[np.random.randint(len(coordinates))]
+            last_pos = pos
+            x, y = pos
 
             if hit_type == EventType.CIRCLE:
                 hit_object_strings.append(f"{x},{y},{time},{1 | new_combo},0")

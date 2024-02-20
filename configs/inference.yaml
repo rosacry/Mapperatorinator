@@ -10,6 +10,8 @@ offset: 0               # Start of beat, in miliseconds, from the beginning of i
 slider_multiplier: 1.8  # Multiplier for slider velocity
 title: ''               # Song title
 artist: ''              # Song artist
+beatmap_path: ''        # Path to .osu file which will be remapped
+beatmap_id: -1          # Beatmap ID to use as style
 
 hydra:
   job:
