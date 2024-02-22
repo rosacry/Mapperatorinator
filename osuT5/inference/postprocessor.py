@@ -9,6 +9,7 @@ from string import Template
 import numpy as np
 from omegaconf import DictConfig
 
+from osuT5.inference.slider_path import SliderPath
 from osuT5.tokenizer import Event, EventType
 
 OSU_FILE_EXTENSION = ".osu"
@@ -58,6 +59,11 @@ def calculate_coordinates(last_pos, dist, num_samples, playfield_size):
 class Postprocessor(object):
     def __init__(self, args: DictConfig):
         """Postprocessing stage that converts a list of Event objects to a beatmap file."""
+        self.curve_type_shorthand = {
+            "B": "Bezier",
+            "P": "PerfectCurve",
+            "C": "Catmull",
+        }
 
         self.output_path = args.output_path
         self.audio_path = args.audio_path
@@ -116,7 +122,7 @@ class Postprocessor(object):
             x, y = pos
 
             if hit_type == EventType.CIRCLE:
-                hit_object_strings.append(f"{x},{y},{time},{1 | new_combo},0")
+                hit_object_strings.append(f"{int(round(x))},{int(round(y))},{int(round(time))},{1 | new_combo},0")
                 ho_info = []
 
             elif hit_type == EventType.SPINNER:
@@ -124,7 +130,7 @@ class Postprocessor(object):
 
             elif hit_type == EventType.SPINNER_END and len(ho_info) == 2:
                 hit_object_strings.append(
-                    f"{256},{192},{ho_info[0]},{8 | ho_info[1]},0,{time}"
+                    f"{256},{192},{int(round(ho_info[0]))},{8 | ho_info[1]},0,{int(round(time))}"
                 )
                 ho_info = []
 
@@ -157,21 +163,17 @@ class Postprocessor(object):
                 if total_duration == 0:
                     continue
 
-                slides = int(round(span_duration / total_duration))
-                control_points = "|".join(f"{cp[1]}:{cp[2]}" for cp in anchor_info)
-                length = -dist
-                last_pos = ho_info[:2]
-                for anchor in anchor_info:
-                    length += np.sqrt((anchor[1] - last_pos[0]) ** 2 + (anchor[2] - last_pos[1]) ** 2)
-                    last_pos = anchor[1:]
+                slides = max(int(round(span_duration / total_duration)), 1)
+                control_points = "|".join(f"{int(round(cp[1]))}:{int(round(cp[2]))}" for cp in anchor_info)
+                length = SliderPath(self.curve_type_shorthand[curve_type], np.array([(ho_info[0], ho_info[1])] + [(cp[1], cp[2]) for cp in anchor_info], dtype=float)).get_distance() - dist
 
                 hit_object_strings.append(
-                    f"{ho_info[0]},{ho_info[1]},{ho_info[2]},{2 | ho_info[3]},0,{curve_type}|{control_points},{slides},{length}"
+                    f"{int(round(ho_info[0]))},{int(round(ho_info[1]))},{int(round(ho_info[2]))},{2 | ho_info[3]},0,{curve_type}|{control_points},{slides},{length}"
                 )
 
                 sv = span_duration / length / self.beat_length * self.slider_multiplier * -10000
                 timing_point_strings.append(
-                    f"{ho_info[2]},{sv},4,2,0,100,0,0"
+                    f"{int(round(ho_info[2]))},{sv},4,2,0,100,0,0"
                 )
 
             new_combo = 0
