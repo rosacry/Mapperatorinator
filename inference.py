@@ -11,10 +11,14 @@ from osuT5.utils import get_config, get_model
 
 
 def get_args_from_beatmap(args: DictConfig):
-    if args.beatmap_path is None:
+    if args.beatmap_path is None or args.beatmap_path == "":
         return
 
     beatmap_path = Path(args.beatmap_path)
+
+    if not beatmap_path.is_file():
+        raise FileNotFoundError(f"Beatmap file {beatmap_path} not found.")
+
     beatmap = Beatmap.from_path(beatmap_path)
     args.audio_path = beatmap_path.parent / beatmap.audio_filename
     args.output_path = beatmap_path.parent
