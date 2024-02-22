@@ -1,6 +1,5 @@
 from __future__ import annotations
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
 from tqdm import tqdm
 
@@ -84,9 +83,37 @@ class Pipeline(object):
 
             prev_targets = torch.full((1, self.tgt_seq_len // 2,), self.tokenizer.pad_id, dtype=torch.long, device=self.device)
             if predicted_targets.shape[1] > 0:
-                prev_targets[:, -predicted_targets.shape[1]:] = predicted_targets
+                prev_targets[:, -predicted_targets.shape[1]:] = self._timeshift_tokens(predicted_targets, -self.miliseconds_per_sequence)
 
         return events
+
+    def _timeshift_tokens(self, tokens: torch.Tensor, time_offset: float) -> torch.Tensor:
+        """Changes the time offset of TIME_SHIFT tokens.
+
+        Args:
+            tokens: Long tensor of tokens shaped (batch size, sequence length).
+            time_offset: Time offset in miliseconds.
+
+        Returns:
+            tokens: List of tokens with updated time values.
+        """
+        for i in range(tokens.shape[0]):
+            for j in range(tokens.shape[1]):
+                token = tokens[i, j]
+                if token == self.tokenizer.sos_id:
+                    continue
+                elif token == self.tokenizer.eos_id:
+                    continue
+
+                try:
+                    event = self.tokenizer.decode(token.item())
+                except:
+                    continue
+
+                if event.type == EventType.TIME_SHIFT:
+                    event.value += int(time_offset / MILISECONDS_PER_STEP)
+                    tokens[i, j] = self.tokenizer.encode(event)
+        return tokens
 
     def _decode(self, tokens: torch.Tensor, index: int) -> list[Event]:
         """Converts a list of tokens into Event objects and converts to absolute time values.
