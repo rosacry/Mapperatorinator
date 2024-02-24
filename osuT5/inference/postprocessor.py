@@ -163,7 +163,7 @@ class Postprocessor(object):
                 if total_duration == 0:
                     continue
 
-                slides = max(int(round(span_duration / total_duration)), 1)
+                slides = max(int(round(total_duration / span_duration)), 1)
                 control_points = "|".join(f"{int(round(cp[1]))}:{int(round(cp[2]))}" for cp in anchor_info)
                 length = SliderPath(self.curve_type_shorthand[curve_type], np.array([(ho_info[0], ho_info[1])] + [(cp[1], cp[2]) for cp in anchor_info], dtype=float)).get_distance() - dist
 
