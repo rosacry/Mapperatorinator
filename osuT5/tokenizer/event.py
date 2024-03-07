@@ -56,9 +56,3 @@ event_ranges: list[EventRange] = [
 ]
 
 event_range: dict[EventType, EventRange] = {er.type: er for er in event_ranges}
-
-event_offset: dict[EventType, int] = {}
-offset = 0
-for er in event_ranges:
-    event_offset[er.type] = offset
-    offset += er.max_value - er.min_value + 1

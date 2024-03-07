@@ -1,12 +1,22 @@
 from __future__ import annotations
 
-from .event import event_ranges, Event, EventType, event_offset, event_range
+from .event import event_ranges, Event, EventType, event_range
 
 
 class Tokenizer:
     def __init__(self):
         """Fixed vocabulary tokenizer."""
         self._offset = 3
+        self.event_start: dict[EventType, int] = {}
+        self.event_end: dict[EventType, int] = {}
+        offset = self._offset
+        for er in event_ranges:
+            self.event_start[er.type] = offset
+            offset += er.max_value - er.min_value + 1
+            self.event_end[er.type] = offset
+        self.vocab_size: int = self._offset + sum(
+            er.max_value - er.min_value + 1 for er in event_ranges
+        )
 
     @property
     def pad_id(self) -> int:
@@ -39,7 +49,7 @@ class Tokenizer:
             raise ValueError(f"unknown event type: {event.type}")
 
         er = event_range[event.type]
-        offset = self._offset + event_offset[event.type]
+        offset = self.event_start[event.type]
 
         if not er.min_value <= event.value <= er.max_value:
             raise ValueError(
@@ -55,11 +65,6 @@ class Tokenizer:
             raise ValueError(f"unknown event type: {event_type}")
 
         er = event_range[event_type]
-        offset = self._offset + event_offset[event_type]
+        offset = self.event_start[event_type]
         return offset, offset + (er.max_value - er.min_value)
 
-    def vocab_size(self) -> int:
-        """Get the total number of token ids."""
-        return self._offset + sum(
-            er.max_value - er.min_value + 1 for er in event_ranges
-        )

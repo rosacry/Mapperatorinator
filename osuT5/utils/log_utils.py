@@ -2,8 +2,7 @@ from collections import defaultdict
 
 
 class Averager:
-    def __init__(self, weight: float = 1):
-        self.weight = weight
+    def __init__(self):
         self.reset()
 
     def reset(self):
@@ -12,8 +11,12 @@ class Averager:
 
     def update(self, stats):
         for key, value in stats.items():
-            self.total[key] = self.total[key] * self.weight + value * self.weight
-            self.counter[key] = self.counter[key] * self.weight + self.weight
+            if value is np.NDArray:
+                self.total[key] = self.total[key] + value.sum()
+                self.counter[key] = self.counter[key] + value.numel()
+            else:
+                self.total[key] = self.total[key] + value
+                self.counter[key] = self.counter[key] + 1
 
     def average(self):
         averaged_stats = {
