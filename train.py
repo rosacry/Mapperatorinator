@@ -79,6 +79,7 @@ def main(args: DictConfig):
         accelerator,
         scheduler,
         optimizer,
+        tokenizer,
         args,
     )
 

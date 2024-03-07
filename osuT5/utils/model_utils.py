@@ -30,7 +30,7 @@ def get_config(args: DictConfig) -> T5Config:
             setattr(config, k, v)
 
     tokenizer = Tokenizer()
-    setattr(config, "vocab_size", tokenizer.vocab_size())
+    setattr(config, "vocab_size", tokenizer.vocab_size)
     return config
 
 
