@@ -42,7 +42,7 @@ class Event:
 event_ranges: list[EventRange] = [
     EventRange(EventType.TIME_SHIFT, -512, 512),
     EventRange(EventType.DISTANCE, 0, 640),
-    EventRange(EventType.NEW_COMBO, 0, 0),
+    EventRange(EventType.NEW_COMBO, 0, 1),
     EventRange(EventType.CIRCLE, 0, 0),
     EventRange(EventType.SPINNER, 0, 0),
     EventRange(EventType.SPINNER_END, 0, 0),
