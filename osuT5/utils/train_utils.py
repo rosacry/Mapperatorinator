@@ -10,18 +10,28 @@ from torch.optim import Optimizer
 from torch.optim.lr_scheduler import LRScheduler
 from torch.utils.data import DataLoader
 
-from osuT5.tokenizer import Tokenizer
+from osuT5.tokenizer import Tokenizer, EventType
 from osuT5.model import OsuT
 from .log_utils import Averager
 
 logger = get_logger(__name__)
 
 
-def forward(model: OsuT, batch):
+def forward(model: OsuT, batch, tokenizer: Tokenizer = None):
     outputs = model(**batch)
     loss = outputs.loss
 
     stats = {"loss": loss.detach().float().item()}
+
+    if tokenizer is not None:
+        # Calculate accuracy metrics
+        preds = torch.argmax(outputs.logits, dim=-1)
+        stats["timing_acc"] = acc_range(preds, batch["labels"], tokenizer.event_start[EventType.TIME_SHIFT],
+                                        tokenizer.event_end[EventType.TIME_SHIFT])
+        stats["spacing_acc"] = acc_range(preds, batch["labels"], tokenizer.event_start[EventType.DISTANCE],
+                                         tokenizer.event_end[EventType.DISTANCE])
+        stats["other_acc"] = acc_range(preds, batch["labels"], tokenizer.event_end[EventType.DISTANCE],
+                                       tokenizer.event_end[EventType.DISTANCE] + tokenizer.vocab_size)
 
     return loss, stats
 
@@ -173,8 +183,7 @@ def eval(
         # We can't use the beatmap idx of the test set because these are not known by the model
         del batch["beatmap_idx"]
 
-        out, stats = forward(model, batch)
-        stats |= calc_acc(batch, out, tokenizer)
+        _, stats = forward(model, batch, tokenizer)
         averager.update(stats)
 
     averager.update({"time": time.time() - args.last_log})
@@ -186,23 +195,11 @@ def eval(
     args.current_loss = averaged_stats["test/loss"]
 
 
-def calc_acc(batch, out, tokenizer: Tokenizer):
-    # Calculate accuracy metrics
-    preds = torch.argmax(out.logits, dim=-1)
-    stats = {"timing_acc": acc_range(preds, batch["labels"], tokenizer.event_start[EventType.TIME_SHIFT],
-                                     tokenizer.event_end[EventType.TIME_SHIFT]),
-             "spacing_acc": acc_range(preds, batch["labels"], tokenizer.event_start[EventType.DISTANCE],
-                                      tokenizer.event_end[EventType.DISTANCE]),
-             "other_acc": acc_range(preds, batch["labels"], tokenizer.event_end[EventType.DISTANCE],
-                                    tokenizer.event_end[EventType.DISTANCE] + tokenizer.vocab_size)}
-    return stats
-
-
 def acc_range(preds, labels, start_index, end_index):
-    index = start_index <= labels < end_index
+    index = (start_index <= labels) & (labels < end_index)
     range_labels = labels[index]
     range_preds = preds[index]
-    return (range_preds == range_labels).detach().float().numpy()
+    return (range_preds == range_labels).detach().float().cpu().numpy()
 
 
 def train(
