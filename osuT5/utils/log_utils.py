@@ -1,5 +1,7 @@
 from collections import defaultdict
 
+import numpy as np
+
 
 class Averager:
     def __init__(self):
@@ -11,9 +13,9 @@ class Averager:
 
     def update(self, stats):
         for key, value in stats.items():
-            if value is np.NDArray:
+            if isinstance(value, np.ndarray):
                 self.total[key] = self.total[key] + value.sum()
-                self.counter[key] = self.counter[key] + value.numel()
+                self.counter[key] = self.counter[key] + value.size
             else:
                 self.total[key] = self.total[key] + value
                 self.counter[key] = self.counter[key] + 1
