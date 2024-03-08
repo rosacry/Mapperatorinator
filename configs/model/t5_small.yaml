@@ -16,7 +16,7 @@ spectrogram:
   sample_rate: 16000
   hop_length: 128
   n_fft: 1024
-  n_mels: 512
+  n_mels: 388
 style:
   num_classes: 64821
   class_dropout_prob: 0.2
