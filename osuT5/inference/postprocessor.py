@@ -112,7 +112,7 @@ class Postprocessor(object):
                 dist = event.value
                 continue
             elif hit_type == EventType.NEW_COMBO:
-                new_combo = 4
+                new_combo = 4 if event.value == 1 else 0
                 continue
 
             # Find a point which is dist away from the last point but still within the playfield
