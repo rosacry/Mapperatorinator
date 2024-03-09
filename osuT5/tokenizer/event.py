@@ -18,6 +18,8 @@ class EventType(Enum):
     RED_ANCHOR = "red_anchor"
     LAST_ANCHOR = "last_anchor"
     SLIDER_END = "slider_end"
+    STYLE = "style"
+    DIFFICULTY = "difficulty"
 
 
 @dataclasses.dataclass
@@ -54,5 +56,3 @@ event_ranges: list[EventRange] = [
     EventRange(EventType.LAST_ANCHOR, 0, 0),
     EventRange(EventType.SLIDER_END, 0, 0),
 ]
-
-event_range: dict[EventType, EventRange] = {er.type: er for er in event_ranges}

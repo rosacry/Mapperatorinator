@@ -29,8 +29,9 @@ def get_config(args: DictConfig) -> T5Config:
             assert not hasattr(config, k), f"config already has attribute {k}"
             setattr(config, k, v)
 
-    tokenizer = Tokenizer()
-    setattr(config, "vocab_size", tokenizer.vocab_size)
+    tokenizer = Tokenizer(args)
+    setattr(config, "vocab_size", tokenizer.vocab_size_out)
+    setattr(config, "vocab_size_in", tokenizer.vocab_size_in)
     return config
 
 
@@ -39,8 +40,8 @@ def get_model(config: T5Config) -> OsuT:
     return model
 
 
-def get_tokenizer() -> Tokenizer:
-    return Tokenizer()
+def get_tokenizer(args: DictConfig) -> Tokenizer:
+    return Tokenizer(args)
 
 
 def get_optimizer(model: OsuT, args: DictConfig) -> Optimizer:
@@ -130,6 +131,9 @@ def get_dataloaders(tokenizer: Tokenizer, args: DictConfig) -> tuple[DataLoader,
             args.optim.cycle_length,
             True,
             args.optim.per_track,
+            True,
+            args.control.class_dropout_prob,
+            args.control.diff_dropout_prob,
         ),
         "test": OrsDataset(
             args.test_dataset_path,
@@ -142,6 +146,8 @@ def get_dataloaders(tokenizer: Tokenizer, args: DictConfig) -> tuple[DataLoader,
             parser,
             tokenizer,
             per_track=args.optim.per_track,
+            class_dropout_prob=1.0,
+            diff_dropout_prob=0.0,
         ),
     }
 
