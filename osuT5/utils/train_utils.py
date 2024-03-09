@@ -31,7 +31,7 @@ def forward(model: OsuT, batch, tokenizer: Tokenizer = None):
         stats["spacing_acc"] = acc_range(preds, batch["labels"], tokenizer.event_start[EventType.DISTANCE],
                                          tokenizer.event_end[EventType.DISTANCE])
         stats["other_acc"] = acc_range(preds, batch["labels"], tokenizer.event_end[EventType.DISTANCE],
-                                       tokenizer.event_end[EventType.DISTANCE] + tokenizer.vocab_size)
+                                       tokenizer.event_end[EventType.DISTANCE] + tokenizer.vocab_size_out)
 
     return loss, stats
 

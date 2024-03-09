@@ -15,6 +15,13 @@ test_dataset_path: '/root/ORS16291'   # Testing/validation dataset directory
 test_dataset_start: 16200   # Testing/validation dataset start index
 test_dataset_end: 16291     # Testing/validation dataset end index
 
+control:
+  num_classes: 64821
+  num_diff_classes: 24
+  max_diff: 12
+  class_dropout_prob: 0.2
+  diff_dropout_prob: 0.2
+
 dataloader:             # Dataloader settings
   num_workers: 8
 

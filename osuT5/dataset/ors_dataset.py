@@ -36,6 +36,9 @@ class OrsDataset(IterableDataset):
         "cycle_length",
         "shuffle",
         "per_track",
+        "train_tokenizer",
+        "class_dropout_prob",
+        "diff_dropout_prob",
         "beatmap_files",
     )
 
@@ -53,6 +56,9 @@ class OrsDataset(IterableDataset):
             cycle_length: int = 1,
             shuffle: bool = False,
             per_track: bool = False,
+            train_tokenizer: bool = False,
+            class_dropout_prob: float = 0.0,
+            diff_dropout_prob: float = 0.0,
             beatmap_files: Optional[list[Path]] = None,
     ):
         """Manage and process ORS dataset.
@@ -75,6 +81,9 @@ class OrsDataset(IterableDataset):
         self.cycle_length = cycle_length
         self.shuffle = shuffle
         self.per_track = per_track and beatmap_files is None
+        self.train_tokenizer = train_tokenizer
+        self.class_dropout_prob = class_dropout_prob
+        self.diff_dropout_prob = diff_dropout_prob
         self.beatmap_files = beatmap_files
         self.sample_rate = sample_rate
         self.frame_size = frame_size
@@ -137,6 +146,9 @@ class OrsDataset(IterableDataset):
             self.parser,
             self.tokenizer,
             self.per_track,
+            self.train_tokenizer,
+            self.class_dropout_prob,
+            self.diff_dropout_prob,
         )
 
 
@@ -189,6 +201,9 @@ class BeatmapDatasetIterable:
         "frame_seq_len",
         "pre_token_len",
         "per_track",
+        "train_tokenizer",
+        "class_dropout_prob",
+        "diff_dropout_prob",
     )
 
     def __init__(
@@ -201,11 +216,17 @@ class BeatmapDatasetIterable:
             parser: OsuParser,
             tokenizer: Tokenizer,
             per_track: bool,
+            train_tokenizer: bool,
+            class_dropout_prob: float = 0.0,
+            diff_dropout_prob: float = 0.0,
     ):
         self.beatmap_files = beatmap_files
         self.parser = parser
         self.tokenizer = tokenizer
         self.per_track = per_track
+        self.train_tokenizer = train_tokenizer
+        self.class_dropout_prob = class_dropout_prob
+        self.diff_dropout_prob = diff_dropout_prob
         self.sample_rate = sample_rate
         self.frame_size = frame_size
         self.src_seq_len = src_seq_len
@@ -263,7 +284,7 @@ class BeatmapDatasetIterable:
             frames: npt.NDArray,
             frame_times: npt.NDArray,
             beatmap_idx: int,
-            beatmap_id: int,
+            difficulty: float,
     ) -> list[dict[str, int | npt.NDArray | list[Event]]]:
         """Create frame and token sequences for training/testing.
 
@@ -308,7 +329,7 @@ class BeatmapDatasetIterable:
                 "events": events[target_start_idx:target_end_idx],
                 "pre_events": events[target_pre_idx:target_start_idx],
                 "beatmap_idx": beatmap_idx,
-                "beatmap_id": beatmap_id,
+                "difficulty": difficulty,
             }
             sequences.append(sequence)
 
@@ -471,6 +492,9 @@ class BeatmapDatasetIterable:
         current_idx = int(os.path.basename(beatmap_path)[:6])
         current_id = osu_beatmap.beatmap_id
 
+        if self.train_tokenizer:
+            self.tokenizer.beatmap_idx[current_id] = current_idx
+
         frames, frame_times = self._get_frames(audio_samples)
         events = self.parser.parse(osu_beatmap)
 
@@ -479,7 +503,7 @@ class BeatmapDatasetIterable:
             frames,
             frame_times,
             current_idx,
-            current_id,
+            osu_beatmap.stars,
         )
 
         for sequence in sequences:
