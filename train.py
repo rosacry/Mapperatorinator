@@ -43,7 +43,7 @@ def main(args: DictConfig):
 
     config = get_config(args)
     model = get_model(config)
-    tokenizer = get_tokenizer()
+    tokenizer = get_tokenizer(args)
     optimizer = get_optimizer(model, args)
     scheduler = get_scheduler(optimizer, args)
     train_dataloader, test_dataloader = get_dataloaders(tokenizer, args)
