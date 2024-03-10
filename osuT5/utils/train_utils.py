@@ -185,9 +185,6 @@ def eval(
         if batch_id == args.eval.steps * args.optim.grad_acc:
             break
 
-        # We can't use the beatmap idx of the test set because these are not known by the model
-        del batch["beatmap_idx"]
-
         _, stats = forward(model, batch, tokenizer)
         averager.update(stats)
 
