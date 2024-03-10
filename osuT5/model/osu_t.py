@@ -46,7 +46,9 @@ class OsuT(nn.Module):
             frames = self.spectrogram(frames)  # (N, L, M)
             inputs_embeds = self.encoder_embedder(frames)
 
-        output = self.transformer.forward(inputs_embeds=inputs_embeds, decoder_input_ids=decoder_input_ids, encoder_outputs=encoder_outputs, **kwargs)
+        decoder_inputs_embeds = self.decoder_embedder(decoder_input_ids)
+
+        output = self.transformer.forward(inputs_embeds=inputs_embeds, decoder_inputs_embeds=decoder_inputs_embeds, encoder_outputs=encoder_outputs, **kwargs)
 
         return output
 
