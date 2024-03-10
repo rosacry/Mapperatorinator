@@ -386,10 +386,9 @@ class BeatmapDatasetIterable:
         Returns:
             The same sequence with tokenized events.
         """
-        tokens = torch.empty(len(sequence["events"]) + 2, dtype=torch.long)
-        tokens[0] = self.tokenizer.sos_id
+        tokens = torch.empty(len(sequence["events"]) + 1, dtype=torch.long)
         for i, event in enumerate(sequence["events"]):
-            tokens[i + 1] = self.tokenizer.encode(event)
+            tokens[i] = self.tokenizer.encode(event)
         tokens[-1] = self.tokenizer.eos_id
         sequence["tokens"] = tokens
         del sequence["events"]
@@ -399,6 +398,12 @@ class BeatmapDatasetIterable:
             pre_tokens[i] = self.tokenizer.encode(event)
         sequence["pre_tokens"] = pre_tokens
         del sequence["pre_events"]
+
+        sequence["beatmap_idx"] = self.tokenizer.encode_style_idx(sequence["beatmap_idx"])\
+            if random.random() >= self.class_dropout_prob else self.tokenizer.style_unk
+
+        sequence["difficulty"] = self.tokenizer.encode_diff(sequence["difficulty"])\
+            if random.random() >= self.diff_dropout_prob else self.tokenizer.diff_unk
 
         return sequence
 
@@ -420,22 +425,29 @@ class BeatmapDatasetIterable:
         """
         tokens = sequence["tokens"]
         pre_tokens = sequence["pre_tokens"]
-        n = min(self.tgt_seq_len - self.pre_token_len + 1, len(tokens))
-        m = min(self.pre_token_len, len(pre_tokens))
+
+        # n + m + 2 + padding = tgt_seq_len
+        n = min(self.tgt_seq_len - 2, len(tokens) - 1)
+        m = min(self.tgt_seq_len - n - 2, len(pre_tokens))
 
         input_tokens = torch.full((self.tgt_seq_len,), self.tokenizer.pad_id, dtype=tokens.dtype, device=tokens.device)
-        input_tokens[self.pre_token_len - m:self.pre_token_len] = pre_tokens[-m:]
-        input_tokens[self.pre_token_len:self.pre_token_len + n - 1] = tokens[:n - 1]
+        input_tokens[0] = sequence["difficulty"]
+        input_tokens[1] = sequence["beatmap_idx"]
+        input_tokens[2:m + 2] = pre_tokens[-m:]
+        input_tokens[m + 2:n + m + 2] = tokens[:n]
 
         label_tokens = torch.full((self.tgt_seq_len,), LABEL_IGNORE_ID, dtype=tokens.dtype, device=tokens.device)
-        label_tokens[self.pre_token_len:self.pre_token_len + n - 1] = tokens[1:n]
+        label_tokens[m + 1:n + m + 2] = tokens[:n + 1]
 
         sequence["decoder_input_ids"] = input_tokens
         sequence["decoder_attention_mask"] = input_tokens != self.tokenizer.pad_id
-        # noinspection PyTypeChecker
         sequence["labels"] = label_tokens
+
         del sequence["tokens"]
         del sequence["pre_tokens"]
+        del sequence["difficulty"]
+        del sequence["beatmap_idx"]
+
         return sequence
 
     def _pad_frame_sequence(self, sequence: dict) -> dict:
