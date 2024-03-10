@@ -116,7 +116,7 @@ def get_scheduler(optimizer: Optimizer, args: DictConfig) -> LRScheduler:
 
 
 def get_dataloaders(tokenizer: Tokenizer, args: DictConfig) -> tuple[DataLoader, DataLoader]:
-    parser = OsuParser()
+    parser = OsuParser(tokenizer)
     dataset = {
         "train": OrsDataset(
             args.train_dataset_path,

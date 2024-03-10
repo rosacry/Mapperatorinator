@@ -7,12 +7,12 @@ import numpy.typing as npt
 from slider import Beatmap, Circle, Slider, Spinner
 from slider.curve import Linear, Catmull, Perfect, MultiBezier
 
-from osuT5.tokenizer import Event, EventType, event_range
+from osuT5.tokenizer import Event, EventType, Tokenizer
 
 
 class OsuParser:
-    def __init__(self) -> None:
-        dist_range = event_range[EventType.DISTANCE]
+    def __init__(self, tokenizer: Tokenizer) -> None:
+        dist_range = tokenizer.event_range[EventType.DISTANCE]
         self.dist_min = dist_range.min_value
         self.dist_max = dist_range.max_value
 

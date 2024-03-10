@@ -110,6 +110,10 @@ class Tokenizer:
         """Converts beatmap id into token id."""
         return self.encode(self.encode_style_event(beatmap_id))
 
+    def encode_style_idx(self, beatmap_idx: int) -> int:
+        """Converts beatmap idx into token id."""
+        return self.encode(Event(type=EventType.STYLE, value=beatmap_idx))
+
     @property
     def style_unk(self) -> int:
         """Gets the unknown style value token id."""
