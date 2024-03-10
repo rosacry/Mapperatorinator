@@ -39,20 +39,3 @@ class Event:
 
     def __str__(self) -> str:
         return f"{self.type.value}{self.value}"
-
-
-event_ranges: list[EventRange] = [
-    EventRange(EventType.TIME_SHIFT, -512, 512),
-    EventRange(EventType.DISTANCE, 0, 640),
-    EventRange(EventType.NEW_COMBO, 0, 1),
-    EventRange(EventType.CIRCLE, 0, 0),
-    EventRange(EventType.SPINNER, 0, 0),
-    EventRange(EventType.SPINNER_END, 0, 0),
-    EventRange(EventType.SLIDER_HEAD, 0, 0),
-    EventRange(EventType.BEZIER_ANCHOR, 0, 0),
-    EventRange(EventType.PERFECT_ANCHOR, 0, 0),
-    EventRange(EventType.CATMULL_ANCHOR, 0, 0),
-    EventRange(EventType.RED_ANCHOR, 0, 0),
-    EventRange(EventType.LAST_ANCHOR, 0, 0),
-    EventRange(EventType.SLIDER_END, 0, 0),
-]

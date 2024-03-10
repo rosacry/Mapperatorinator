@@ -59,6 +59,8 @@ def main(args: DictConfig):
         model, optimizer, scheduler, train_dataloader, test_dataloader
     )
 
+    accelerator.register_for_checkpointing(tokenizer)
+
     if args.checkpoint_path:
         accelerator.load_state(args.checkpoint_path)
 

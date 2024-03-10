@@ -64,7 +64,11 @@ def maybe_save_checkpoint(accelerator: Accelerator, args: DictConfig):
                     "format": "accelerate",
                     "max_seq_len": args.model.max_seq_len,
                     "max_target_len": args.model.max_target_len,
-                    "num_classes": args.model.style.num_classes,
+                    "num_classes": args.control.num_classes,
+                    "num_diff_classes": args.control.num_diff_classes,
+                    "max_difficulty": args.control.max_diff,
+                    "class_dropout_prob": args.control.class_dropout_prob,
+                    "diff_dropout_prob": args.control.diff_dropout_prob,
                     "spectrogram": args.model.spectrogram,
                     "current_train_step": args.current_train_step,
                     "current_epoch": args.current_epoch,
@@ -76,6 +80,7 @@ def maybe_save_checkpoint(accelerator: Accelerator, args: DictConfig):
             art.add_file(os.path.join(output_dir, "scheduler.bin"))
             art.add_file(os.path.join(output_dir, "pytorch_model.bin"))
             art.add_file(os.path.join(output_dir, "random_states_0.pkl"))
+            art.add_file(os.path.join(output_dir, "custom_checkpoint_0.pkl"))
 
             wandb.log_artifact(art, aliases=["best"] if is_best else None)
             logger.info(f"Logged checkpoint to wandb: {art.name}")
