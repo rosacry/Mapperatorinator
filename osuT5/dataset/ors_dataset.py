@@ -200,7 +200,7 @@ class BeatmapDatasetIterable:
         "src_seq_len",
         "tgt_seq_len",
         "frame_seq_len",
-        "pre_token_len",
+        "min_pre_token_len",
         "per_track",
         "train_tokenizer",
         "class_dropout_prob",
@@ -239,7 +239,7 @@ class BeatmapDatasetIterable:
         # [SOS] token + event_tokens + [EOS] token creates N+1 tokens
         # [SOS] token + event_tokens[:-1] creates N target sequence
         # event_tokens[1:] + [EOS] token creates N label sequence
-        self.pre_token_len = self.tgt_seq_len // 2
+        self.min_pre_token_len = 64
 
     def _load_audio_file(self, file: Path) -> npt.NDArray:
         """Load an audio file as a numpy time-series array
@@ -427,7 +427,7 @@ class BeatmapDatasetIterable:
         pre_tokens = sequence["pre_tokens"]
 
         # n + m + 2 + padding = tgt_seq_len
-        n = min(self.tgt_seq_len - 2, len(tokens) - 1)
+        n = min(self.tgt_seq_len - 2 - min(self.min_pre_token_len, len(pre_tokens)), len(tokens) - 1)
         m = min(self.tgt_seq_len - n - 2, len(pre_tokens))
 
         input_tokens = torch.full((self.tgt_seq_len,), self.tokenizer.pad_id, dtype=tokens.dtype, device=tokens.device)
