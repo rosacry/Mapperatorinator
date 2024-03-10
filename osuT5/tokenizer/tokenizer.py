@@ -1,10 +1,29 @@
+import json
+import pickle
+from pathlib import Path
+
 import numpy as np
 from omegaconf import DictConfig
+from tqdm import tqdm
 
 from .event import event_ranges, Event, EventType, EventRange
 
 
 class Tokenizer:
+    __slots__ = [
+        "_offset",
+        "input_event_ranges",
+        "num_classes",
+        "num_diff_classes",
+        "max_difficulty",
+        "event_range",
+        "event_start",
+        "event_end",
+        "vocab_size_out",
+        "vocab_size_in",
+        "beatmap_idx",
+    ]
+
     def __init__(self, args: DictConfig):
         """Fixed vocabulary tokenizer."""
         self._offset = 2
@@ -37,6 +56,36 @@ class Tokenizer:
         self.vocab_size_in: int = self.vocab_size_out + sum(
             er.max_value - er.min_value + 1 for er in self.input_event_ranges
         )
+
+        self._init_beatmap_idx(args)
+
+    def _init_beatmap_idx(self, args: DictConfig) -> None:
+        """Initializes and caches the beatmap index."""
+        if args is None or "train_dataset_path" not in args:
+            return
+
+        path = Path(args.train_dataset_path)
+        cache_path = path / "beatmap_idx.pickle"
+
+        if cache_path.exists():
+            with open(path / "beatmap_idx.pickle", "rb") as f:
+                self.beatmap_idx = pickle.load(f)
+            return
+
+        print("Caching beatmap index...")
+
+        for track in tqdm(path.iterdir()):
+            if not track.is_dir():
+                continue
+            metadata_file = track / "metadata.json"
+            with open(metadata_file) as f:
+                metadata = json.load(f)
+            for beatmap_name in metadata["Beatmaps"]:
+                beatmap_metadata = metadata["Beatmaps"][beatmap_name]
+                self.beatmap_idx[beatmap_metadata["BeatmapId"]] = beatmap_metadata["Index"]
+
+        with open(cache_path, "wb") as f:
+            pickle.dump(self.beatmap_idx, f)
 
     @property
     def pad_id(self) -> int:

@@ -97,7 +97,5 @@ def main(args: DictConfig):
     print(f"Total number of diff unks: {diff_unks}")
     print(f"Total number of style unks: {style_unks}")
 
-    print("learnt beatmap idx", tokenizer.beatmap_idx)
-
 if __name__ == "__main__":
     main()
