@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import random
 from typing import Optional, Callable
@@ -469,25 +470,38 @@ class BeatmapDatasetIterable:
     def __iter__(self):
         return self._get_next_tracks() if self.per_track else self._get_next_beatmaps()
 
+    @staticmethod
+    def _load_metadata(track_path: Path) -> dict:
+        metadata_file = track_path / "metadata.json"
+        with open(metadata_file) as f:
+            return json.load(f)
+
     def _get_next_beatmaps(self) -> dict:
         for beatmap_path in self.beatmap_files:
+            metadata = self._load_metadata(beatmap_path.parents[1])
+            difficulty = metadata["Beatmaps"][beatmap_path.stem]["StandardStarRating"]["0"]
+
             audio_path = beatmap_path.parents[1] / list(beatmap_path.parents[1].glob('audio.*'))[0]
             audio_samples = self._load_audio_file(audio_path)
 
-            for sample in self._get_next_beatmap(audio_samples, beatmap_path):
+            for sample in self._get_next_beatmap(audio_samples, beatmap_path, difficulty):
                 yield sample
 
     def _get_next_tracks(self) -> dict:
         for track_path in self.beatmap_files:
-            beatmap_files = track_path.glob("beatmaps/*")
+            metadata = self._load_metadata(track_path)
+
             audio_path = track_path / list(track_path.glob('audio.*'))[0]
             audio_samples = self._load_audio_file(audio_path)
 
-            for beatmap_path in beatmap_files:
-                for sample in self._get_next_beatmap(audio_samples, beatmap_path):
+            for beatmap_name in metadata["Beatmaps"]:
+                beatmap_path = (track_path / "beatmaps" / beatmap_name).with_suffix(".osu")
+                difficulty = metadata["Beatmaps"][beatmap_name]["StandardStarRating"]["0"]
+
+                for sample in self._get_next_beatmap(audio_samples, beatmap_path, difficulty):
                     yield sample
 
-    def _get_next_beatmap(self, audio_samples, beatmap_path) -> dict:
+    def _get_next_beatmap(self, audio_samples, beatmap_path, difficulty: float) -> dict:
         osu_beatmap = Beatmap.from_path(beatmap_path)
         current_idx = int(os.path.basename(beatmap_path)[:6])
         current_id = osu_beatmap.beatmap_id
@@ -503,7 +517,7 @@ class BeatmapDatasetIterable:
             frames,
             frame_times,
             current_idx,
-            osu_beatmap.stars,
+            difficulty,
         )
 
         for sequence in sequences:
