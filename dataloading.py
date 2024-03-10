@@ -32,7 +32,6 @@ def main(args: DictConfig):
         args.optim.cycle_length,
         True,
         args.optim.per_track,
-        True,
         args.control.class_dropout_prob,
         args.control.diff_dropout_prob,
     )
