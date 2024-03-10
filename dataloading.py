@@ -55,11 +55,17 @@ def main(args: DictConfig):
 
     # Make histogram of the lengths of the sequences
     lengths = []
+    diff_unks = 0
+    style_unks = 0
     for b in tqdm.tqdm(dataloader, smoothing=0.01):
         for i in range(len(b["frames"])):  # batch size
             length = b['decoder_attention_mask'][i].sum().item()
             lengths.append(length)
-        if len(lengths) > 10000:
+            if b['decoder_input_ids'][i][0] == tokenizer.diff_unk:
+                diff_unks += 1
+            if b['decoder_input_ids'][i][1] == tokenizer.style_unk:
+                style_unks += 1
+        if len(lengths) > 1000:
             break
 
         # mels = transform(b["frames"])
@@ -87,6 +93,9 @@ def main(args: DictConfig):
     print(f"Total number of sequences: {len(lengths)}")
     print(f"Total number of tokens: {sum(lengths)}")
     print(f"Total number of sequences with length 0: {lengths.count(2)}")
+
+    print(f"Total number of diff unks: {diff_unks}")
+    print(f"Total number of style unks: {style_unks}")
 
     print("learnt beatmap idx", tokenizer.beatmap_idx)
 
