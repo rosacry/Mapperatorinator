@@ -28,6 +28,7 @@ def get_args_from_beatmap(args: DictConfig):
     args.title = beatmap.title
     args.artist = beatmap.artist
     args.beatmap_id = beatmap.beatmap_id if args.beatmap_id == -1 else args.beatmap_id
+    args.difficulty = float(beatmap.stars()) if args.difficulty == -1 else args.difficulty
 
 
 @hydra.main(config_path="configs", config_name="inference", version_base="1.1")
