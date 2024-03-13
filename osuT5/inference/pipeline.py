@@ -25,6 +25,7 @@ class Pipeline(object):
             self.samples_per_sequence * MILISECONDS_PER_SECOND / self.sample_rate
         )
         self.beatmap_id = args.beatmap_id
+        self.difficulty = args.difficulty
 
     def generate( self, model: OsuT, sequences: torch.Tensor) -> list[Event]:
         """Generate a list of Event object lists and their timestamps given source sequences.
@@ -38,18 +39,21 @@ class Pipeline(object):
             event_times: Corresponding event times of Event object lists in miliseconds.
         """
         events = []
-        prev_targets = torch.full((1, self.tgt_seq_len // 2), self.tokenizer.pad_id, dtype=torch.long, device=self.device)
+        prev_targets = torch.full((1, 0), self.tokenizer.pad_id, dtype=torch.long, device=self.device)
 
-        idx_dict = model.get_beatmap_idx()
+        idx_dict = self.tokenizer.beatmap_idx
         if self.beatmap_id in idx_dict:
-            beatmap_idx = torch.full((1,), idx_dict[self.beatmap_id], dtype=torch.long, device=self.device)
+            style_token = self.tokenizer.encode_style(self.beatmap_id)
         else:
             print(f"Beatmap ID {self.beatmap_id} not found in dataset, using default beatmap.")
-            beatmap_idx = torch.full((1,), idx_dict[-1], dtype=torch.long, device=self.device)
+            style_token = self.tokenizer.style_unk
+
+        diff_token = self.tokenizer.encode_diff(self.difficulty) if self.difficulty is not None else self.tokenizer.diff_unk
 
         for sequence_index, frames in enumerate(tqdm(sequences)):
-            targets = torch.tensor([[self.tokenizer.sos_id]], dtype=torch.long, device=self.device)
-            targets = torch.concatenate([prev_targets, targets], dim=-1)
+            m = prev_targets.shape[1]
+            targets = torch.tensor([[diff_token, style_token]], dtype=torch.long, device=self.device)
+            targets = torch.concatenate([targets, prev_targets], dim=-1)
             frames = frames.to(self.device)
             encoder_outputs = None
 
@@ -59,7 +63,6 @@ class Pipeline(object):
                     decoder_input_ids=targets,
                     decoder_attention_mask=targets.ne(self.tokenizer.pad_id),
                     encoder_outputs=encoder_outputs,
-                    beatmap_idx=beatmap_idx,
                 )
                 encoder_outputs = (out.encoder_last_hidden_state, out.encoder_hidden_states, out.encoder_attentions)
                 logits = out.logits
@@ -77,13 +80,13 @@ class Pipeline(object):
                 if eos_in_sentence.all():
                     break
 
-            predicted_targets = targets[:, self.tgt_seq_len // 2 + 1:-1]
+            predicted_targets = targets[:, m + 2:-1]
             result = self._decode(predicted_targets[0], sequence_index)
             events += result
 
-            prev_targets = torch.full((1, self.tgt_seq_len // 2,), self.tokenizer.pad_id, dtype=torch.long, device=self.device)
-            if predicted_targets.shape[1] > 0:
-                prev_targets[:, -predicted_targets.shape[1]:] = self._timeshift_tokens(predicted_targets, -self.miliseconds_per_sequence)
+            prev_targets = predicted_targets
+            if prev_targets.shape[1] > 0:
+                prev_targets = self._timeshift_tokens(prev_targets, -self.miliseconds_per_sequence)
 
         return events
 
@@ -100,17 +103,8 @@ class Pipeline(object):
         for i in range(tokens.shape[0]):
             for j in range(tokens.shape[1]):
                 token = tokens[i, j]
-                if token == self.tokenizer.sos_id:
-                    continue
-                elif token == self.tokenizer.eos_id:
-                    continue
-
-                try:
+                if self.tokenizer.event_start[EventType.TIME_SHIFT] <= token < self.tokenizer.event_end[EventType.TIME_SHIFT]:
                     event = self.tokenizer.decode(token.item())
-                except:
-                    continue
-
-                if event.type == EventType.TIME_SHIFT:
                     event.value += int(time_offset / MILISECONDS_PER_STEP)
                     tokens[i, j] = self.tokenizer.encode(event)
         return tokens
@@ -125,11 +119,9 @@ class Pipeline(object):
         Returns:
             events: List of Event objects.
         """
-        events, event_times = [], []
+        events = []
         for token in tokens:
-            if token == self.tokenizer.sos_id:
-                continue
-            elif token == self.tokenizer.eos_id:
+            if token == self.tokenizer.eos_id:
                 break
 
             try:
