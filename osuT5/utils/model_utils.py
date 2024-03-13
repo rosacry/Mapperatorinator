@@ -16,7 +16,7 @@ from osuT5.model.osu_t import OsuT
 from osuT5.tokenizer import Tokenizer
 
 
-def get_config(args: DictConfig) -> T5Config:
+def get_config(args: DictConfig, tokenizer) -> T5Config:
     config = T5Config.from_pretrained(args.model.name)
 
     if hasattr(args.model, "overwrite"):
@@ -29,7 +29,6 @@ def get_config(args: DictConfig) -> T5Config:
             assert not hasattr(config, k), f"config already has attribute {k}"
             setattr(config, k, v)
 
-    tokenizer = Tokenizer(args)
     setattr(config, "vocab_size", tokenizer.vocab_size_out)
     setattr(config, "vocab_size_in", tokenizer.vocab_size_in)
     return config
