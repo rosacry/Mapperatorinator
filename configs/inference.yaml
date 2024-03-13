@@ -12,7 +12,7 @@ title: ''               # Song title
 artist: ''              # Song artist
 beatmap_path: ''        # Path to .osu file which will be remapped
 beatmap_id: -1          # Beatmap ID to use as style
-difficulty: 6           # Difficulty star rating to map
+difficulty: -1           # Difficulty star rating to map
 
 hydra:
   job:

@@ -48,7 +48,7 @@ class Pipeline(object):
             print(f"Beatmap ID {self.beatmap_id} not found in dataset, using default beatmap.")
             style_token = self.tokenizer.style_unk
 
-        diff_token = self.tokenizer.encode_diff(self.difficulty) if self.difficulty is not None else self.tokenizer.diff_unk
+        diff_token = self.tokenizer.encode_diff(self.difficulty) if self.difficulty != -1 else self.tokenizer.diff_unk
 
         for sequence_index, frames in enumerate(tqdm(sequences)):
             m = prev_targets.shape[1]
