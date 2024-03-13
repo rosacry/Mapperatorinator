@@ -249,7 +249,7 @@ def train(
 
         args.current_epoch += 1
 
-    maybe_eval(model, accelerator, test_dataloader, args)
+    maybe_eval(model, accelerator, test_dataloader, tokenizer, args)
     maybe_save_checkpoint(accelerator, args)
 
     accelerator.end_training()
