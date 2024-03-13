@@ -160,7 +160,7 @@ class Postprocessor(object):
                 span_duration = ho_info[4] - ho_info[2]
                 total_duration = time - ho_info[2]
 
-                if total_duration == 0:
+                if total_duration == 0 or span_duration == 0:
                     continue
 
                 slides = max(int(round(total_duration / span_duration)), 1)

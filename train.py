@@ -41,9 +41,9 @@ def main(args: DictConfig):
 
     setup_args(args)
 
-    config = get_config(args)
-    model = get_model(config)
     tokenizer = get_tokenizer(args)
+    config = get_config(args, tokenizer)
+    model = get_model(config)
     optimizer = get_optimizer(model, args)
     scheduler = get_scheduler(optimizer, args)
     train_dataloader, test_dataloader = get_dataloaders(tokenizer, args)
