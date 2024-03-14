@@ -382,7 +382,7 @@ class BeatmapDatasetIterable:
         tokens = torch.empty(len(sequence["events"]) + 2, dtype=torch.long)
         tokens[0] = self.tokenizer.sos_id
         for i, event in enumerate(sequence["events"]):
-            tokens[i] = self.tokenizer.encode(event)
+            tokens[i + 1] = self.tokenizer.encode(event)
         tokens[-1] = self.tokenizer.eos_id
         sequence["tokens"] = tokens
         del sequence["events"]
