@@ -417,7 +417,7 @@ class BeatmapDatasetIterable:
         Returns:
             The same sequence with padded tokens.
         """
-        special_token_length = 2
+        special_token_length = 0
 
         tokens = sequence["tokens"]
         pre_tokens = sequence["pre_tokens"]
@@ -427,8 +427,8 @@ class BeatmapDatasetIterable:
         m = min(self.tgt_seq_len - n - special_token_length, len(pre_tokens))
 
         input_tokens = torch.full((self.tgt_seq_len,), self.tokenizer.pad_id, dtype=tokens.dtype, device=tokens.device)
-        input_tokens[0] = sequence["difficulty_token"]
-        input_tokens[1] = sequence["beatmap_idx_token"]
+        # input_tokens[0] = sequence["difficulty_token"]
+        # input_tokens[1] = sequence["beatmap_idx_token"]
         input_tokens[special_token_length:m + special_token_length] = pre_tokens[-m:]
         input_tokens[m + special_token_length:n + m + special_token_length] = tokens[:n]
 
