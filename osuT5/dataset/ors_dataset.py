@@ -417,21 +417,23 @@ class BeatmapDatasetIterable:
         Returns:
             The same sequence with padded tokens.
         """
+        special_token_length = 2
+
         tokens = sequence["tokens"]
         pre_tokens = sequence["pre_tokens"]
 
         # n + m + 2 + padding = tgt_seq_len
-        n = min(self.tgt_seq_len - 2 - min(self.min_pre_token_len, len(pre_tokens)), len(tokens) - 1)
-        m = min(self.tgt_seq_len - n - 2, len(pre_tokens))
+        n = min(self.tgt_seq_len - special_token_length - min(self.min_pre_token_len, len(pre_tokens)), len(tokens) - 1)
+        m = min(self.tgt_seq_len - n - special_token_length, len(pre_tokens))
 
         input_tokens = torch.full((self.tgt_seq_len,), self.tokenizer.pad_id, dtype=tokens.dtype, device=tokens.device)
         input_tokens[0] = sequence["difficulty_token"]
         input_tokens[1] = sequence["beatmap_idx_token"]
-        input_tokens[2:m + 2] = pre_tokens[-m:]
-        input_tokens[m + 2:n + m + 2] = tokens[:n]
+        input_tokens[special_token_length:m + special_token_length] = pre_tokens[-m:]
+        input_tokens[m + special_token_length:n + m + special_token_length] = tokens[:n]
 
         label_tokens = torch.full((self.tgt_seq_len,), LABEL_IGNORE_ID, dtype=tokens.dtype, device=tokens.device)
-        label_tokens[m + 2:n + m + 2] = tokens[1:n + 1]
+        label_tokens[m + special_token_length:n + m + special_token_length] = tokens[1:n + 1]
 
         sequence["decoder_input_ids"] = input_tokens
         sequence["decoder_attention_mask"] = input_tokens != self.tokenizer.pad_id
