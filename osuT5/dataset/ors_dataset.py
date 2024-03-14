@@ -393,10 +393,10 @@ class BeatmapDatasetIterable:
         sequence["pre_tokens"] = pre_tokens
         del sequence["pre_events"]
 
-        sequence["beatmap_idx"] = self.tokenizer.encode_style_idx(sequence["beatmap_idx"])\
+        sequence["beatmap_idx_token"] = self.tokenizer.encode_style_idx(sequence["beatmap_idx"])\
             if random.random() >= self.class_dropout_prob else self.tokenizer.style_unk
 
-        sequence["difficulty"] = self.tokenizer.encode_diff(sequence["difficulty"])\
+        sequence["difficulty_token"] = self.tokenizer.encode_diff(sequence["difficulty"])\
             if random.random() >= self.diff_dropout_prob else self.tokenizer.diff_unk
 
         return sequence
@@ -425,8 +425,8 @@ class BeatmapDatasetIterable:
         m = min(self.tgt_seq_len - n - 2, len(pre_tokens))
 
         input_tokens = torch.full((self.tgt_seq_len,), self.tokenizer.pad_id, dtype=tokens.dtype, device=tokens.device)
-        input_tokens[0] = sequence["difficulty"]
-        input_tokens[1] = sequence["beatmap_idx"]
+        input_tokens[0] = sequence["difficulty_token"]
+        input_tokens[1] = sequence["beatmap_idx_token"]
         input_tokens[2:m + 2] = pre_tokens[-m:]
         input_tokens[m + 2:n + m + 2] = tokens[:n]
 
@@ -439,8 +439,9 @@ class BeatmapDatasetIterable:
 
         del sequence["tokens"]
         del sequence["pre_tokens"]
+        del sequence["difficulty_token"]
+        del sequence["beatmap_idx_token"]
         del sequence["difficulty"]
-        del sequence["beatmap_idx"]
 
         return sequence
 

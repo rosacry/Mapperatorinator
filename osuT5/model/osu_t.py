@@ -22,7 +22,10 @@ class OsuT(nn.Module):
         self.spectrogram = MelSpectrogram(
             config.sample_rate, config.n_fft, config.n_mels, config.hop_length
         )
-        self.encoder_embedder = nn.Linear(config.n_mels, config.d_model)
+        self.num_classes = config.num_classes
+        self.style_embedder = LabelEmbedder(self.num_classes, config.d_model, config.class_dropout_prob)
+        self.encoder_embedder = nn.Linear(config.n_mels + config.d_model, config.d_model)
+        nn.init.normal_(self.style_embedder.embedding_table.weight, std=0.02)
 
         self.transformer = T5ForConditionalGeneration(config)
 
@@ -30,6 +33,7 @@ class OsuT(nn.Module):
             self,
             frames: Optional[torch.FloatTensor] = None,
             decoder_input_ids: Optional[torch.Tensor] = None,
+            beatmap_idx: Optional[torch.Tensor] = None,
             encoder_outputs: Optional[torch.FloatTensor] = None,
             **kwargs
     ) -> Seq2SeqLMOutput:
@@ -40,11 +44,17 @@ class OsuT(nn.Module):
         beatmap_id: B, int64
         encoder_outputs: B x L_encoder x D, float32
         """
+        if beatmap_idx is None:
+            batch_size = frames.shape[0] if frames is not None else decoder_input_ids.shape[0]
+            device = frames.device if frames is not None else decoder_input_ids.device
+            beatmap_idx = torch.full([batch_size], self.num_classes, dtype=torch.long, device=device)
 
         inputs_embeds = None
         if encoder_outputs is None:
             frames = self.spectrogram(frames)  # (N, L, M)
-            inputs_embeds = self.encoder_embedder(frames)
+            style_embeds = self.style_embedder(beatmap_idx, self.training)  # (N, D)
+            frames_concat = torch.concatenate((frames, style_embeds.unsqueeze(1).expand((-1, frames.shape[1], -1))), -1)
+            inputs_embeds = self.encoder_embedder(frames_concat)
 
         decoder_inputs_embeds = self.decoder_embedder(decoder_input_ids)
 
@@ -52,3 +62,38 @@ class OsuT(nn.Module):
 
         return output
 
+
+class LabelEmbedder(nn.Module):
+    """
+    Embeds class labels into vector representations. Also handles label dropout.
+    """
+
+    def __init__(self, num_classes, hidden_size, dropout_prob):
+        super().__init__()
+        use_cfg_embedding = dropout_prob > 0
+        self.embedding_table = nn.Embedding(
+            num_classes + use_cfg_embedding,
+            hidden_size,
+        )
+        self.num_classes = num_classes
+        self.dropout_prob = dropout_prob
+
+    def token_drop(self, labels, force_drop_ids=None):
+        """
+        Drops labels.
+        """
+        if force_drop_ids is None:
+            drop_ids = (
+                torch.rand(labels.shape[0], device=labels.device) < self.dropout_prob
+            )
+        else:
+            drop_ids = force_drop_ids == 1
+        labels = torch.where(drop_ids, self.num_classes, labels)
+        return labels
+
+    def forward(self, labels, train, force_drop_ids=None):
+        use_dropout = self.dropout_prob > 0
+        if (train and use_dropout) or (force_drop_ids is not None):
+            labels = self.token_drop(labels, force_drop_ids)
+        embeddings = self.embedding_table(labels)
+        return embeddings
