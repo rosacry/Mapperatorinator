@@ -27,7 +27,7 @@ class Tokenizer:
 
     def __init__(self, args: DictConfig = None):
         """Fixed vocabulary tokenizer."""
-        self._offset = 2
+        self._offset = 3
 
         self.event_ranges: list[EventRange] = [
             EventRange(EventType.TIME_SHIFT, -512, 512),
@@ -91,9 +91,14 @@ class Tokenizer:
         return 0
 
     @property
+    def sos_id(self) -> int:
+        """[SOS] token for start-of-sequence."""
+        return 1
+
+    @property
     def eos_id(self) -> int:
         """[EOS] token for end-of-sequence."""
-        return 1
+        return 2
 
     def decode(self, token_id: int) -> Event:
         """Converts token ids into Event objects."""
