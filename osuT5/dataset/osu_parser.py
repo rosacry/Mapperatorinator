@@ -81,7 +81,8 @@ class OsuParser:
 
         events.append(Event(EventType.TIME_SHIFT, time))
         events.append(Event(EventType.DISTANCE, dist))
-        events.append(Event(EventType.NEW_COMBO, 1 if circle.new_combo else 0))
+        if circle.new_combo:
+            events.append(Event(EventType.NEW_COMBO))
         events.append(Event(EventType.CIRCLE))
 
         return pos
@@ -108,7 +109,8 @@ class OsuParser:
 
         events.append(Event(EventType.TIME_SHIFT, time))
         events.append(Event(EventType.DISTANCE, dist))
-        events.append(Event(EventType.NEW_COMBO, 1 if slider.new_combo else 0))
+        if slider.new_combo:
+            events.append(Event(EventType.NEW_COMBO))
         events.append(Event(EventType.SLIDER_HEAD))
 
         duration: timedelta = (slider.end_time - slider.time) / slider.repeat
