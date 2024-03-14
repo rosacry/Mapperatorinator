@@ -379,7 +379,8 @@ class BeatmapDatasetIterable:
         Returns:
             The same sequence with tokenized events.
         """
-        tokens = torch.empty(len(sequence["events"]) + 1, dtype=torch.long)
+        tokens = torch.empty(len(sequence["events"]) + 2, dtype=torch.long)
+        tokens[0] = self.tokenizer.sos_id
         for i, event in enumerate(sequence["events"]):
             tokens[i] = self.tokenizer.encode(event)
         tokens[-1] = self.tokenizer.eos_id
@@ -430,7 +431,7 @@ class BeatmapDatasetIterable:
         input_tokens[m + 2:n + m + 2] = tokens[:n]
 
         label_tokens = torch.full((self.tgt_seq_len,), LABEL_IGNORE_ID, dtype=tokens.dtype, device=tokens.device)
-        label_tokens[m + 1:n + m + 2] = tokens[:n + 1]
+        label_tokens[m + 2:n + m + 2] = tokens[1:n + 1]
 
         sequence["decoder_input_ids"] = input_tokens
         sequence["decoder_attention_mask"] = input_tokens != self.tokenizer.pad_id
