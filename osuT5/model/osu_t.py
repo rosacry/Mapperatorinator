@@ -70,9 +70,8 @@ class LabelEmbedder(nn.Module):
 
     def __init__(self, num_classes, hidden_size, dropout_prob):
         super().__init__()
-        use_cfg_embedding = dropout_prob > 0
         self.embedding_table = nn.Embedding(
-            num_classes + use_cfg_embedding,
+            num_classes + 1,
             hidden_size,
         )
         self.num_classes = num_classes

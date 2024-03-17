@@ -32,7 +32,7 @@ def get_config(args: DictConfig, tokenizer) -> T5Config:
     setattr(config, "vocab_size", tokenizer.vocab_size_out)
     setattr(config, "vocab_size_in", tokenizer.vocab_size_in)
     setattr(config, "num_classes", tokenizer.num_classes)
-    setattr(config, "class_dropout_prob", args.control.class_dropout_prob)
+    setattr(config, "class_dropout_prob", args.control.class_dropout_prob if hasattr(args, "control") and hasattr(args.control, "class_dropout_prob") else 0.0)
     return config
 
 
