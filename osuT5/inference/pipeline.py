@@ -43,17 +43,19 @@ class Pipeline(object):
 
         idx_dict = self.tokenizer.beatmap_idx
         if self.beatmap_id in idx_dict:
+            beatmap_idx = torch.tensor([idx_dict[self.beatmap_id]], dtype=torch.long, device=self.device)
             style_token = self.tokenizer.encode_style(self.beatmap_id)
         else:
             print(f"Beatmap ID {self.beatmap_id} not found in dataset, using default beatmap.")
+            beatmap_idx = torch.tensor([self.tokenizer.num_classes], dtype=torch.long, device=self.device)
             style_token = self.tokenizer.style_unk
 
         diff_token = self.tokenizer.encode_diff(self.difficulty) if self.difficulty != -1 else self.tokenizer.diff_unk
 
         for sequence_index, frames in enumerate(tqdm(sequences)):
             m = prev_targets.shape[1]
-            targets = torch.tensor([[diff_token, style_token]], dtype=torch.long, device=self.device)
-            targets = torch.concatenate([targets, prev_targets], dim=-1)
+            targets = torch.tensor([[self.tokenizer.sos_id]], dtype=torch.long, device=self.device)
+            targets = torch.concatenate([prev_targets, targets], dim=-1)
             frames = frames.to(self.device)
             encoder_outputs = None
 
@@ -63,6 +65,7 @@ class Pipeline(object):
                     decoder_input_ids=targets,
                     decoder_attention_mask=targets.ne(self.tokenizer.pad_id),
                     encoder_outputs=encoder_outputs,
+                    beatmap_idx=beatmap_idx,
                 )
                 encoder_outputs = (out.encoder_last_hidden_state, out.encoder_hidden_states, out.encoder_attentions)
                 logits = out.logits
@@ -80,7 +83,7 @@ class Pipeline(object):
                 if eos_in_sentence.all():
                     break
 
-            predicted_targets = targets[:, m + 2:-1]
+            predicted_targets = targets[:, m + 1:-1]
             result = self._decode(predicted_targets[0], sequence_index)
             events += result
 
