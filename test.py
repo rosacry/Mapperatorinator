@@ -119,7 +119,7 @@ def main(args: DictConfig):
             for i in range(n_bins):
                 bin_preds = preds[binned_labels == i]
                 bin_labels = labels[binned_labels == i]
-                index = bin_labels != LABEL_IGNORE_ID
+                index = (bin_labels != LABEL_IGNORE_ID) & (bin_labels != tokenizer.eos_id)
                 bin_preds = bin_preds[index]
                 bin_labels = bin_labels[index]
                 bin_totals[i] += np.sum(bin_preds == bin_labels)
