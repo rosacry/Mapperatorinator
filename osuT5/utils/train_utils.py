@@ -100,7 +100,7 @@ def maybe_eval(
         model.eval()
 
         with torch.no_grad():
-            eval(model, accelerator, dataloader, tokenizer, args)
+            eval_model(model, accelerator, dataloader, tokenizer, args)
 
         args.last_log = time.time()
         model.train()
@@ -171,7 +171,7 @@ def maybe_grad_clip_and_grad_calc(
         return {}
 
 
-def eval(
+def eval_model(
         model: OsuT,
         accelerator: Accelerator,
         dataloader: DataLoader,
