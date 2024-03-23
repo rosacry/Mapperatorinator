@@ -76,11 +76,8 @@ def maybe_save_checkpoint(accelerator: Accelerator, args: DictConfig):
                 },
             )
 
-            art.add_file(os.path.join(output_dir, "optimizer.bin"))
-            art.add_file(os.path.join(output_dir, "scheduler.bin"))
-            art.add_file(os.path.join(output_dir, "pytorch_model.bin"))
-            art.add_file(os.path.join(output_dir, "random_states_0.pkl"))
-            art.add_file(os.path.join(output_dir, "custom_checkpoint_0.pkl"))
+            for file in os.listdir(output_dir):
+                art.add_file(os.path.join(output_dir, file))
 
             wandb.log_artifact(art, aliases=["best"] if is_best else None)
             logger.info(f"Logged checkpoint to wandb: {art.name}")
