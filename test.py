@@ -130,15 +130,10 @@ def main(args: DictConfig):
         # Plot bin accuracies
         bin_accs = bin_totals / bin_counts
         bin_accs = np.nan_to_num(bin_accs)
-        fig, ax = plt.subplots()
-        ax.plot(bins, bin_accs)
-        ax.set_xlabel("Time (ms)")
-        ax.set_ylabel("Accuracy")
-        ax.set_title("Accuracy by Time")
-        plt.show()
 
         # Log the plot
-        wandb.log({"accuracy_over_time": fig})
+        for i, (bin_t, bin_acc) in enumerate(zip(bins, bin_accs)):
+            wandb.log({"acc_over_time": bin_acc}, step=round(bin_t))
 
         averager.update({"time": time.time() - start_time})
         averaged_stats = averager.average()
