@@ -9,7 +9,7 @@ add_config:
   n_mels: ${..spectrogram.n_mels}
 
 max_seq_len: 512
-max_target_len: 384
+max_target_len: 512
 spectrogram:
   sample_rate: 16000
   hop_length: 128

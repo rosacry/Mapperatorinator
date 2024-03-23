@@ -200,6 +200,8 @@ class BeatmapDatasetIterable:
         "per_track",
         "class_dropout_prob",
         "diff_dropout_prob",
+        "pre_token_len",
+        "center_tokens",
     )
 
     def __init__(
@@ -233,6 +235,8 @@ class BeatmapDatasetIterable:
         # [SOS] token + event_tokens[:-1] creates N target sequence
         # event_tokens[1:] + [EOS] token creates N label sequence
         self.min_pre_token_len = 64
+        self.pre_token_len = self.tgt_seq_len // 2
+        self.center_tokens = True
 
     def _load_audio_file(self, file: Path) -> npt.NDArray:
         """Load an audio file as a numpy time-series array
@@ -422,18 +426,28 @@ class BeatmapDatasetIterable:
         tokens = sequence["tokens"]
         pre_tokens = sequence["pre_tokens"]
 
-        # n + m + 2 + padding = tgt_seq_len
-        n = min(self.tgt_seq_len - special_token_length - min(self.min_pre_token_len, len(pre_tokens)), len(tokens) - 1)
-        m = min(self.tgt_seq_len - n - special_token_length, len(pre_tokens))
-
         input_tokens = torch.full((self.tgt_seq_len,), self.tokenizer.pad_id, dtype=tokens.dtype, device=tokens.device)
-        # input_tokens[0] = sequence["difficulty_token"]
-        # input_tokens[1] = sequence["beatmap_idx_token"]
-        input_tokens[special_token_length:m + special_token_length] = pre_tokens[-m:]
-        input_tokens[m + special_token_length:n + m + special_token_length] = tokens[:n]
-
         label_tokens = torch.full((self.tgt_seq_len,), LABEL_IGNORE_ID, dtype=tokens.dtype, device=tokens.device)
-        label_tokens[m + special_token_length:n + m + special_token_length] = tokens[1:n + 1]
+
+        if self.center_tokens:
+            n = min(self.tgt_seq_len - self.pre_token_len, len(tokens) - 1)
+            m = min(self.pre_token_len - special_token_length, len(pre_tokens))
+
+            # input_tokens[self.pre_token_len - m - 2] = sequence["difficulty_token"]
+            # input_tokens[self.pre_token_len - m - 1] = sequence["beatmap_idx_token"]
+            input_tokens[self.pre_token_len - m:self.pre_token_len] = pre_tokens[-m:]
+            input_tokens[self.pre_token_len:self.pre_token_len + n] = tokens[:n]
+            label_tokens[self.pre_token_len:self.pre_token_len + n] = tokens[1:n + 1]
+        else:
+            # n + m + special_token_length + padding = tgt_seq_len
+            n = min(self.tgt_seq_len - special_token_length - min(self.min_pre_token_len, len(pre_tokens)), len(tokens) - 1)
+            m = min(self.tgt_seq_len - n - special_token_length, len(pre_tokens))
+
+            # input_tokens[0] = sequence["difficulty_token"]
+            # input_tokens[1] = sequence["beatmap_idx_token"]
+            input_tokens[special_token_length:m + special_token_length] = pre_tokens[-m:]
+            input_tokens[m + special_token_length:n + m + special_token_length] = tokens[:n]
+            label_tokens[m + special_token_length:n + m + special_token_length] = tokens[1:n + 1]
 
         sequence["decoder_input_ids"] = input_tokens
         sequence["decoder_attention_mask"] = input_tokens != self.tokenizer.pad_id
