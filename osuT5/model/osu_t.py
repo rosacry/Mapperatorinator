@@ -12,16 +12,16 @@ from osuT5.model.spectrogram import MelSpectrogram
 
 
 class OsuT(nn.Module):
-    __slots__ = ["class_ids", "spectrogram", "decoder_embedder", "encoder_embedder", "transformer"]
+    __slots__ = ["spectrogram", "decoder_embedder", "encoder_embedder", "transformer"]
 
     def __init__(self, config: T5Config):
         super().__init__()
 
         self.num_classes = config.num_classes
 
-        # self.decoder_embedder = nn.Embedding(config.vocab_size_in, config.d_model)
-        # self.decoder_embedder.weight.data.normal_(mean=0.0, std=1.0)
-        self.class_ids = Parameter(torch.full([self.num_classes + 1], -1, dtype=torch.long), requires_grad=False)
+        self.decoder_embedder = nn.Embedding(config.vocab_size_in, config.d_model)
+        self.decoder_embedder.weight.data.normal_(mean=0.0, std=1.0)
+        # self.class_ids = Parameter(torch.full([self.num_classes + 1], -1, dtype=torch.long), requires_grad=False)
 
         self.spectrogram = MelSpectrogram(
             config.sample_rate, config.n_fft, config.n_mels, config.hop_length
@@ -59,10 +59,10 @@ class OsuT(nn.Module):
             frames_concat = torch.concatenate((frames, style_embeds.unsqueeze(1).expand((-1, frames.shape[1], -1))), -1)
             inputs_embeds = self.encoder_embedder(frames_concat)
 
-        # decoder_inputs_embeds = self.decoder_embedder(decoder_input_ids)
-        # output = self.transformer.forward(inputs_embeds=inputs_embeds, decoder_inputs_embeds=decoder_inputs_embeds, encoder_outputs=encoder_outputs, **kwargs)
+        decoder_inputs_embeds = self.decoder_embedder(decoder_input_ids)
+        output = self.transformer.forward(inputs_embeds=inputs_embeds, decoder_inputs_embeds=decoder_inputs_embeds, encoder_outputs=encoder_outputs, **kwargs)
 
-        output = self.transformer.forward(inputs_embeds=inputs_embeds, decoder_input_ids=decoder_input_ids,encoder_outputs=encoder_outputs, **kwargs)
+        # output = self.transformer.forward(inputs_embeds=inputs_embeds, decoder_input_ids=decoder_input_ids,encoder_outputs=encoder_outputs, **kwargs)
 
         return output
 
