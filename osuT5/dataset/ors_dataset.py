@@ -454,6 +454,14 @@ class BeatmapDatasetIterable:
             input_tokens[m + special_token_length:n + m + special_token_length] = tokens[:n]
             label_tokens[m + special_token_length:n + m + special_token_length] = tokens[1:n + 1]
 
+        # Randomize some input tokens
+        # input_tokens = torch.where((self.tokenizer.event_start[EventType.TIME_SHIFT] <= input_tokens) & (input_tokens < self.tokenizer.event_end[EventType.TIME_SHIFT]),
+        #                            torch.clamp(input_tokens + torch.randint_like(input_tokens, -10, 10), self.tokenizer.event_start[EventType.TIME_SHIFT], self.tokenizer.event_end[EventType.TIME_SHIFT] - 1),
+        #                            input_tokens)
+        # input_tokens = torch.where((self.tokenizer.event_start[EventType.DISTANCE] <= input_tokens) & (input_tokens < self.tokenizer.event_end[EventType.DISTANCE]),
+        #                               torch.clamp(input_tokens + torch.randint_like(input_tokens, -10, 10), self.tokenizer.event_start[EventType.DISTANCE], self.tokenizer.event_end[EventType.DISTANCE] - 1),
+        #                               input_tokens)
+
         sequence["decoder_input_ids"] = input_tokens
         sequence["decoder_attention_mask"] = input_tokens != self.tokenizer.pad_id
         sequence["labels"] = label_tokens
@@ -550,5 +558,7 @@ class BeatmapDatasetIterable:
             sequence = self._pad_frame_sequence(sequence)
             sequence = self._pad_and_split_token_sequence(sequence)
             # if sequence["labels"][self.pre_token_len] == self.tokenizer.eos_id:
+            #     continue
+            # if sequence["decoder_input_ids"][self.pre_token_len - 1] != self.tokenizer.pad_id:
             #     continue
             yield sequence
