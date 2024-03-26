@@ -14,6 +14,7 @@ train_dataset_end: 16200    # Training dataset end index
 test_dataset_path: '/root/ORS16291'   # Testing/validation dataset directory
 test_dataset_start: 16200   # Testing/validation dataset start index
 test_dataset_end: 16291     # Testing/validation dataset end index
+center_pad_decoder: true            # Center pad decoder input
 
 control:
   num_classes: 64821

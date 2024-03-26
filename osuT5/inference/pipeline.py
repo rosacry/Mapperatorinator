@@ -22,12 +22,14 @@ class Pipeline(object):
         self.sample_rate = args.model.spectrogram.sample_rate
         self.samples_per_sequence = self.frame_seq_len * self.frame_size
         self.miliseconds_per_sequence = (
-            self.samples_per_sequence * MILISECONDS_PER_SECOND / self.sample_rate
+                self.samples_per_sequence * MILISECONDS_PER_SECOND / self.sample_rate
         )
         self.beatmap_id = args.beatmap_id
         self.difficulty = args.difficulty
+        self.center_pad_decoder = args.center_pad_decoder
+        self.special_token_length = 0
 
-    def generate( self, model: OsuT, sequences: torch.Tensor) -> list[Event]:
+    def generate(self, model: OsuT, sequences: torch.Tensor) -> list[Event]:
         """Generate a list of Event object lists and their timestamps given source sequences.
 
         Args:
@@ -39,7 +41,7 @@ class Pipeline(object):
             event_times: Corresponding event times of Event object lists in miliseconds.
         """
         events = []
-        prev_targets = torch.full((1, 0), self.tokenizer.pad_id, dtype=torch.long, device=self.device)
+        prev_tokens = torch.full((1, 0), self.tokenizer.pad_id, dtype=torch.long, device=self.device)
 
         idx_dict = self.tokenizer.beatmap_idx
         if self.beatmap_id in idx_dict:
@@ -53,17 +55,22 @@ class Pipeline(object):
         diff_token = self.tokenizer.encode_diff(self.difficulty) if self.difficulty != -1 else self.tokenizer.diff_unk
 
         for sequence_index, frames in enumerate(tqdm(sequences)):
-            m = prev_targets.shape[1]
-            targets = torch.tensor([[self.tokenizer.sos_id]], dtype=torch.long, device=self.device)
-            targets = torch.concatenate([prev_targets, targets], dim=-1)
+            prefix = prev_tokens
+            if self.center_pad_decoder:
+                prefix = F.pad(prefix, (self.tgt_seq_len // 2 - prefix.shape[1], 0), value=self.tokenizer.pad_id)
+
+            prefix_length = prefix.shape[1]
+            tokens = torch.tensor([[self.tokenizer.sos_id]], dtype=torch.long, device=self.device)
+            tokens = torch.concatenate([prefix, tokens], dim=-1)
+
             frames = frames.to(self.device)
             encoder_outputs = None
 
             for _ in range(self.tgt_seq_len // 2):
                 out = model.forward(
                     frames=frames.unsqueeze(0),
-                    decoder_input_ids=targets,
-                    decoder_attention_mask=targets.ne(self.tokenizer.pad_id),
+                    decoder_input_ids=tokens,
+                    decoder_attention_mask=tokens.ne(self.tokenizer.pad_id),
                     encoder_outputs=encoder_outputs,
                     beatmap_idx=beatmap_idx,
                 )
@@ -74,7 +81,7 @@ class Pipeline(object):
                 probabilities = F.softmax(logits, dim=-1)
                 tokens = torch.multinomial(probabilities, 1)
 
-                targets = torch.cat([targets, tokens.to(self.device)], dim=-1)
+                tokens = torch.cat([tokens, tokens.to(self.device)], dim=-1)
 
                 # check if any sentence in batch has reached EOS, mark as finished
                 eos_in_sentence = tokens == self.tokenizer.eos_id
@@ -83,13 +90,13 @@ class Pipeline(object):
                 if eos_in_sentence.all():
                     break
 
-            predicted_targets = targets[:, m + 1:-1]
-            result = self._decode(predicted_targets[0], sequence_index)
+            predicted_tokens = tokens[:, prefix_length + 1:-1]
+            result = self._decode(predicted_tokens[0], sequence_index)
             events += result
 
-            prev_targets = predicted_targets
-            if prev_targets.shape[1] > 0:
-                prev_targets = self._timeshift_tokens(prev_targets, -self.miliseconds_per_sequence)
+            prev_tokens = predicted_tokens
+            if prev_tokens.shape[1] > 0:
+                prev_tokens = self._timeshift_tokens(prev_tokens, -self.miliseconds_per_sequence)
 
         return events
 
@@ -106,7 +113,8 @@ class Pipeline(object):
         for i in range(tokens.shape[0]):
             for j in range(tokens.shape[1]):
                 token = tokens[i, j]
-                if self.tokenizer.event_start[EventType.TIME_SHIFT] <= token < self.tokenizer.event_end[EventType.TIME_SHIFT]:
+                if self.tokenizer.event_start[EventType.TIME_SHIFT] <= token < self.tokenizer.event_end[
+                    EventType.TIME_SHIFT]:
                     event = self.tokenizer.decode(token.item())
                     event.value += int(time_offset / MILISECONDS_PER_STEP)
                     tokens[i, j] = self.tokenizer.encode(event)
@@ -134,8 +142,8 @@ class Pipeline(object):
 
             if event.type == EventType.TIME_SHIFT:
                 current_time = (
-                    index * self.miliseconds_per_sequence
-                    + event.value * MILISECONDS_PER_STEP
+                        index * self.miliseconds_per_sequence
+                        + event.value * MILISECONDS_PER_STEP
                 )
                 event.value = current_time
 
@@ -144,7 +152,7 @@ class Pipeline(object):
         return events
 
     def _filter(
-        self, logits: torch.Tensor, top_p: float, filter_value: float = -float("Inf")
+            self, logits: torch.Tensor, top_p: float, filter_value: float = -float("Inf")
     ) -> torch.Tensor:
         """Filter a distribution of logits using nucleus (top-p) filtering.
 
@@ -167,8 +175,8 @@ class Pipeline(object):
 
             # Shift the indices to the right to keep also the first token above the threshold
             sorted_indices_to_remove[..., 1:] = sorted_indices_to_remove[
-                ..., :-1
-            ].clone()
+                                                ..., :-1
+                                                ].clone()
             sorted_indices_to_remove[..., 0] = 0
 
             # scatter sorted tensors to original indexing
