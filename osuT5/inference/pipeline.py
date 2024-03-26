@@ -63,12 +63,12 @@ class Pipeline(object):
             tokens = torch.tensor([[self.tokenizer.sos_id]], dtype=torch.long, device=self.device)
             tokens = torch.concatenate([prefix, tokens], dim=-1)
 
-            frames = frames.to(self.device)
+            frames = frames.to(self.device).unsqueeze(0)
             encoder_outputs = None
 
             for _ in range(self.tgt_seq_len // 2):
                 out = model.forward(
-                    frames=frames.unsqueeze(0),
+                    frames=frames,
                     decoder_input_ids=tokens,
                     decoder_attention_mask=tokens.ne(self.tokenizer.pad_id),
                     encoder_outputs=encoder_outputs,
@@ -79,12 +79,12 @@ class Pipeline(object):
                 logits = logits[:, -1, :]
                 logits = self._filter(logits, 0.9)
                 probabilities = F.softmax(logits, dim=-1)
-                tokens = torch.multinomial(probabilities, 1)
+                next_tokens = torch.multinomial(probabilities, 1)
 
-                tokens = torch.cat([tokens, tokens.to(self.device)], dim=-1)
+                tokens = torch.cat([tokens, next_tokens], dim=-1)
 
                 # check if any sentence in batch has reached EOS, mark as finished
-                eos_in_sentence = tokens == self.tokenizer.eos_id
+                eos_in_sentence = next_tokens == self.tokenizer.eos_id
 
                 # stop preemptively when all sentences have finished
                 if eos_in_sentence.all():
