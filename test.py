@@ -63,7 +63,7 @@ def main(args: DictConfig):
         model, optimizer, scheduler, train_dataloader, test_dataloader
     )
 
-    # accelerator.register_for_checkpointing(tokenizer)
+    accelerator.register_for_checkpointing(tokenizer)
 
     accelerator.load_state(args.checkpoint_path)
 
