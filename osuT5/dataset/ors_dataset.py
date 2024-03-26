@@ -37,6 +37,7 @@ class OrsDataset(IterableDataset):
         "cycle_length",
         "shuffle",
         "per_track",
+        "center_pad_decoder",
         "class_dropout_prob",
         "diff_dropout_prob",
         "beatmap_files",
@@ -56,6 +57,7 @@ class OrsDataset(IterableDataset):
             cycle_length: int = 1,
             shuffle: bool = False,
             per_track: bool = False,
+            center_pad_decoder: bool = False,
             class_dropout_prob: float = 0.0,
             diff_dropout_prob: float = 0.0,
             beatmap_files: Optional[list[Path]] = None,
@@ -80,6 +82,7 @@ class OrsDataset(IterableDataset):
         self.cycle_length = cycle_length
         self.shuffle = shuffle
         self.per_track = per_track and beatmap_files is None
+        self.center_pad_decoder = center_pad_decoder
         self.class_dropout_prob = class_dropout_prob
         self.diff_dropout_prob = diff_dropout_prob
         self.beatmap_files = beatmap_files
@@ -144,6 +147,7 @@ class OrsDataset(IterableDataset):
             self.parser,
             self.tokenizer,
             self.per_track,
+            self.center_pad_decoder,
             self.class_dropout_prob,
             self.diff_dropout_prob,
         )
@@ -198,10 +202,10 @@ class BeatmapDatasetIterable:
         "frame_seq_len",
         "min_pre_token_len",
         "per_track",
+        "center_pad_decoder",
         "class_dropout_prob",
         "diff_dropout_prob",
         "pre_token_len",
-        "center_tokens",
     )
 
     def __init__(
@@ -214,6 +218,7 @@ class BeatmapDatasetIterable:
             parser: OsuParser,
             tokenizer: Tokenizer,
             per_track: bool,
+            center_pad_decoder: bool,
             class_dropout_prob: float = 0.0,
             diff_dropout_prob: float = 0.0,
     ):
@@ -221,6 +226,7 @@ class BeatmapDatasetIterable:
         self.parser = parser
         self.tokenizer = tokenizer
         self.per_track = per_track
+        self.center_pad_decoder = center_pad_decoder
         self.class_dropout_prob = class_dropout_prob
         self.diff_dropout_prob = diff_dropout_prob
         self.sample_rate = sample_rate
@@ -236,7 +242,6 @@ class BeatmapDatasetIterable:
         # event_tokens[1:] + [EOS] token creates N label sequence
         self.min_pre_token_len = 64
         self.pre_token_len = self.tgt_seq_len // 2
-        self.center_tokens = True
 
     def _load_audio_file(self, file: Path) -> npt.NDArray:
         """Load an audio file as a numpy time-series array
@@ -429,7 +434,7 @@ class BeatmapDatasetIterable:
         input_tokens = torch.full((self.tgt_seq_len,), self.tokenizer.pad_id, dtype=tokens.dtype, device=tokens.device)
         label_tokens = torch.full((self.tgt_seq_len,), LABEL_IGNORE_ID, dtype=tokens.dtype, device=tokens.device)
 
-        if self.center_tokens:
+        if self.center_pad_decoder:
             n = min(self.tgt_seq_len - self.pre_token_len, len(tokens) - 1)
             m = min(self.pre_token_len - special_token_length, len(pre_tokens))
 
