@@ -1,10 +1,10 @@
 defaults:
   - _self_
-  - model: t5_small
+  - model: t5_small_v4
 
-compile: true          # PyTorch 2.0 optimization
+compile: false          # PyTorch 2.0 optimization
 device: gpu             # Training device (cpu/gpu)
-precision: 'bf16'         # Enable mixed precision (no/fp16/bf16/fp8)
+precision: 'no'         # Enable mixed precision (no/fp16/bf16/fp8)
 seed: 42                # Project seed
 
 checkpoint_path: ''     # Project checkpoint directory (to resume training)
@@ -22,33 +22,33 @@ data:                  # Data settings
   hop_length: ${model.spectrogram.hop_length}
   cycle_length: 16
   per_track: false      # Loads all beatmaps in a track sequentially which optimizes audio data loading
-  center_pad_decoder: true            # Center pad decoder input
+  center_pad_decoder: false            # Center pad decoder input
   num_classes: 64821
   num_diff_classes: 24
   max_diff: 12
   class_dropout_prob: 0.2
   diff_dropout_prob: 0.2
-  special_token_len: 0
-  diff_token_index: -1
-  style_token_index: -1
+  special_token_len: 2
+  diff_token_index: 0
+  style_token_index: 1
   remove_empty_sequences: true
-  add_empty_sequences_at_step: 35000
-  add_pre_tokens: true
-  add_pre_tokens_at_step: -1
+  add_empty_sequences_at_step: 30000
+  add_pre_tokens: false
+  add_pre_tokens_at_step: 30000
 
 dataloader:             # Dataloader settings
-  num_workers: 8
+  num_workers: 3
 
 optim:                  # Optimizer settings
   name: adamwscale
   base_lr: 2e-2
-  batch_size: 129
+  batch_size: 128
   total_steps: 65536
   warmup_steps: 10000
   lr_scheduler: cosine
   weight_decay: 0.0
   grad_clip: 1.0
-  grad_acc: 3
+  grad_acc: 8
   final_cosine: 1e-5
 
 eval:                   # Evaluation settings 
@@ -60,7 +60,7 @@ checkpoint:             # Checkpoint settings
 
 logging:                # Logging settings
   log_with: 'wandb'     # Logging service (wandb/tensorboard)
-  every_steps: 100
+  every_steps: 10
   grad_l2: true
   weights_l2: true
 

@@ -204,6 +204,15 @@ def acc_range(preds, labels, start_index, end_index):
     return (range_preds == range_labels).detach().float().cpu().numpy()
 
 
+def maybe_change_dataset(args):
+    if 0 <= args.data.add_empty_sequences_at_step == args.current_train_step:
+        args.data.remove_empty_sequences = False
+        logger.info("Enabling empty sequences in dataset.")
+    if 0 <= args.data.add_pre_tokens_at_step == args.current_train_step:
+        args.data.add_pre_tokens = True
+        logger.info("Enabling pre-tokens in dataset.")
+
+
 def train(
         model: OsuT,
         train_dataloader: DataLoader,
@@ -244,6 +253,7 @@ def train(
                 maybe_logging(model, accelerator, optimizer, train_averager, args)
                 maybe_eval(model, accelerator, test_dataloader, tokenizer, args)
                 maybe_save_checkpoint(accelerator, args)
+                maybe_change_dataset(args)
 
                 args.current_train_step += 1
 

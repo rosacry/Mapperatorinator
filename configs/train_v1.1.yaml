@@ -32,6 +32,9 @@ data:                  # Data settings
   diff_token_index: -1
   style_token_index: -1
   remove_empty_sequences: false
+  add_empty_sequences_at_step: -1
+  add_pre_tokens: true
+  add_pre_tokens_at_step: -1
 
 dataloader:             # Dataloader settings
   num_workers: 3
