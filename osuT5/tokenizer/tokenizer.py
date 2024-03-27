@@ -48,10 +48,11 @@ class Tokenizer:
         self.beatmap_idx: dict[int, int] = {}
 
         if args is not None:
-            self.input_event_ranges: list[EventRange] = [
-                EventRange(EventType.STYLE, 0, args.data.num_classes),
-                EventRange(EventType.DIFFICULTY, 0, args.data.num_diff_classes),
-            ]
+            self.input_event_ranges: list[EventRange] = []
+            if args.data.style_token_index >= 0:
+                self.input_event_ranges.append(EventRange(EventType.STYLE, 0, args.data.num_classes))
+            if args.data.diff_token_index >= 0:
+                self.input_event_ranges.append(EventRange(EventType.DIFFICULTY, 0, args.data.num_diff_classes))
 
             self.num_classes = args.data.num_classes
             self.num_diff_classes = args.data.num_diff_classes
