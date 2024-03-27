@@ -277,6 +277,9 @@ class BeatmapDatasetIterable:
             split_pre_idx = max(split_start_idx - self.frame_seq_len, 0)
             target_pre_idx = event_start_indices[split_pre_idx]
 
+            if not self.args.add_pre_tokens:
+                target_pre_idx = target_start_idx
+
             # Create the sequence
             sequence = {
                 "time": frame_times[split_start_idx],
