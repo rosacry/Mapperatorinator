@@ -26,8 +26,10 @@ class Pipeline(object):
         )
         self.beatmap_id = args.beatmap_id
         self.difficulty = args.difficulty
-        self.center_pad_decoder = args.center_pad_decoder
-        self.special_token_length = 0
+        self.center_pad_decoder = args.data.center_pad_decoder
+        self.special_token_len = args.data.special_token_len
+        self.diff_token_index = args.data.diff_token_index
+        self.style_token_index = args.data.style_token_index
 
     def generate(self, model: OsuT, sequences: torch.Tensor) -> list[Event]:
         """Generate a list of Event object lists and their timestamps given source sequences.
@@ -54,8 +56,12 @@ class Pipeline(object):
 
         diff_token = self.tokenizer.encode_diff(self.difficulty) if self.difficulty != -1 else self.tokenizer.diff_unk
 
+        special_tokens = torch.empty((1, self.special_token_len), dtype=torch.long, device=self.device)
+        special_tokens[:, self.diff_token_index] = diff_token
+        special_tokens[:, self.style_token_index] = style_token
+
         for sequence_index, frames in enumerate(tqdm(sequences)):
-            prefix = prev_tokens
+            prefix = torch.concatenate([special_tokens, prev_tokens], dim=-1)
             if self.center_pad_decoder:
                 prefix = F.pad(prefix, (self.tgt_seq_len // 2 - prefix.shape[1], 0), value=self.tokenizer.pad_id)
 

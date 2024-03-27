@@ -13,7 +13,12 @@ artist: ''              # Song artist
 beatmap_path: ''        # Path to .osu file which will be remapped
 beatmap_id: -1          # Beatmap ID to use as style
 difficulty: -1           # Difficulty star rating to map
-center_pad_decoder: true            # Center pad decoder input
+
+data:                  # Data settings
+  center_pad_decoder: true            # Center pad decoder input
+  special_token_len: 0
+  diff_token_index: -1
+  style_token_index: -1
 
 hydra:
   job:
