@@ -49,13 +49,13 @@ class Tokenizer:
 
         if args is not None:
             self.input_event_ranges: list[EventRange] = [
-                EventRange(EventType.STYLE, 0, args.control.num_classes),
-                EventRange(EventType.DIFFICULTY, 0, args.control.num_diff_classes),
+                EventRange(EventType.STYLE, 0, args.data.num_classes),
+                EventRange(EventType.DIFFICULTY, 0, args.data.num_diff_classes),
             ]
 
-            self.num_classes = args.control.num_classes
-            self.num_diff_classes = args.control.num_diff_classes
-            self.max_difficulty = args.control.max_diff
+            self.num_classes = args.data.num_classes
+            self.num_diff_classes = args.data.num_diff_classes
+            self.max_difficulty = args.data.max_diff
 
             self._init_beatmap_idx(args)
         else:

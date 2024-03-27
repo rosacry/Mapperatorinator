@@ -1,7 +1,6 @@
 import torch
 import numpy as np
-from transformers import T5Config, Adafactor
-from omegaconf import DictConfig
+from omegaconf import DictConfig, open_dict
 from torch.optim import Optimizer
 from torch.utils.data import DataLoader
 from torch.optim.lr_scheduler import (
@@ -16,28 +15,13 @@ from osuT5.model.osu_t import OsuT
 from osuT5.tokenizer import Tokenizer
 
 
-def get_config(args: DictConfig, tokenizer) -> T5Config:
-    config = T5Config.from_pretrained(args.model.name)
+def get_model(args: DictConfig, tokenizer: Tokenizer) -> OsuT:
+    with open_dict(args):
+        args.num_classes = tokenizer.num_classes
+        args.vocab_size_in = tokenizer.vocab_size_in
+        args.vocab_size_out = tokenizer.vocab_size_out
 
-    if hasattr(args.model, "overwrite"):
-        for k, v in args.model.overwrite.items():
-            assert hasattr(config, k), f"config does not have attribute {k}"
-            setattr(config, k, v)
-
-    if hasattr(args.model, "add_config"):
-        for k, v in args.model.add_config.items():
-            assert not hasattr(config, k), f"config already has attribute {k}"
-            setattr(config, k, v)
-
-    setattr(config, "vocab_size", tokenizer.vocab_size_out)
-    setattr(config, "vocab_size_in", tokenizer.vocab_size_in)
-    setattr(config, "num_classes", tokenizer.num_classes)
-    setattr(config, "class_dropout_prob", args.control.class_dropout_prob if hasattr(args, "control") and hasattr(args.control, "class_dropout_prob") else 0.0)
-    return config
-
-
-def get_model(config: T5Config) -> OsuT:
-    model = OsuT(config)
+    model = OsuT(args)
     return model
 
 
@@ -120,36 +104,15 @@ def get_dataloaders(tokenizer: Tokenizer, args: DictConfig) -> tuple[DataLoader,
     parser = OsuParser(tokenizer)
     dataset = {
         "train": OrsDataset(
-            args.train_dataset_path,
-            args.train_dataset_start,
-            args.train_dataset_end,
-            args.model.spectrogram.sample_rate,
-            args.model.spectrogram.hop_length,
-            args.model.max_seq_len,
-            args.model.max_target_len,
+            args.data,
             parser,
             tokenizer,
-            args.optim.cycle_length,
-            True,
-            args.optim.per_track,
-            args.center_pad_decoder,
-            args.control.class_dropout_prob,
-            args.control.diff_dropout_prob,
         ),
         "test": OrsDataset(
-            args.test_dataset_path,
-            args.test_dataset_start,
-            args.test_dataset_end,
-            args.model.spectrogram.sample_rate,
-            args.model.spectrogram.hop_length,
-            args.model.max_seq_len,
-            args.model.max_target_len,
+            args.data,
             parser,
             tokenizer,
-            per_track=args.optim.per_track,
-            center_pad_decoder=args.center_pad_decoder,
-            class_dropout_prob=1.0,
-            diff_dropout_prob=0.0,
+            test=True,
         ),
     }
 
