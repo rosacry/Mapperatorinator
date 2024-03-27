@@ -22,20 +22,9 @@ def main(args: DictConfig):
     tokenizer = get_tokenizer(args)
     parser = OsuParser(tokenizer)
     dataset = OrsDataset(
-        args.train_dataset_path,
-        args.train_dataset_start,
-        args.train_dataset_end,
-        args.model.spectrogram.sample_rate,
-        args.model.spectrogram.hop_length,
-        args.model.max_seq_len,
-        args.model.max_target_len,
+        args.data,
         parser,
         tokenizer,
-        args.optim.cycle_length,
-        True,
-        args.optim.per_track,
-        args.control.class_dropout_prob,
-        args.control.diff_dropout_prob,
     )
 
     dataloader = DataLoader(

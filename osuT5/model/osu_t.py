@@ -4,6 +4,7 @@ from typing import Optional
 
 import torch
 import torch.nn as nn
+from omegaconf import DictConfig
 from torch.nn import Parameter
 from transformers import T5Config, T5ForConditionalGeneration
 from transformers.modeling_outputs import Seq2SeqLMOutput
@@ -12,22 +13,25 @@ from osuT5.model.spectrogram import MelSpectrogram
 
 
 class OsuT(nn.Module):
-    __slots__ = ["spectrogram", "decoder_embedder", "encoder_embedder", "transformer"]
+    __slots__ = ["spectrogram", "decoder_embedder", "encoder_embedder", "transformer", "style_embedder", "num_classes"]
 
-    def __init__(self, config: T5Config):
+    def __init__(self, args: DictConfig):
         super().__init__()
 
-        self.num_classes = config.num_classes
+        config = get_t5_config(args)
+        setattr(config, "vocab_size", args.vocab_size_out)
 
-        self.decoder_embedder = nn.Embedding(config.vocab_size_in, config.d_model)
+        self.num_classes = args.num_classes
+
+        self.decoder_embedder = nn.Embedding(args.vocab_size_in, config.d_model)
         self.decoder_embedder.weight.data.normal_(mean=0.0, std=1.0)
         # self.class_ids = Parameter(torch.full([self.num_classes + 1], -1, dtype=torch.long), requires_grad=False)
 
         self.spectrogram = MelSpectrogram(
-            config.sample_rate, config.n_fft, config.n_mels, config.hop_length
+            args.spectrogram.sample_rate, args.spectrogram.n_fft, args.spectrogram.n_mels, args.spectrogram.hop_length
         )
-        self.style_embedder = LabelEmbedder(self.num_classes, config.d_model, config.class_dropout_prob)
-        self.encoder_embedder = nn.Linear(config.n_mels + config.d_model, config.d_model)
+        self.style_embedder = LabelEmbedder(args.num_classes, config.d_model)
+        self.encoder_embedder = nn.Linear(args.spectrogram.n_mels + config.d_model, config.d_model)
         nn.init.normal_(self.style_embedder.embedding_table.weight, std=0.02)
 
         self.transformer = T5ForConditionalGeneration(config)
@@ -55,13 +59,12 @@ class OsuT(nn.Module):
         inputs_embeds = None
         if encoder_outputs is None:
             frames = self.spectrogram(frames)  # (N, L, M)
-            style_embeds = self.style_embedder(beatmap_idx, self.training)  # (N, D)
+            style_embeds = self.style_embedder(beatmap_idx)  # (N, D)
             frames_concat = torch.concatenate((frames, style_embeds.unsqueeze(1).expand((-1, frames.shape[1], -1))), -1)
             inputs_embeds = self.encoder_embedder(frames_concat)
 
         decoder_inputs_embeds = self.decoder_embedder(decoder_input_ids)
         output = self.transformer.forward(inputs_embeds=inputs_embeds, decoder_inputs_embeds=decoder_inputs_embeds, encoder_outputs=encoder_outputs, **kwargs)
-
         # output = self.transformer.forward(inputs_embeds=inputs_embeds, decoder_input_ids=decoder_input_ids,encoder_outputs=encoder_outputs, **kwargs)
 
         return output
@@ -69,34 +72,32 @@ class OsuT(nn.Module):
 
 class LabelEmbedder(nn.Module):
     """
-    Embeds class labels into vector representations. Also handles label dropout.
+    Embeds class labels into vector representations.
     """
 
-    def __init__(self, num_classes, hidden_size, dropout_prob):
+    def __init__(self, num_classes, hidden_size):
         super().__init__()
         self.embedding_table = nn.Embedding(
             num_classes + 1,
             hidden_size,
         )
-        self.num_classes = num_classes
-        self.dropout_prob = dropout_prob
 
-    def token_drop(self, labels, force_drop_ids=None):
-        """
-        Drops labels.
-        """
-        if force_drop_ids is None:
-            drop_ids = (
-                torch.rand(labels.shape[0], device=labels.device) < self.dropout_prob
-            )
-        else:
-            drop_ids = force_drop_ids == 1
-        labels = torch.where(drop_ids, self.num_classes, labels)
-        return labels
-
-    def forward(self, labels, train, force_drop_ids=None):
-        use_dropout = self.dropout_prob > 0
-        if (train and use_dropout) or (force_drop_ids is not None):
-            labels = self.token_drop(labels, force_drop_ids)
+    def forward(self, labels):
         embeddings = self.embedding_table(labels)
         return embeddings
+
+
+def get_t5_config(args: DictConfig) -> T5Config:
+    config = T5Config.from_pretrained(args.name)
+
+    if hasattr(args, "overwrite"):
+        for k, v in args.overwrite.items():
+            assert hasattr(config, k), f"config does not have attribute {k}"
+            setattr(config, k, v)
+
+    if hasattr(args, "add_config"):
+        for k, v in args.add_config.items():
+            assert not hasattr(config, k), f"config already has attribute {k}"
+            setattr(config, k, v)
+
+    return config
