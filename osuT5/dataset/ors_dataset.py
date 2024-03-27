@@ -504,8 +504,8 @@ class BeatmapDatasetIterable:
             sequence = self._tokenize_sequence(sequence)
             sequence = self._pad_frame_sequence(sequence)
             sequence = self._pad_and_split_token_sequence(sequence)
-            # if sequence["labels"][self.pre_token_len] == self.tokenizer.eos_id:
-            #     continue
+            if self.args.remove_empty_sequences and ((sequence["labels"] == self.tokenizer.eos_id) | (sequence["labels"] == self.tokenizer.pad_id)).all():
+                continue
             # if sequence["decoder_input_ids"][self.pre_token_len - 1] != self.tokenizer.pad_id:
             #     continue
             yield sequence
