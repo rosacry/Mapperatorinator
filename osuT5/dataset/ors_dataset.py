@@ -9,6 +9,7 @@ from pathlib import Path
 import numpy as np
 import numpy.typing as npt
 import torch
+from omegaconf import DictConfig
 from pydub import AudioSegment
 from slider import Beatmap
 from torch.utils.data import IterableDataset
@@ -25,87 +26,53 @@ LABEL_IGNORE_ID = -100
 
 class OrsDataset(IterableDataset):
     __slots__ = (
-        "path",
-        "start",
-        "end",
-        "sample_rate",
-        "frame_size",
-        "src_seq_len",
-        "tgt_seq_len",
+        "args",
         "parser",
         "tokenizer",
-        "cycle_length",
-        "shuffle",
-        "per_track",
-        "center_pad_decoder",
-        "class_dropout_prob",
-        "diff_dropout_prob",
         "beatmap_files",
+        "test",
     )
 
     def __init__(
             self,
-            path: str,
-            start: int,
-            end: int,
-            sample_rate: int,
-            frame_size: int,
-            src_seq_len: int,
-            tgt_seq_len: int,
+            args: DictConfig,
             parser: OsuParser,
             tokenizer: Tokenizer,
-            cycle_length: int = 1,
-            shuffle: bool = False,
-            per_track: bool = False,
-            center_pad_decoder: bool = False,
-            class_dropout_prob: float = 0.0,
-            diff_dropout_prob: float = 0.0,
             beatmap_files: Optional[list[Path]] = None,
+            test: bool = False,
     ):
         """Manage and process ORS dataset.
 
         Attributes:
-            path: Location of ORS dataset to load.
-            sample_rate: Sampling rate of audio file (samples/second).
-            frame_size: Samples per audio frame (samples/frame).
-            src_seq_len: Maximum length of source sequence.
-            tgt_seq_len: Maximum length of target sequence.
+            args: Data loading arguments.
             parser: Instance of OsuParser class.
             tokenizer: Instance of Tokenizer class.
+            beatmap_files: List of beatmap files to process. Overrides track index range.
+            test: Whether to load the test dataset.
         """
         super().__init__()
-        self.path = path
-        self.start = start
-        self.end = end
+        self.args = args
         self.parser = parser
         self.tokenizer = tokenizer
-        self.cycle_length = cycle_length
-        self.shuffle = shuffle
-        self.per_track = per_track and beatmap_files is None
-        self.center_pad_decoder = center_pad_decoder
-        self.class_dropout_prob = class_dropout_prob
-        self.diff_dropout_prob = diff_dropout_prob
         self.beatmap_files = beatmap_files
-        self.sample_rate = sample_rate
-        self.frame_size = frame_size
-        self.src_seq_len = src_seq_len
-        self.tgt_seq_len = tgt_seq_len
+        self.test = test
 
     def _get_beatmap_files(self) -> list[Path]:
         if self.beatmap_files is not None:
             return self.beatmap_files
 
         # Get a list of all beatmap files in the dataset path in the track index range between start and end
+        path, start, end = self._get_dataset_params()
         beatmap_files = []
-        track_names = ["Track" + str(i).zfill(5) for i in range(self.start, self.end)]
+        track_names = ["Track" + str(i).zfill(5) for i in range(start, end)]
         for track_name in track_names:
             for beatmap_file in os.listdir(
-                    os.path.join(self.path, track_name, "beatmaps"),
+                    os.path.join(path, track_name, "beatmaps"),
             ):
                 beatmap_files.append(
                     Path(
                         os.path.join(
-                            self.path,
+                            path,
                             track_name,
                             "beatmaps",
                             beatmap_file,
@@ -116,23 +83,30 @@ class OrsDataset(IterableDataset):
         return beatmap_files
 
     def _get_track_paths(self) -> list[Path]:
+        path, start, end = self._get_dataset_params()
         track_paths = []
-        track_names = ["Track" + str(i).zfill(5) for i in range(self.start, self.end)]
+        track_names = ["Track" + str(i).zfill(5) for i in range(start, end)]
         for track_name in track_names:
-            track_paths.append(Path(os.path.join(self.path, track_name)))
+            track_paths.append(Path(os.path.join(path, track_name)))
         return track_paths
 
-    def __iter__(self):
-        beatmap_files = self._get_track_paths() if self.per_track else self._get_beatmap_files()
+    def _get_dataset_params(self):
+        path = self.args.test_dataset_path if self.test else self.args.train_dataset_path
+        start = self.args.test_dataset_start if self.test else self.args.train_dataset_start
+        end = self.args.test_dataset_end if self.test else self.args.train_dataset_end
+        return path, start, end
 
-        if self.shuffle:
+    def __iter__(self):
+        beatmap_files = self._get_track_paths() if self.args.per_track else self._get_beatmap_files()
+
+        if not self.test:
             random.shuffle(beatmap_files)
 
-        if self.cycle_length > 1:
+        if self.args.cycle_length > 1:
             return InterleavingBeatmapDatasetIterable(
                 beatmap_files,
                 self._iterable_factory,
-                self.cycle_length,
+                self.args.cycle_length,
             )
 
         return self._iterable_factory(beatmap_files).__iter__()
@@ -140,16 +114,9 @@ class OrsDataset(IterableDataset):
     def _iterable_factory(self, beatmap_files: list[Path]):
         return BeatmapDatasetIterable(
             beatmap_files,
-            self.sample_rate,
-            self.frame_size,
-            self.src_seq_len,
-            self.tgt_seq_len,
+            self.args,
             self.parser,
             self.tokenizer,
-            self.per_track,
-            self.center_pad_decoder,
-            self.class_dropout_prob,
-            self.diff_dropout_prob,
         )
 
 
@@ -193,55 +160,34 @@ class InterleavingBeatmapDatasetIterable:
 class BeatmapDatasetIterable:
     __slots__ = (
         "beatmap_files",
+        "args",
         "parser",
         "tokenizer",
-        "sample_rate",
-        "frame_size",
-        "src_seq_len",
-        "tgt_seq_len",
         "frame_seq_len",
         "min_pre_token_len",
-        "per_track",
-        "center_pad_decoder",
-        "class_dropout_prob",
-        "diff_dropout_prob",
         "pre_token_len",
     )
 
     def __init__(
             self,
             beatmap_files: list[Path],
-            sample_rate: int,
-            frame_size: int,
-            src_seq_len: int,
-            tgt_seq_len: int,
+            args: DictConfig,
             parser: OsuParser,
             tokenizer: Tokenizer,
-            per_track: bool,
-            center_pad_decoder: bool,
-            class_dropout_prob: float = 0.0,
-            diff_dropout_prob: float = 0.0,
     ):
         self.beatmap_files = beatmap_files
+        self.args = args
         self.parser = parser
         self.tokenizer = tokenizer
-        self.per_track = per_track
-        self.center_pad_decoder = center_pad_decoder
-        self.class_dropout_prob = class_dropout_prob
-        self.diff_dropout_prob = diff_dropout_prob
-        self.sample_rate = sample_rate
-        self.frame_size = frame_size
-        self.src_seq_len = src_seq_len
-        self.tgt_seq_len = tgt_seq_len
         # let N = |src_seq_len|
         # N-1 frames creates N mel-spectrogram frames
-        self.frame_seq_len = src_seq_len - 1
+        self.frame_seq_len = args.src_seq_len - 1
         # let N = |tgt_seq_len|
         # [SOS] token + event_tokens + [EOS] token creates N+1 tokens
         # [SOS] token + event_tokens[:-1] creates N target sequence
         # event_tokens[1:] + [EOS] token creates N label sequence
         self.min_pre_token_len = 64
-        self.pre_token_len = self.tgt_seq_len // 2
+        self.pre_token_len = args.tgt_seq_len // 2
 
     def _load_audio_file(self, file: Path) -> npt.NDArray:
         """Load an audio file as a numpy time-series array
@@ -254,7 +200,7 @@ class BeatmapDatasetIterable:
             samples: Audio time series.
         """
         audio = AudioSegment.from_file(file, format=file.suffix[1:])
-        audio = audio.set_frame_rate(self.sample_rate)
+        audio = audio.set_frame_rate(self.args.sample_rate)
         audio = audio.set_channels(1)
         samples = np.array(audio.get_array_of_samples()).astype(np.float32)
         samples *= 1.0 / np.max(np.abs(samples))
@@ -273,10 +219,10 @@ class BeatmapDatasetIterable:
             frames: Audio frames.
             frame_times: Audio frame times.
         """
-        samples = np.pad(samples, [0, self.frame_size - len(samples) % self.frame_size])
-        frames = np.reshape(samples, (-1, self.frame_size))
+        samples = np.pad(samples, [0, self.args.hop_length - len(samples) % self.args.hop_length])
+        frames = np.reshape(samples, (-1, self.args.hop_length))
         frames_per_milisecond = (
-                self.sample_rate / self.frame_size / MILISECONDS_PER_SECOND
+                self.args.sample_rate / self.args.hop_length / MILISECONDS_PER_SECOND
         )
         frame_times = np.arange(len(frames)) / frames_per_milisecond
         return frames, frame_times
@@ -403,10 +349,13 @@ class BeatmapDatasetIterable:
         del sequence["pre_events"]
 
         sequence["beatmap_idx_token"] = self.tokenizer.encode_style_idx(sequence["beatmap_idx"])\
-            if random.random() >= self.class_dropout_prob else self.tokenizer.style_unk
+            if random.random() >= self.args.class_dropout_prob else self.tokenizer.style_unk
 
         sequence["difficulty_token"] = self.tokenizer.encode_diff(sequence["difficulty"])\
-            if random.random() >= self.diff_dropout_prob else self.tokenizer.diff_unk
+            if random.random() >= self.args.diff_dropout_prob else self.tokenizer.diff_unk
+
+        sequence["beatmap_idx"] = sequence["beatmap_idx"]\
+            if random.random() >= self.args.class_dropout_prob else self.tokenizer.num_classes
 
         return sequence
 
@@ -426,33 +375,31 @@ class BeatmapDatasetIterable:
         Returns:
             The same sequence with padded tokens.
         """
-        special_token_length = 0
+        special_token_length = self.args.special_token_len
 
         tokens = sequence["tokens"]
         pre_tokens = sequence["pre_tokens"]
 
-        input_tokens = torch.full((self.tgt_seq_len,), self.tokenizer.pad_id, dtype=tokens.dtype, device=tokens.device)
-        label_tokens = torch.full((self.tgt_seq_len,), LABEL_IGNORE_ID, dtype=tokens.dtype, device=tokens.device)
+        input_tokens = torch.full((self.args.tgt_seq_len,), self.tokenizer.pad_id, dtype=tokens.dtype, device=tokens.device)
+        label_tokens = torch.full((self.args.tgt_seq_len,), LABEL_IGNORE_ID, dtype=tokens.dtype, device=tokens.device)
 
-        if self.center_pad_decoder:
-            n = min(self.tgt_seq_len - self.pre_token_len, len(tokens) - 1)
+        if self.args.center_pad_decoder:
+            n = min(self.args.tgt_seq_len - self.pre_token_len, len(tokens) - 1)
             m = min(self.pre_token_len - special_token_length, len(pre_tokens))
-
-            # input_tokens[self.pre_token_len - m - 2] = sequence["difficulty_token"]
-            # input_tokens[self.pre_token_len - m - 1] = sequence["beatmap_idx_token"]
-            input_tokens[self.pre_token_len - m:self.pre_token_len] = pre_tokens[-m:]
-            input_tokens[self.pre_token_len:self.pre_token_len + n] = tokens[:n]
-            label_tokens[self.pre_token_len:self.pre_token_len + n] = tokens[1:n + 1]
+            start_index = self.pre_token_len - m - special_token_length
         else:
             # n + m + special_token_length + padding = tgt_seq_len
-            n = min(self.tgt_seq_len - special_token_length - min(self.min_pre_token_len, len(pre_tokens)), len(tokens) - 1)
-            m = min(self.tgt_seq_len - n - special_token_length, len(pre_tokens))
+            n = min(self.args.tgt_seq_len - special_token_length - min(self.min_pre_token_len, len(pre_tokens)), len(tokens) - 1)
+            m = min(self.args.tgt_seq_len - n - special_token_length, len(pre_tokens))
+            start_index = 0
 
-            # input_tokens[0] = sequence["difficulty_token"]
-            # input_tokens[1] = sequence["beatmap_idx_token"]
-            input_tokens[special_token_length:m + special_token_length] = pre_tokens[-m:]
-            input_tokens[m + special_token_length:n + m + special_token_length] = tokens[:n]
-            label_tokens[m + special_token_length:n + m + special_token_length] = tokens[1:n + 1]
+        if self.args.diff_token_index >= 0:
+            input_tokens[start_index + self.args.diff_token_index] = sequence["difficulty_token"]
+        if self.args.style_token_index >= 0:
+            input_tokens[start_index + self.args.style_token_index] = sequence["beatmap_idx_token"]
+        input_tokens[start_index + special_token_length:start_index + m + special_token_length] = pre_tokens[-m:]
+        input_tokens[start_index + m + special_token_length:start_index + m + special_token_length + n] = tokens[:n]
+        label_tokens[start_index + m + special_token_length:start_index + m + special_token_length + n] = tokens[1:n + 1]
 
         # Randomize some input tokens
         # input_tokens = torch.where((self.tokenizer.event_start[EventType.TIME_SHIFT] <= input_tokens) & (input_tokens < self.tokenizer.event_end[EventType.TIME_SHIFT]),
@@ -504,7 +451,7 @@ class BeatmapDatasetIterable:
         return sequence
 
     def __iter__(self):
-        return self._get_next_tracks() if self.per_track else self._get_next_beatmaps()
+        return self._get_next_tracks() if self.args.per_track else self._get_next_beatmaps()
 
     @staticmethod
     def _load_metadata(track_path: Path) -> dict:

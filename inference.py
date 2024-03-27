@@ -7,7 +7,7 @@ from slider import Beatmap
 
 from osuT5.inference import Preprocessor, Pipeline, Postprocessor
 from osuT5.tokenizer import Tokenizer
-from osuT5.utils import get_config, get_model
+from osuT5.utils import get_model
 
 
 def get_args_from_beatmap(args: DictConfig):
@@ -43,9 +43,8 @@ def main(args: DictConfig):
 
     tokenizer = Tokenizer()
     tokenizer.load_state_dict(tokenizer_state)
-    t5_config = get_config(args, tokenizer)
 
-    model = get_model(t5_config)
+    model = get_model(args.model, tokenizer)
     model.load_state_dict(model_state)
     model.eval()
     model.to(device)
