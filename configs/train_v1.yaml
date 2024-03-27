@@ -1,0 +1,68 @@
+defaults:
+  - _self_
+  - model: t5_small
+
+compile: true          # PyTorch 2.0 optimization
+device: gpu             # Training device (cpu/gpu)
+precision: 'bf16'         # Enable mixed precision (no/fp16/bf16/fp8)
+seed: 42                # Project seed
+
+checkpoint_path: ''     # Project checkpoint directory (to resume training)
+
+data:                  # Data settings
+  train_dataset_path: '/root/ORS16291'  # Training dataset directory
+  train_dataset_start: 0  # Training dataset start index
+  train_dataset_end: 16200    # Training dataset end index
+  test_dataset_path: '/root/ORS16291'   # Testing/validation dataset directory
+  test_dataset_start: 16200   # Testing/validation dataset start index
+  test_dataset_end: 16291     # Testing/validation dataset end index
+  src_seq_len: ${model.max_seq_len}
+  tgt_seq_len: ${model.max_target_len}
+  sample_rate: ${model.spectrogram.sample_rate}
+  hop_length: ${model.spectrogram.hop_length}
+  cycle_length: 16
+  per_track: false      # Loads all beatmaps in a track sequentially which optimizes audio data loading
+  center_pad_decoder: true            # Center pad decoder input
+  num_classes: 64821
+  num_diff_classes: 24
+  max_diff: 12
+  class_dropout_prob: 0.2
+  diff_dropout_prob: 0.2
+  special_token_len: 0
+  diff_token_index: -1
+  style_token_index: -1
+  remove_empty_sequences: true
+
+dataloader:             # Dataloader settings
+  num_workers: 8
+
+optim:                  # Optimizer settings
+  name: adamwscale
+  base_lr: 2e-2
+  batch_size: 129
+  total_steps: 65536
+  warmup_steps: 10000
+  lr_scheduler: cosine
+  weight_decay: 0.0
+  grad_clip: 1.0
+  grad_acc: 3
+  final_cosine: 1e-5
+
+eval:                   # Evaluation settings 
+  every_steps: 1000
+  steps: 500
+
+checkpoint:             # Checkpoint settings
+  every_steps: 5000
+
+logging:                # Logging settings
+  log_with: 'wandb'     # Logging service (wandb/tensorboard)
+  every_steps: 100
+  grad_l2: true
+  weights_l2: true
+
+hydra:
+  job:
+    chdir: True
+  run:
+    dir: ./logs/${now:%Y-%m-%d}/${now:%H-%M-%S}
