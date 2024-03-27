@@ -81,11 +81,9 @@ class Tokenizer:
         self.vocab_size_out: int = self._offset + sum(
             er.max_value - er.min_value + 1 for er in self.event_ranges
         )
-        # self.vocab_size_in: int = self.vocab_size_out + sum(
-        #     er.max_value - er.min_value + 1 for er in self.input_event_ranges
-        # )
-        # Remove input events from the vocabulary because they are currently not used
-        self.vocab_size_in: int = self.vocab_size_out
+        self.vocab_size_in: int = self.vocab_size_out + sum(
+            er.max_value - er.min_value + 1 for er in self.input_event_ranges
+        )
 
     @property
     def pad_id(self) -> int:
