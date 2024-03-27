@@ -21,7 +21,8 @@ from osuT5.utils import (
 
 logger = get_logger(__name__)
 
-@hydra.main(config_path="configs", config_name="train", version_base="1.1")
+
+@hydra.main(config_path="configs", config_name="train_v1", version_base="1.1")
 def main(args: DictConfig):
     accelerator = Accelerator(
         cpu=args.device == "cpu",

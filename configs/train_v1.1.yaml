@@ -2,9 +2,9 @@ defaults:
   - _self_
   - model: t5_small
 
-compile: true          # PyTorch 2.0 optimization
+compile: false          # PyTorch 2.0 optimization
 device: gpu             # Training device (cpu/gpu)
-precision: 'bf16'         # Enable mixed precision (no/fp16/bf16/fp8)
+precision: 'no'         # Enable mixed precision (no/fp16/bf16/fp8)
 seed: 42                # Project seed
 
 checkpoint_path: ''     # Project checkpoint directory (to resume training)
@@ -34,18 +34,18 @@ data:                  # Data settings
   remove_empty_sequences: false
 
 dataloader:             # Dataloader settings
-  num_workers: 8
+  num_workers: 3
 
 optim:                  # Optimizer settings
   name: adamwscale
   base_lr: 2e-2
-  batch_size: 129
+  batch_size: 128
   total_steps: 65536
   warmup_steps: 10000
   lr_scheduler: cosine
   weight_decay: 0.0
   grad_clip: 1.0
-  grad_acc: 3
+  grad_acc: 8
   final_cosine: 1e-5
 
 eval:                   # Evaluation settings 
@@ -57,7 +57,7 @@ checkpoint:             # Checkpoint settings
 
 logging:                # Logging settings
   log_with: 'wandb'     # Logging service (wandb/tensorboard)
-  every_steps: 100
+  every_steps: 10
   grad_l2: true
   weights_l2: true
 
