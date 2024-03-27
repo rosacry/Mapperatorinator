@@ -14,7 +14,6 @@ from osuT5.dataset.ors_dataset import STEPS_PER_MILLISECOND, LABEL_IGNORE_ID
 from osuT5.tokenizer import EventType
 from osuT5.utils import (
     setup_args,
-    get_config,
     get_model,
     get_tokenizer,
     get_dataloaders, eval_model, Averager, forward, add_prefix, get_optimizer, get_scheduler, acc_range,
@@ -46,8 +45,7 @@ def main(args: DictConfig):
     setup_args(args)
 
     tokenizer = get_tokenizer(args)
-    config = get_config(args, tokenizer)
-    model = get_model(config)
+    model = get_model(args, tokenizer)
     optimizer = get_optimizer(model, args)
     scheduler = get_scheduler(optimizer, args)
     train_dataloader, test_dataloader = get_dataloaders(tokenizer, args)

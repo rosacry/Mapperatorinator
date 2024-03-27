@@ -9,7 +9,6 @@ import time
 from osuT5.utils import (
     setup_args,
     train,
-    get_config,
     get_model,
     get_tokenizer,
     get_scheduler,
@@ -42,8 +41,7 @@ def main(args: DictConfig):
     setup_args(args)
 
     tokenizer = get_tokenizer(args)
-    config = get_config(args, tokenizer)
-    model = get_model(config)
+    model = get_model(args.model, tokenizer)
     optimizer = get_optimizer(model, args)
     scheduler = get_scheduler(optimizer, args)
     train_dataloader, test_dataloader = get_dataloaders(tokenizer, args)
