@@ -150,7 +150,7 @@ def maybe_grad_clip_and_grad_calc(
             parameters=model.parameters(),
             max_norm=args.optim.grad_clip,
             norm_type=2,
-        )
+        ).item()
     else:
         grad_l2 = None
 
