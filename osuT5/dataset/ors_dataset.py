@@ -26,6 +26,9 @@ LABEL_IGNORE_ID = -100
 
 class OrsDataset(IterableDataset):
     __slots__ = (
+        "path",
+        "start",
+        "end",
         "args",
         "parser",
         "tokenizer",
@@ -51,6 +54,9 @@ class OrsDataset(IterableDataset):
             test: Whether to load the test dataset.
         """
         super().__init__()
+        self.path = args.test_dataset_path if test else args.train_dataset_path
+        self.start = args.test_dataset_start if test else args.train_dataset_start
+        self.end = args.test_dataset_end if test else args.train_dataset_end
         self.args = args
         self.parser = parser
         self.tokenizer = tokenizer
@@ -62,17 +68,16 @@ class OrsDataset(IterableDataset):
             return self.beatmap_files
 
         # Get a list of all beatmap files in the dataset path in the track index range between start and end
-        path, start, end = self._get_dataset_params()
         beatmap_files = []
-        track_names = ["Track" + str(i).zfill(5) for i in range(start, end)]
+        track_names = ["Track" + str(i).zfill(5) for i in range(self.start, self.end)]
         for track_name in track_names:
             for beatmap_file in os.listdir(
-                    os.path.join(path, track_name, "beatmaps"),
+                    os.path.join(self.path, track_name, "beatmaps"),
             ):
                 beatmap_files.append(
                     Path(
                         os.path.join(
-                            path,
+                            self.path,
                             track_name,
                             "beatmaps",
                             beatmap_file,
@@ -83,18 +88,11 @@ class OrsDataset(IterableDataset):
         return beatmap_files
 
     def _get_track_paths(self) -> list[Path]:
-        path, start, end = self._get_dataset_params()
         track_paths = []
-        track_names = ["Track" + str(i).zfill(5) for i in range(start, end)]
+        track_names = ["Track" + str(i).zfill(5) for i in range(self.start, self.end)]
         for track_name in track_names:
-            track_paths.append(Path(os.path.join(path, track_name)))
+            track_paths.append(Path(os.path.join(self.path, track_name)))
         return track_paths
-
-    def _get_dataset_params(self):
-        path = self.args.test_dataset_path if self.test else self.args.train_dataset_path
-        start = self.args.test_dataset_start if self.test else self.args.train_dataset_start
-        end = self.args.test_dataset_end if self.test else self.args.train_dataset_end
-        return path, start, end
 
     def __iter__(self):
         beatmap_files = self._get_track_paths() if self.args.per_track else self._get_beatmap_files()
@@ -117,6 +115,7 @@ class OrsDataset(IterableDataset):
             self.args,
             self.parser,
             self.tokenizer,
+            self.test,
         )
 
 
@@ -163,9 +162,12 @@ class BeatmapDatasetIterable:
         "args",
         "parser",
         "tokenizer",
+        "test",
         "frame_seq_len",
         "min_pre_token_len",
         "pre_token_len",
+        "class_dropout_prob",
+        "diff_dropout_prob",
     )
 
     def __init__(
@@ -174,11 +176,13 @@ class BeatmapDatasetIterable:
             args: DictConfig,
             parser: OsuParser,
             tokenizer: Tokenizer,
+            test: bool,
     ):
         self.beatmap_files = beatmap_files
         self.args = args
         self.parser = parser
         self.tokenizer = tokenizer
+        self.test = test
         # let N = |src_seq_len|
         # N-1 frames creates N mel-spectrogram frames
         self.frame_seq_len = args.src_seq_len - 1
@@ -188,6 +192,8 @@ class BeatmapDatasetIterable:
         # event_tokens[1:] + [EOS] token creates N label sequence
         self.min_pre_token_len = 64
         self.pre_token_len = args.tgt_seq_len // 2
+        self.class_dropout_prob = 1 if self.test else args.class_dropout_prob
+        self.diff_dropout_prob = 0 if self.test else args.diff_dropout_prob
 
     def _load_audio_file(self, file: Path) -> npt.NDArray:
         """Load an audio file as a numpy time-series array
