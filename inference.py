@@ -31,7 +31,7 @@ def get_args_from_beatmap(args: DictConfig):
     args.difficulty = float(beatmap.stars()) if args.difficulty == -1 else args.difficulty
 
 
-@hydra.main(config_path="configs", config_name="inference", version_base="1.1")
+@hydra.main(config_path="configs", config_name="inference_v1", version_base="1.1")
 def main(args: DictConfig):
     get_args_from_beatmap(args)
 
