@@ -32,9 +32,9 @@ data:                  # Data settings
   diff_token_index: 0
   style_token_index: 1
   remove_empty_sequences: true
-  add_empty_sequences_at_step: 30000
+  add_empty_sequences_at_step: 15000
   add_pre_tokens: false
-  add_pre_tokens_at_step: 30000
+  add_pre_tokens_at_step: 15000
 
 dataloader:             # Dataloader settings
   num_workers: 3
