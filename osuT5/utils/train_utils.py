@@ -1,5 +1,6 @@
 import os.path
 import time
+from multiprocessing.managers import Namespace
 
 import torch
 import wandb
@@ -40,18 +41,18 @@ def add_prefix(prefix: str, stats: dict[str, float]):
     return {f"{prefix}/{k}": v for k, v in stats.items()}
 
 
-def maybe_save_checkpoint(accelerator: Accelerator, args: DictConfig):
+def maybe_save_checkpoint(accelerator: Accelerator, args: DictConfig, shared: Namespace):
     if (
-            args.current_train_step > args.optim.total_steps
-            or args.current_train_step % args.checkpoint.every_steps == 0
+            shared.current_train_step > args.optim.total_steps
+            or shared.current_train_step % args.checkpoint.every_steps == 0
     ):
-        if args.current_loss < args.best_loss:
-            args.best_loss = args.current_loss
+        if shared.current_loss < shared.best_loss:
+            shared.best_loss = shared.current_loss
             is_best = True
         else:
             is_best = False
 
-        output_dir = f"checkpoint-{args.current_train_step}"
+        output_dir = f"checkpoint-{shared.current_train_step}"
         # Saving T5 has an issue that safe serialization removes shared tensors and then the model can't be loaded.
         accelerator.save_state(output_dir=output_dir, safe_serialization=False)
 
@@ -70,9 +71,9 @@ def maybe_save_checkpoint(accelerator: Accelerator, args: DictConfig):
                     "class_dropout_prob": args.data.class_dropout_prob,
                     "diff_dropout_prob": args.data.diff_dropout_prob,
                     "spectrogram": args.model.spectrogram,
-                    "current_train_step": args.current_train_step,
-                    "current_epoch": args.current_epoch,
-                    "current_loss": args.current_loss,
+                    "current_train_step": shared.current_train_step,
+                    "current_epoch": shared.current_epoch,
+                    "current_loss": shared.current_loss,
                 },
             )
 
@@ -89,17 +90,18 @@ def maybe_eval(
         dataloader: DataLoader,
         tokenizer: Tokenizer,
         args: DictConfig,
+        shared: Namespace,
 ):
     if (
-            args.current_train_step > args.optim.total_steps
-            or args.current_train_step % args.eval.every_steps == 0
+            shared.current_train_step > args.optim.total_steps
+            or shared.current_train_step % args.eval.every_steps == 0
     ):
         model.eval()
 
         with torch.no_grad():
-            eval_model(model, accelerator, dataloader, tokenizer, args)
+            eval_model(model, accelerator, dataloader, tokenizer, args, shared)
 
-        args.last_log = time.time()
+        shared.last_log = time.time()
         model.train()
 
 
@@ -109,8 +111,9 @@ def maybe_logging(
         optimizer: Optimizer,
         averager: Averager,
         args: DictConfig,
+        shared: Namespace,
 ):
-    def extra_stats(args, model, optimizer):
+    def extra_stats(args, shared, model, optimizer):
         stats = {}
 
         if args.logging.weights_l2:
@@ -121,23 +124,23 @@ def maybe_logging(
 
         stats["lr"] = optimizer.param_groups[0]["lr"]
         stats["seconds_per_step"] = (
-                                            time.time() - args.last_log
+                                            time.time() - shared.last_log
                                     ) / args.logging.every_steps
 
         return stats
 
-    if args.current_train_step % args.logging.every_steps == 0:
-        stats = extra_stats(args, model, optimizer)
+    if shared.current_train_step % args.logging.every_steps == 0:
+        stats = extra_stats(args, shared, model, optimizer)
 
         averager.update(stats)
         averaged_stats = averager.average()
-        averaged_stats["epoch"] = args.current_epoch
+        averaged_stats["epoch"] = shared.current_epoch
         averaged_stats = add_prefix("train", averaged_stats)
-        accelerator.log(averaged_stats, step=args.current_train_step)
-        averaged_stats["step"] = args.current_train_step
+        accelerator.log(averaged_stats, step=shared.current_train_step)
+        averaged_stats["step"] = shared.current_train_step
         logger.info(averaged_stats)
 
-        args.last_log = time.time()
+        shared.last_log = time.time()
 
 
 def maybe_grad_clip_and_grad_calc(
@@ -174,8 +177,9 @@ def eval_model(
         dataloader: DataLoader,
         tokenizer: Tokenizer,
         args: DictConfig,
+        shared: Namespace,
 ):
-    args.last_log = time.time()
+    shared.last_log = time.time()
     averager = Averager()
 
     for batch_id, batch in enumerate(dataloader, start=1):
@@ -188,13 +192,13 @@ def eval_model(
         _, stats = forward(model, batch, tokenizer)
         averager.update(stats)
 
-    averager.update({"time": time.time() - args.last_log})
+    averager.update({"time": time.time() - shared.last_log})
     averaged_stats = averager.average()
     averaged_stats = add_prefix("test", averaged_stats)
-    accelerator.log(averaged_stats, step=args.current_train_step)
+    accelerator.log(averaged_stats, step=shared.current_train_step)
     logger.info(averaged_stats)
 
-    args.current_loss = averaged_stats["test/loss"]
+    shared.current_loss = averaged_stats["test/loss"]
 
 
 def acc_range(preds, labels, start_index, end_index):
@@ -202,15 +206,6 @@ def acc_range(preds, labels, start_index, end_index):
     range_labels = labels[index]
     range_preds = preds[index]
     return (range_preds == range_labels).detach().float().cpu().numpy()
-
-
-def maybe_change_dataset(args):
-    if 0 <= args.data.add_empty_sequences_at_step == args.current_train_step:
-        args.data.remove_empty_sequences = False
-        logger.info("Enabling empty sequences in dataset.")
-    if 0 <= args.data.add_pre_tokens_at_step == args.current_train_step:
-        args.data.add_pre_tokens = True
-        logger.info("Enabling pre-tokens in dataset.")
 
 
 def train(
@@ -222,19 +217,20 @@ def train(
         optimizer: Optimizer,
         tokenizer: Tokenizer,
         args: DictConfig,
+        shared: Namespace,
 ):
     model.train()
 
     train_averager = Averager()
 
-    while args.current_train_step <= args.optim.total_steps:
+    while shared.current_train_step <= args.optim.total_steps:
         # In case there is a remainder from previous epoch, we need to reset the optimizer
         optimizer.zero_grad(set_to_none=True)
 
-        print(f"Epoch {args.current_epoch}")
+        print(f"Epoch {shared.current_epoch}")
 
         for batch_id, batch in enumerate(train_dataloader, start=1):
-            if args.current_train_step > args.optim.total_steps:
+            if shared.current_train_step > args.optim.total_steps:
                 break
 
             loss, stats = forward(model, batch)
@@ -250,16 +246,15 @@ def train(
                 lr_scheduler.step()
                 optimizer.zero_grad(set_to_none=True)
 
-                maybe_logging(model, accelerator, optimizer, train_averager, args)
-                maybe_eval(model, accelerator, test_dataloader, tokenizer, args)
-                maybe_save_checkpoint(accelerator, args)
-                maybe_change_dataset(args)
+                maybe_logging(model, accelerator, optimizer, train_averager, args, shared)
+                maybe_eval(model, accelerator, test_dataloader, tokenizer, args, shared)
+                maybe_save_checkpoint(accelerator, args, shared)
 
-                args.current_train_step += 1
+                shared.current_train_step += 1
 
-        args.current_epoch += 1
+        shared.current_epoch += 1
 
-    maybe_eval(model, accelerator, test_dataloader, tokenizer, args)
-    maybe_save_checkpoint(accelerator, args)
+    maybe_eval(model, accelerator, test_dataloader, tokenizer, args, shared)
+    maybe_save_checkpoint(accelerator, args, shared)
 
     accelerator.end_training()

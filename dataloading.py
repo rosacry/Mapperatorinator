@@ -1,3 +1,5 @@
+import multiprocessing
+
 import hydra
 import tqdm
 from matplotlib import pyplot as plt
@@ -19,12 +21,16 @@ from osuT5.utils import (
 def main(args: DictConfig):
     setup_args(args)
 
+    mgr = multiprocessing.Manager()
+    shared = mgr.Namespace()
+    shared.step = 1
     tokenizer = get_tokenizer(args)
     parser = OsuParser(tokenizer)
     dataset = OrsDataset(
         args.data,
         parser,
         tokenizer,
+        shared=shared,
     )
 
     dataloader = DataLoader(
@@ -57,6 +63,7 @@ def main(args: DictConfig):
                     diff_unks += 1
                 if b['decoder_input_ids'][i][1] == tokenizer.style_unk:
                     style_unks += 1
+            shared.step += 300
             if len(lengths) > 1000:
                 break
 

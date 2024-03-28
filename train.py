@@ -1,3 +1,5 @@
+import multiprocessing
+
 import numpy as np
 from accelerate import Accelerator
 from accelerate.utils import ProjectConfiguration
@@ -40,11 +42,19 @@ def main(args: DictConfig):
 
     setup_args(args)
 
+    mgr = multiprocessing.Manager()
+    shared = mgr.Namespace()
+    shared.current_train_step = 1
+    shared.current_epoch = 1
+    shared.last_log = time.time()
+    shared.current_loss = np.Infinity
+    shared.best_loss = np.Infinity
+
     tokenizer = get_tokenizer(args)
     model = get_model(args.model, tokenizer)
     optimizer = get_optimizer(model, args)
     scheduler = get_scheduler(optimizer, args)
-    train_dataloader, test_dataloader = get_dataloaders(tokenizer, args)
+    train_dataloader, test_dataloader = get_dataloaders(tokenizer, args, shared)
 
     # noinspection PyTypeChecker
     (
@@ -65,13 +75,6 @@ def main(args: DictConfig):
     if args.compile:
         model = torch.compile(model)
 
-    with open_dict(args):
-        args.current_train_step = 1
-        args.current_epoch = 1
-        args.last_log = time.time()
-        args.current_loss = np.Infinity
-        args.best_loss = np.Infinity
-
     train(
         model,
         train_dataloader,
@@ -81,6 +84,7 @@ def main(args: DictConfig):
         optimizer,
         tokenizer,
         args,
+        shared,
     )
 
 
