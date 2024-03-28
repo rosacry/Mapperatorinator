@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import random
+from multiprocessing.managers import Namespace
 from typing import Optional, Callable
 from pathlib import Path
 
@@ -34,6 +35,7 @@ class OrsDataset(IterableDataset):
         "tokenizer",
         "beatmap_files",
         "test",
+        "shared",
     )
 
     def __init__(
@@ -43,6 +45,7 @@ class OrsDataset(IterableDataset):
             tokenizer: Tokenizer,
             beatmap_files: Optional[list[Path]] = None,
             test: bool = False,
+            shared: Namespace = None,
     ):
         """Manage and process ORS dataset.
 
@@ -62,6 +65,7 @@ class OrsDataset(IterableDataset):
         self.tokenizer = tokenizer
         self.beatmap_files = beatmap_files
         self.test = test
+        self.shared = shared
 
     def _get_beatmap_files(self) -> list[Path]:
         if self.beatmap_files is not None:
@@ -116,6 +120,7 @@ class OrsDataset(IterableDataset):
             self.parser,
             self.tokenizer,
             self.test,
+            self.shared,
         )
 
 
@@ -163,11 +168,14 @@ class BeatmapDatasetIterable:
         "parser",
         "tokenizer",
         "test",
+        "shared",
         "frame_seq_len",
         "min_pre_token_len",
         "pre_token_len",
         "class_dropout_prob",
         "diff_dropout_prob",
+        "add_pre_tokens",
+        "remove_empty_sequences",
     )
 
     def __init__(
@@ -177,12 +185,14 @@ class BeatmapDatasetIterable:
             parser: OsuParser,
             tokenizer: Tokenizer,
             test: bool,
+            shared: Namespace,
     ):
         self.beatmap_files = beatmap_files
         self.args = args
         self.parser = parser
         self.tokenizer = tokenizer
         self.test = test
+        self.shared = shared
         # let N = |src_seq_len|
         # N-1 frames creates N mel-spectrogram frames
         self.frame_seq_len = args.src_seq_len - 1
@@ -194,6 +204,8 @@ class BeatmapDatasetIterable:
         self.pre_token_len = args.tgt_seq_len // 2
         self.class_dropout_prob = 1 if self.test else args.class_dropout_prob
         self.diff_dropout_prob = 0 if self.test else args.diff_dropout_prob
+        self.add_pre_tokens = args.add_pre_tokens
+        self.remove_empty_sequences = args.remove_empty_sequences
 
     def _load_audio_file(self, file: Path) -> npt.NDArray:
         """Load an audio file as a numpy time-series array
@@ -276,9 +288,6 @@ class BeatmapDatasetIterable:
 
             split_pre_idx = max(split_start_idx - self.frame_seq_len, 0)
             target_pre_idx = event_start_indices[split_pre_idx]
-
-            if not self.args.add_pre_tokens:
-                target_pre_idx = target_start_idx
 
             # Create the sequence
             sequence = {
@@ -388,25 +397,27 @@ class BeatmapDatasetIterable:
 
         tokens = sequence["tokens"]
         pre_tokens = sequence["pre_tokens"]
+        num_pre_tokens = len(pre_tokens) if self.add_pre_tokens else 0
 
         input_tokens = torch.full((self.args.tgt_seq_len,), self.tokenizer.pad_id, dtype=tokens.dtype, device=tokens.device)
         label_tokens = torch.full((self.args.tgt_seq_len,), LABEL_IGNORE_ID, dtype=tokens.dtype, device=tokens.device)
 
         if self.args.center_pad_decoder:
             n = min(self.args.tgt_seq_len - self.pre_token_len, len(tokens) - 1)
-            m = min(self.pre_token_len - special_token_length, len(pre_tokens))
+            m = min(self.pre_token_len - special_token_length, num_pre_tokens)
             start_index = self.pre_token_len - m - special_token_length
         else:
             # n + m + special_token_length + padding = tgt_seq_len
-            n = min(self.args.tgt_seq_len - special_token_length - min(self.min_pre_token_len, len(pre_tokens)), len(tokens) - 1)
-            m = min(self.args.tgt_seq_len - n - special_token_length, len(pre_tokens))
+            n = min(self.args.tgt_seq_len - special_token_length - min(self.min_pre_token_len, num_pre_tokens), len(tokens) - 1)
+            m = min(self.args.tgt_seq_len - n - special_token_length, num_pre_tokens)
             start_index = 0
 
         if self.args.diff_token_index >= 0:
             input_tokens[start_index + self.args.diff_token_index] = sequence["difficulty_token"]
         if self.args.style_token_index >= 0:
             input_tokens[start_index + self.args.style_token_index] = sequence["beatmap_idx_token"]
-        input_tokens[start_index + special_token_length:start_index + m + special_token_length] = pre_tokens[-m:]
+        if m > 0:
+            input_tokens[start_index + special_token_length:start_index + m + special_token_length] = pre_tokens[-m:]
         input_tokens[start_index + m + special_token_length:start_index + m + special_token_length + n] = tokens[:n]
         label_tokens[start_index + m + special_token_length:start_index + m + special_token_length + n] = tokens[1:n + 1]
 
@@ -459,6 +470,15 @@ class BeatmapDatasetIterable:
 
         return sequence
 
+    def maybe_change_dataset(self):
+        if self.shared is None:
+            return
+        step = self.shared.step
+        if 0 <= self.args.add_empty_sequences_at_step <= step and self.remove_empty_sequences:
+            self.remove_empty_sequences = False
+        if 0 <= self.args.add_pre_tokens_at_step <= step and not self.add_pre_tokens:
+            self.add_pre_tokens = True
+
     def __iter__(self):
         return self._get_next_tracks() if self.args.per_track else self._get_next_beatmaps()
 
@@ -509,11 +529,12 @@ class BeatmapDatasetIterable:
         )
 
         for sequence in sequences:
+            self.maybe_change_dataset()
             sequence = self._trim_time_shifts(sequence)
             sequence = self._tokenize_sequence(sequence)
             sequence = self._pad_frame_sequence(sequence)
             sequence = self._pad_and_split_token_sequence(sequence)
-            if self.args.remove_empty_sequences and ((sequence["labels"] == self.tokenizer.eos_id) | (sequence["labels"] == self.tokenizer.pad_id)).all():
+            if self.remove_empty_sequences and ((sequence["labels"] == self.tokenizer.eos_id) | (sequence["labels"] == self.tokenizer.pad_id)).all():
                 continue
             # if sequence["decoder_input_ids"][self.pre_token_len - 1] != self.tokenizer.pad_id:
             #     continue

@@ -1,3 +1,5 @@
+from multiprocessing.managers import Namespace
+
 import torch
 import numpy as np
 from omegaconf import DictConfig, open_dict
@@ -100,19 +102,21 @@ def get_scheduler(optimizer: Optimizer, args: DictConfig) -> LRScheduler:
     return scheduler
 
 
-def get_dataloaders(tokenizer: Tokenizer, args: DictConfig) -> tuple[DataLoader, DataLoader]:
+def get_dataloaders(tokenizer: Tokenizer, args: DictConfig, shared: Namespace) -> tuple[DataLoader, DataLoader]:
     parser = OsuParser(tokenizer)
     dataset = {
         "train": OrsDataset(
             args.data,
             parser,
             tokenizer,
+            shared=shared,
         ),
         "test": OrsDataset(
             args.data,
             parser,
             tokenizer,
             test=True,
+            shared=shared,
         ),
     }
 
