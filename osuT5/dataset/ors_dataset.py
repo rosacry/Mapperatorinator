@@ -473,7 +473,7 @@ class BeatmapDatasetIterable:
     def maybe_change_dataset(self):
         if self.shared is None:
             return
-        step = self.shared.step
+        step = self.shared.current_train_step
         if 0 <= self.args.add_empty_sequences_at_step <= step and self.remove_empty_sequences:
             self.remove_empty_sequences = False
         if 0 <= self.args.add_pre_tokens_at_step <= step and not self.add_pre_tokens:
