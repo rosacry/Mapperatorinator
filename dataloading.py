@@ -23,7 +23,7 @@ def main(args: DictConfig):
 
     mgr = multiprocessing.Manager()
     shared = mgr.Namespace()
-    shared.step = 1
+    shared.current_train_step = 1
     tokenizer = get_tokenizer(args)
     parser = OsuParser(tokenizer)
     dataset = OrsDataset(
@@ -56,16 +56,16 @@ def main(args: DictConfig):
         diff_unks = 0
         style_unks = 0
         for b in tqdm.tqdm(dataloader, smoothing=0.01):
-            for i in range(len(b["frames"])):  # batch size
-                length = b['decoder_attention_mask'][i].sum().item()
-                lengths.append(length)
-                if b['decoder_input_ids'][i][0] == tokenizer.diff_unk:
-                    diff_unks += 1
-                if b['decoder_input_ids'][i][1] == tokenizer.style_unk:
-                    style_unks += 1
-            shared.step += 300
-            if len(lengths) > 1000:
-                break
+            # for i in range(len(b["frames"])):  # batch size
+            #     length = b['decoder_attention_mask'][i].sum().item()
+            #     lengths.append(length)
+            #     if b['decoder_input_ids'][i][0] == tokenizer.diff_unk:
+            #         diff_unks += 1
+            #     if b['decoder_input_ids'][i][1] == tokenizer.style_unk:
+            #         style_unks += 1
+            shared.current_train_step += 1
+            # if len(lengths) > 1000:
+            #     break
 
         plt.hist(lengths, bins=100)
         plt.show()
