@@ -42,13 +42,13 @@ dataloader:             # Dataloader settings
 optim:                  # Optimizer settings
   name: adamwscale
   base_lr: 2e-2
-  batch_size: 128
+  batch_size: 129
   total_steps: 65536
   warmup_steps: 10000
   lr_scheduler: cosine
   weight_decay: 0.0
   grad_clip: 1.0
-  grad_acc: 2
+  grad_acc: 3
   final_cosine: 1e-5
 
 eval:                   # Evaluation settings 
