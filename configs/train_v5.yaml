@@ -21,7 +21,7 @@ data:                  # Data settings
   sample_rate: ${model.spectrogram.sample_rate}
   hop_length: ${model.spectrogram.hop_length}
   cycle_length: 16
-  per_track: false      # Loads all beatmaps in a track sequentially which optimizes audio data loading
+  per_track: true      # Loads all beatmaps in a track sequentially which optimizes audio data loading
   center_pad_decoder: false            # Center pad decoder input
   num_classes: 64821
   num_diff_classes: 24
