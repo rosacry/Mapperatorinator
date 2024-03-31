@@ -175,7 +175,7 @@ class BeatmapDatasetIterable:
         "class_dropout_prob",
         "diff_dropout_prob",
         "add_pre_tokens",
-        "remove_empty_sequences",
+        "add_empty_sequences",
     )
 
     def __init__(
@@ -205,7 +205,7 @@ class BeatmapDatasetIterable:
         self.class_dropout_prob = 1 if self.test else args.class_dropout_prob
         self.diff_dropout_prob = 0 if self.test else args.diff_dropout_prob
         self.add_pre_tokens = args.add_pre_tokens
-        self.remove_empty_sequences = args.remove_empty_sequences
+        self.add_empty_sequences = args.add_empty_sequences
 
     def _load_audio_file(self, file: Path) -> npt.NDArray:
         """Load an audio file as a numpy time-series array
@@ -397,7 +397,7 @@ class BeatmapDatasetIterable:
 
         tokens = sequence["tokens"]
         pre_tokens = sequence["pre_tokens"]
-        num_pre_tokens = len(pre_tokens) if self.add_pre_tokens else 0
+        num_pre_tokens = len(pre_tokens) if False else 0
 
         input_tokens = torch.full((self.args.tgt_seq_len,), self.tokenizer.pad_id, dtype=tokens.dtype, device=tokens.device)
         label_tokens = torch.full((self.args.tgt_seq_len,), LABEL_IGNORE_ID, dtype=tokens.dtype, device=tokens.device)
@@ -474,8 +474,8 @@ class BeatmapDatasetIterable:
         if self.shared is None:
             return
         step = self.shared.current_train_step
-        if 0 <= self.args.add_empty_sequences_at_step <= step and self.remove_empty_sequences:
-            self.remove_empty_sequences = False
+        if 0 <= self.args.add_empty_sequences_at_step <= step and not self.add_empty_sequences:
+            self.add_empty_sequences = True
         if 0 <= self.args.add_pre_tokens_at_step <= step and not self.add_pre_tokens:
             self.add_pre_tokens = True
 
@@ -534,7 +534,7 @@ class BeatmapDatasetIterable:
             sequence = self._tokenize_sequence(sequence)
             sequence = self._pad_frame_sequence(sequence)
             sequence = self._pad_and_split_token_sequence(sequence)
-            if self.remove_empty_sequences and ((sequence["labels"] == self.tokenizer.eos_id) | (sequence["labels"] == self.tokenizer.pad_id)).all():
+            if not self.add_empty_sequences and ((sequence["labels"] == self.tokenizer.eos_id) | (sequence["labels"] == self.tokenizer.pad_id)).all():
                 continue
             # if sequence["decoder_input_ids"][self.pre_token_len - 1] != self.tokenizer.pad_id:
             #     continue
