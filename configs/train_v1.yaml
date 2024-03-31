@@ -35,6 +35,7 @@ data:                  # Data settings
   add_empty_sequences_at_step: 35000
   add_pre_tokens: true
   add_pre_tokens_at_step: -1
+  max_pre_token_len: -1
 
 dataloader:             # Dataloader settings
   num_workers: 8

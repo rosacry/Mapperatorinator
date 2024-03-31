@@ -399,6 +399,9 @@ class BeatmapDatasetIterable:
         pre_tokens = sequence["pre_tokens"]
         num_pre_tokens = len(pre_tokens) if self.args.add_pre_tokens else 0
 
+        if self.args.max_pre_token_len > 0:
+            num_pre_tokens = min(num_pre_tokens, self.args.max_pre_token_len)
+
         input_tokens = torch.full((self.args.tgt_seq_len,), self.tokenizer.pad_id, dtype=tokens.dtype, device=tokens.device)
         label_tokens = torch.full((self.args.tgt_seq_len,), LABEL_IGNORE_ID, dtype=tokens.dtype, device=tokens.device)
 
