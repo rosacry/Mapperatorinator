@@ -1,6 +1,6 @@
 defaults:
   - _self_
-  - model: t5_small
+  - model: t5_small_v4
 
 model_path: ''          # Path to trained model
 audio_path: ''          # Path to input audio
@@ -13,6 +13,8 @@ artist: ''              # Song artist
 beatmap_path: ''        # Path to .osu file which will be remapped
 beatmap_id: -1          # Beatmap ID to use as style
 difficulty: -1           # Difficulty star rating to map
+creator: 'osuT5'        # Beatmap creator
+version: 'osuT5 V4'        # Beatmap version
 
 data:                  # Data settings
   center_pad_decoder: false            # Center pad decoder input
