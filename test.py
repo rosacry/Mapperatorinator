@@ -16,7 +16,8 @@ from osuT5.utils import (
     setup_args,
     get_model,
     get_tokenizer,
-    get_dataloaders, eval_model, Averager, forward, add_prefix, get_optimizer, get_scheduler, acc_range,
+    get_dataloaders, Averager, add_prefix, get_optimizer, get_scheduler, acc_range,
+    get_shared_training_state,
 )
 
 logger = get_logger(__name__)
@@ -45,11 +46,14 @@ def main(args: DictConfig):
 
     setup_args(args)
 
+    shared = get_shared_training_state()
+    shared.current_train_step = args.optim.total_steps
+
     tokenizer = get_tokenizer(args)
-    model = get_model(args, tokenizer)
+    model = get_model(args.model, tokenizer)
     optimizer = get_optimizer(model, args)
     scheduler = get_scheduler(optimizer, args)
-    train_dataloader, test_dataloader = get_dataloaders(tokenizer, args)
+    train_dataloader, test_dataloader = get_dataloaders(tokenizer, args, shared)
 
     # noinspection PyTypeChecker
     (
