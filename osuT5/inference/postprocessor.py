@@ -27,6 +27,8 @@ class BeatmapConfig:
     title_unicode: str = ""
     artist: str = ""
     artist_unicode: str = ""
+    creator: str = ""
+    version: str = ""
 
     # Difficulty
     hp_drain_rate: float = 5
@@ -74,6 +76,8 @@ class Postprocessor(object):
             artist_unicode=str(args.artist),
             audio_filename=pathlib.Path(args.audio_path).name,
             slider_multiplier=float(args.slider_multiplier),
+            creator=str(args.creator),
+            version=str(args.version),
         )
         self.offset = args.offset
         self.beat_length = 60000 / args.bpm

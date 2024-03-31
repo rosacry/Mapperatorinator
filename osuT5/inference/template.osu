@@ -22,8 +22,8 @@ Title:$title
 TitleUnicode:$title_unicode
 Artist:$artist
 ArtistUnicode:$artist_unicode
-Creator:osuT5
-Version:osuT5
+Creator:$creator
+Version:$version
 Source:
 Tags:
 
