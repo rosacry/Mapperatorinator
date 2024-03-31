@@ -16,6 +16,7 @@ from osuT5.utils import (
     get_scheduler,
     get_optimizer,
     get_dataloaders,
+    get_shared_training_state,
 )
 
 
@@ -42,14 +43,7 @@ def main(args: DictConfig):
 
     setup_args(args)
 
-    mgr = multiprocessing.Manager()
-    shared = mgr.Namespace()
-    shared.current_train_step = 1
-    shared.current_epoch = 1
-    shared.last_log = time.time()
-    shared.current_loss = np.Infinity
-    shared.best_loss = np.Infinity
-
+    shared = get_shared_training_state()
     tokenizer = get_tokenizer(args)
     model = get_model(args.model, tokenizer)
     optimizer = get_optimizer(model, args)

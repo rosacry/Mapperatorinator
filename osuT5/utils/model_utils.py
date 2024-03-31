@@ -1,3 +1,5 @@
+import multiprocessing
+import time
 from multiprocessing.managers import Namespace
 
 import torch
@@ -15,6 +17,17 @@ from torch.optim.lr_scheduler import (
 from osuT5.dataset import OrsDataset, OsuParser
 from osuT5.model.osu_t import OsuT
 from osuT5.tokenizer import Tokenizer
+
+
+def get_shared_training_state() -> Namespace:
+    mgr = multiprocessing.Manager()
+    shared = mgr.Namespace()
+    shared.current_train_step = 1
+    shared.current_epoch = 1
+    shared.last_log = time.time()
+    shared.current_loss = np.Infinity
+    shared.best_loss = np.Infinity
+    return shared
 
 
 def get_model(args: DictConfig, tokenizer: Tokenizer) -> OsuT:
