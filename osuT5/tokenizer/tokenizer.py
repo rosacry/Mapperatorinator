@@ -174,10 +174,10 @@ class Tokenizer:
 
     def _init_beatmap_idx(self, args: DictConfig) -> None:
         """Initializes and caches the beatmap index."""
-        if args is None or "train_dataset_path" not in args:
+        if args is None or "train_dataset_path" not in args.data:
             return
 
-        path = Path(args.train_dataset_path)
+        path = Path(args.data.train_dataset_path)
         cache_path = path / "beatmap_idx.pickle"
 
         if cache_path.exists():
