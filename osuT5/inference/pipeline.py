@@ -30,6 +30,7 @@ class Pipeline(object):
         self.special_token_len = args.data.special_token_len
         self.diff_token_index = args.data.diff_token_index
         self.style_token_index = args.data.style_token_index
+        self.max_pre_token_len = args.data.max_pre_token_len
 
     def generate(self, model: OsuT, sequences: torch.Tensor) -> list[Event]:
         """Generate a list of Event object lists and their timestamps given source sequences.
@@ -103,6 +104,9 @@ class Pipeline(object):
             prev_tokens = predicted_tokens
             if prev_tokens.shape[1] > 0:
                 prev_tokens = self._timeshift_tokens(prev_tokens, -self.miliseconds_per_sequence)
+
+            if 0 <= self.max_pre_token_len < prev_tokens.shape[1]:
+                prev_tokens = prev_tokens[:, -self.max_pre_token_len:]
 
         return events
 
