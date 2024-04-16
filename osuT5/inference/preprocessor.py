@@ -13,6 +13,7 @@ class Preprocessor(object):
         self.frame_size = args.model.spectrogram.hop_length
         self.sample_rate = args.model.spectrogram.sample_rate
         self.samples_per_sequence = self.frame_seq_len * self.frame_size
+        self.sequence_stride = int(self.samples_per_sequence * args.data.sequence_stride)
 
     def load(self, path: str) -> npt.ArrayLike:
         """Load an audio file as audio frames. Convert stereo to mono, normalize.
@@ -41,8 +42,18 @@ class Preprocessor(object):
         """
         samples = np.pad(
             samples,
-            [0, self.samples_per_sequence - len(samples) % self.samples_per_sequence],
+            [0, self.sequence_stride - (len(samples) - self.samples_per_sequence) % self.sequence_stride],
         )
-        sequences = np.reshape(samples, (-1, self.samples_per_sequence))
+        sequences = self.window(samples, self.samples_per_sequence, self.sequence_stride)
         sequences = torch.from_numpy(sequences).to(torch.float32)
         return sequences
+
+    @staticmethod
+    def window(a, w, o, copy=False):
+        sh = (a.size - w + 1, w)
+        st = a.strides * 2
+        view = np.lib.stride_tricks.as_strided(a, strides=st, shape=sh)[0::o]
+        if copy:
+            return view.copy()
+        else:
+            return view

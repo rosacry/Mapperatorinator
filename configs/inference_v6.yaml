@@ -17,6 +17,7 @@ creator: 'osuT5'        # Beatmap creator
 version: 'osuT5 V6'        # Beatmap version
 
 data:                  # Data settings
+  sequence_stride: 0.5             # Fraction of audio sequence length to shift inference window
   center_pad_decoder: false            # Center pad decoder input
   special_token_len: 2
   diff_token_index: 0

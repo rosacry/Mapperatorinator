@@ -21,9 +21,9 @@ class Pipeline(object):
         self.frame_size = args.model.spectrogram.hop_length
         self.sample_rate = args.model.spectrogram.sample_rate
         self.samples_per_sequence = self.frame_seq_len * self.frame_size
-        self.miliseconds_per_sequence = (
-                self.samples_per_sequence * MILISECONDS_PER_SECOND / self.sample_rate
-        )
+        self.sequence_stride = int(self.samples_per_sequence * args.data.sequence_stride)
+        self.miliseconds_per_sequence = self.samples_per_sequence * MILISECONDS_PER_SECOND / self.sample_rate
+        self.miliseconds_per_stride = self.sequence_stride * MILISECONDS_PER_SECOND / self.sample_rate
         self.beatmap_id = args.beatmap_id
         self.difficulty = args.difficulty
         self.center_pad_decoder = args.data.center_pad_decoder
@@ -44,7 +44,7 @@ class Pipeline(object):
             event_times: Corresponding event times of Event object lists in miliseconds.
         """
         events = []
-        prev_tokens = torch.full((1, 0), self.tokenizer.pad_id, dtype=torch.long, device=self.device)
+        event_times = []
 
         idx_dict = self.tokenizer.beatmap_idx
         if self.beatmap_id in idx_dict:
@@ -62,13 +62,28 @@ class Pipeline(object):
         special_tokens[:, self.style_token_index] = style_token
 
         for sequence_index, frames in enumerate(tqdm(sequences)):
+            # Get tokens of previous frame
+            frame_time = sequence_index * self.miliseconds_per_stride
+            prev_events = self._get_events_time_range(
+                events, event_times, frame_time - self.miliseconds_per_sequence, frame_time)
+            post_events = self._get_events_time_range(
+                events, event_times, frame_time, frame_time + self.miliseconds_per_sequence)
+            prev_tokens = self._encode(prev_events, frame_time)
+            post_tokens = self._encode(post_events, frame_time)
+            post_token_length = post_tokens.shape[1]
+
+            if 0 <= self.max_pre_token_len < prev_tokens.shape[1]:
+                prev_tokens = prev_tokens[:, -self.max_pre_token_len:]
+
+            # Get prefix tokens
             prefix = torch.concatenate([special_tokens, prev_tokens], dim=-1)
             if self.center_pad_decoder:
                 prefix = F.pad(prefix, (self.tgt_seq_len // 2 - prefix.shape[1], 0), value=self.tokenizer.pad_id)
-
             prefix_length = prefix.shape[1]
+
+            # Get tokens
             tokens = torch.tensor([[self.tokenizer.sos_id]], dtype=torch.long, device=self.device)
-            tokens = torch.concatenate([prefix, tokens], dim=-1)
+            tokens = torch.concatenate([prefix, tokens, post_tokens], dim=-1)
 
             frames = frames.to(self.device).unsqueeze(0)
             encoder_outputs = None
@@ -97,18 +112,95 @@ class Pipeline(object):
                 if eos_in_sentence.all():
                     break
 
-            predicted_tokens = tokens[:, prefix_length + 1:-1]
-            result = self._decode(predicted_tokens[0], sequence_index)
+            # Trim prefix, SOS, post-tokens, and EOS tokens
+            predicted_tokens = tokens[:, prefix_length + 1 + post_token_length:-1]
+            result = self._decode(predicted_tokens[0], frame_time)
             events += result
-
-            prev_tokens = predicted_tokens
-            if prev_tokens.shape[1] > 0:
-                prev_tokens = self._timeshift_tokens(prev_tokens, -self.miliseconds_per_sequence)
-
-            if 0 <= self.max_pre_token_len < prev_tokens.shape[1]:
-                prev_tokens = prev_tokens[:, -self.max_pre_token_len:]
+            self._update_event_times(events, event_times, frame_time)
 
         return events
+
+    def _get_events_time_range(self, events: List[Event], event_times: List[float], start_time: float, end_time: float):
+        # Look from the end of the list
+        s = 0
+        for i in range(len(event_times) - 1, -1, -1):
+            if event_times[i] < start_time:
+                s = i + 1
+                break
+        e = len(events)
+        for i in range(len(event_times) - 1, -1, -1):
+            if event_times[i] < end_time:
+                e = i + 1
+                break
+        return events[s:e]
+
+    def _update_event_times(self, events: List[Event], event_times: List[float], frame_time: float):
+        non_timed_events = [
+            EventType.BEZIER_ANCHOR,
+            EventType.PERFECT_ANCHOR,
+            EventType.CATMULL_ANCHOR,
+            EventType.RED_ANCHOR,
+        ]
+        timed_events = [
+            EventType.CIRCLE,
+            EventType.SPINNER,
+            EventType.SPINNER_END,
+            EventType.SLIDER_HEAD,
+            EventType.LAST_ANCHOR,
+            EventType.SLIDER_END,
+        ]
+
+        end_time = frame_time + self.miliseconds_per_sequence
+        start_index = len(event_times)
+        end_index = len(events)
+        ct = 0 if len(event_times) == 0 else event_times[-1]
+        for i in range(start_index, end_index):
+            event = events[i]
+            if event.type == EventType.TIME_SHIFT:
+                ct = event.value
+            event_times.append(ct)
+
+        # Interpolate time for control point events
+        # T-D-Start-D-CP-D-CP-T-D-LCP-T-D-End
+        # 1-1-1-----1-1--1-1--7-7--7--9-9-9--
+        # 1-1-1-----3-3--5-5--7-7--7--9-9-9--
+        ct = end_time
+        interpolate = False
+        for i in range(end_index - 1, start_index - 1, -1):
+            event = events[i]
+
+            if event.type in timed_events:
+                interpolate = False
+
+            if event.type in non_timed_events:
+                interpolate = True
+
+            if not interpolate:
+                ct = event_times[i]
+                continue
+
+            if event.type not in non_timed_events:
+                event_times[i] = ct
+                continue
+
+            # Find the time of the first timed event and the number of control points between
+            j = i
+            count = 0
+            t = ct
+            while j >= 0:
+                event2 = events[j]
+                if event2.type == EventType.TIME_SHIFT:
+                    t = event_times[j]
+                    break
+                if event2.type in non_timed_events:
+                    count += 1
+                j -= 1
+            if i < 0:
+                t = 0
+
+            # Interpolate the time
+            ct = (ct - t) / (count + 1) * count + t
+            event_times[i] = ct
 
     def _timeshift_tokens(self, tokens: torch.Tensor, time_offset: float) -> torch.Tensor:
         """Changes the time offset of TIME_SHIFT tokens.
@@ -130,12 +222,19 @@ class Pipeline(object):
                     tokens[i, j] = self.tokenizer.encode(event)
         return tokens
 
-    def _decode(self, tokens: torch.Tensor, index: int) -> list[Event]:
+    def _encode(self, events: List[Event], frame_time: float) -> torch.Tensor:
+        tokens = torch.empty((1, len(events)), dtype=torch.long)
+        for i, event in enumerate(events):
+            event.value = (event.value - frame_time) / MILISECONDS_PER_STEP
+            tokens[i] = self.tokenizer.encode(event)
+        return tokens.to(self.device)
+
+    def _decode(self, tokens: torch.Tensor, frame_time: float) -> list[Event]:
         """Converts a list of tokens into Event objects and converts to absolute time values.
 
         Args:
             tokens: List of tokens.
-            index: Index of current source sequence.
+            frame time: Start time of current source sequence.
 
         Returns:
             events: List of Event objects.
@@ -151,11 +250,7 @@ class Pipeline(object):
                 continue
 
             if event.type == EventType.TIME_SHIFT:
-                current_time = (
-                        index * self.miliseconds_per_sequence
-                        + event.value * MILISECONDS_PER_STEP
-                )
-                event.value = current_time
+                event.value = frame_time + event.value * MILISECONDS_PER_STEP
 
             events.append(event)
 
