@@ -1,30 +1,11 @@
 defaults:
+  - inference
   - _self_
   - model: t5_small_v4
 
-model_path: ''          # Path to trained model
-audio_path: ''          # Path to input audio
-output_path: ''         # Path to output directory
-bpm: 120                # Beats per minute of input audio
-offset: 0               # Start of beat, in miliseconds, from the beginning of input audio
-slider_multiplier: 1.8  # Multiplier for slider velocity
-title: ''               # Song title
-artist: ''              # Song artist
-beatmap_path: ''        # Path to .osu file which will be remapped
-beatmap_id: -1          # Beatmap ID to use as style
-difficulty: -1           # Difficulty star rating to map
-creator: 'osuT5'        # Beatmap creator
 version: 'osuT5 V4'        # Beatmap version
 
 data:                  # Data settings
-  center_pad_decoder: false            # Center pad decoder input
   special_token_len: 2
   diff_token_index: 0
   style_token_index: 1
-  max_pre_token_len: -1
-
-hydra:
-  job:
-    chdir: False
-  run:
-    dir: ./logs/${now:%Y-%m-%d}/${now:%H-%M-%S}
