@@ -120,21 +120,21 @@ class Pipeline(object):
 
         return events
 
-    def _get_events_time_range(self, events: List[Event], event_times: List[float], start_time: float, end_time: float):
+    def _get_events_time_range(self, events: list[Event], event_times: list[float], start_time: float, end_time: float):
         # Look from the end of the list
         s = 0
         for i in range(len(event_times) - 1, -1, -1):
             if event_times[i] < start_time:
                 s = i + 1
                 break
-        e = len(events)
+        e = 0
         for i in range(len(event_times) - 1, -1, -1):
             if event_times[i] < end_time:
                 e = i + 1
                 break
         return events[s:e]
 
-    def _update_event_times(self, events: List[Event], event_times: List[float], frame_time: float):
+    def _update_event_times(self, events: list[Event], event_times: list[float], frame_time: float):
         non_timed_events = [
             EventType.BEZIER_ANCHOR,
             EventType.PERFECT_ANCHOR,
@@ -222,11 +222,12 @@ class Pipeline(object):
                     tokens[i, j] = self.tokenizer.encode(event)
         return tokens
 
-    def _encode(self, events: List[Event], frame_time: float) -> torch.Tensor:
+    def _encode(self, events: list[Event], frame_time: float) -> torch.Tensor:
         tokens = torch.empty((1, len(events)), dtype=torch.long)
         for i, event in enumerate(events):
-            event.value = (event.value - frame_time) / MILISECONDS_PER_STEP
-            tokens[i] = self.tokenizer.encode(event)
+            if event.type == EventType.TIME_SHIFT:
+                event = Event(type=event.type, value=int((event.value - frame_time) / MILISECONDS_PER_STEP))
+            tokens[0, i] = self.tokenizer.encode(event)
         return tokens.to(self.device)
 
     def _decode(self, tokens: torch.Tensor, frame_time: float) -> list[Event]:
