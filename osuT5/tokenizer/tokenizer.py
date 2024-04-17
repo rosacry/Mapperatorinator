@@ -8,6 +8,9 @@ from tqdm import tqdm
 
 from .event import Event, EventType, EventRange
 
+MILISECONDS_PER_SECOND = 1000
+MILISECONDS_PER_STEP = 10
+
 
 class Tokenizer:
     __slots__ = [
@@ -28,9 +31,34 @@ class Tokenizer:
     def __init__(self, args: DictConfig = None):
         """Fixed vocabulary tokenizer."""
         self._offset = 3
+        self.beatmap_idx: dict[int, int] = {}
 
-        self.event_ranges: list[EventRange] = [
-            EventRange(EventType.TIME_SHIFT, -512, 512),
+        if args is not None:
+            miliseconds_per_sequence = ((args.data.src_seq_len - 1) * args.model.spectrogram.hop_length *
+                                        MILISECONDS_PER_SECOND / args.model.spectrogram.sample_rate)
+            max_time_shift = int(miliseconds_per_sequence / MILISECONDS_PER_STEP)
+            min_time_shift = -max_time_shift if args.data.add_pre_tokens or args.data.add_pre_tokens_at_step >= 0 else 0
+            self.event_ranges = [EventRange(EventType.TIME_SHIFT, min_time_shift, max_time_shift)]
+
+            self.input_event_ranges: list[EventRange] = []
+            if args.data.style_token_index >= 0:
+                self.input_event_ranges.append(EventRange(EventType.STYLE, 0, args.data.num_classes))
+            if args.data.diff_token_index >= 0:
+                self.input_event_ranges.append(EventRange(EventType.DIFFICULTY, 0, args.data.num_diff_classes))
+
+            self.num_classes = args.data.num_classes
+            self.num_diff_classes = args.data.num_diff_classes
+            self.max_difficulty = args.data.max_diff
+
+            self._init_beatmap_idx(args)
+        else:
+            self.event_ranges = [EventRange(EventType.TIME_SHIFT, -512, 512)]
+            self.input_event_ranges = []
+            self.num_classes = 0
+            self.num_diff_classes = 0
+            self.max_difficulty = 0
+
+        self.event_ranges: list[EventRange] = self.event_ranges + [
             EventRange(EventType.DISTANCE, 0, 640),
             EventRange(EventType.NEW_COMBO, 0, 0),
             EventRange(EventType.CIRCLE, 0, 0),
@@ -44,26 +72,6 @@ class Tokenizer:
             EventRange(EventType.LAST_ANCHOR, 0, 0),
             EventRange(EventType.SLIDER_END, 0, 0),
         ]
-
-        self.beatmap_idx: dict[int, int] = {}
-
-        if args is not None:
-            self.input_event_ranges: list[EventRange] = []
-            if args.data.style_token_index >= 0:
-                self.input_event_ranges.append(EventRange(EventType.STYLE, 0, args.data.num_classes))
-            if args.data.diff_token_index >= 0:
-                self.input_event_ranges.append(EventRange(EventType.DIFFICULTY, 0, args.data.num_diff_classes))
-
-            self.num_classes = args.data.num_classes
-            self.num_diff_classes = args.data.num_diff_classes
-            self.max_difficulty = args.data.max_diff
-
-            self._init_beatmap_idx(args)
-        else:
-            self.input_event_ranges = []
-            self.num_classes = 0
-            self.num_diff_classes = 0
-            self.max_difficulty = 0
 
         self.event_range: dict[EventType, EventRange] = {er.type: er for er in self.event_ranges} | {er.type: er for er in self.input_event_ranges}
 
