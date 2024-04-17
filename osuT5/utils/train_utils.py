@@ -224,33 +224,32 @@ def train(
     train_averager = Averager()
 
     while shared.current_train_step <= args.optim.total_steps:
-        # In case there is a remainder from previous epoch, we need to reset the optimizer
-        optimizer.zero_grad(set_to_none=True)
-
         print(f"Epoch {shared.current_epoch}")
 
         for batch_id, batch in enumerate(train_dataloader, start=1):
-            if shared.current_train_step > args.optim.total_steps:
-                break
+            with accelerator.accumulate(model):
+                if shared.current_train_step > args.optim.total_steps:
+                    break
 
-            loss, stats = forward(model, batch)
+                optimizer.zero_grad(set_to_none=True)
+                loss, stats = forward(model, batch)
 
-            accelerator.backward(loss / args.optim.grad_acc)
-            train_averager.update(stats)
-
-            if batch_id % args.optim.grad_acc == 0:
-                stats = maybe_grad_clip_and_grad_calc(model, accelerator, args)
+                accelerator.backward(loss)
                 train_averager.update(stats)
+
+                if accelerator.sync_gradients:
+                    stats = maybe_grad_clip_and_grad_calc(model, accelerator, args)
+                    train_averager.update(stats)
 
                 optimizer.step()
                 lr_scheduler.step()
-                optimizer.zero_grad(set_to_none=True)
 
-                maybe_logging(model, accelerator, optimizer, train_averager, args, shared)
-                maybe_eval(model, accelerator, test_dataloader, tokenizer, args, shared)
-                maybe_save_checkpoint(accelerator, args, shared)
+                if accelerator.sync_gradients:
+                    maybe_logging(model, accelerator, optimizer, train_averager, args, shared)
+                    maybe_eval(model, accelerator, test_dataloader, tokenizer, args, shared)
+                    maybe_save_checkpoint(accelerator, args, shared)
 
-                shared.current_train_step += 1
+                    shared.current_train_step += 1
 
         shared.current_epoch += 1
 
