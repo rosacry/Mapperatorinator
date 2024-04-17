@@ -25,6 +25,7 @@ def main(args: DictConfig):
     accelerator = Accelerator(
         cpu=args.device == "cpu",
         mixed_precision=args.precision,
+        gradient_accumulation_steps=args.optim.grad_acc,
         log_with=args.logging.log_with,
         project_config=ProjectConfiguration(
             project_dir=".", logging_dir="tensorboard_logs"
