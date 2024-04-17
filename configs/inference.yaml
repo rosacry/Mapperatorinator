@@ -13,6 +13,10 @@ creator: 'osuT5'        # Beatmap creator
 version: 'osuT5'        # Beatmap version
 
 data:                  # Data settings
+  src_seq_len: 512
+  tgt_seq_len: 384
+  sample_rate: ${model.spectrogram.sample_rate}
+  hop_length: ${model.spectrogram.hop_length}
   sequence_stride: 1             # Fraction of audio sequence length to shift inference window
   center_pad_decoder: false            # Center pad decoder input
   special_token_len: 0

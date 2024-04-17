@@ -6,4 +6,5 @@ defaults:
 version: 'osuT5 V1'        # Beatmap version
 
 data:                  # Data settings
+  tgt_seq_len: 512
   center_pad_decoder: true            # Center pad decoder input
