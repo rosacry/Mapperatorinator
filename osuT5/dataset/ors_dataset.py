@@ -104,7 +104,7 @@ class OrsDataset(IterableDataset):
         if not self.test:
             random.shuffle(beatmap_files)
 
-        if self.args.cycle_length > 1:
+        if self.args.cycle_length > 1 and not self.test:
             return InterleavingBeatmapDatasetIterable(
                 beatmap_files,
                 self._iterable_factory,
