@@ -18,23 +18,17 @@ from .log_utils import Averager
 logger = get_logger(__name__)
 
 
-def forward(model: OsuT, batch, tokenizer: Tokenizer = None):
+def forward(model: OsuT, batch):
     outputs = model(**batch)
     loss = outputs.loss
 
     stats = {"loss": loss.detach().float().item()}
-
-    if tokenizer is not None:
-        # Calculate accuracy metrics
-        preds = torch.argmax(outputs.logits, dim=-1)
-        stats["timing_acc"] = acc_range(preds, batch["labels"], tokenizer.event_start[EventType.TIME_SHIFT],
-                                        tokenizer.event_end[EventType.TIME_SHIFT])
-        stats["spacing_acc"] = acc_range(preds, batch["labels"], tokenizer.event_start[EventType.DISTANCE],
-                                         tokenizer.event_end[EventType.DISTANCE])
-        stats["other_acc"] = acc_range(preds, batch["labels"], tokenizer.event_end[EventType.DISTANCE],
-                                       tokenizer.event_end[EventType.DISTANCE] + tokenizer.vocab_size_out)
-
     return loss, stats
+
+
+def forward_eval(model: OsuT, batch):
+    outputs = model(**batch)
+    return outputs
 
 
 def add_prefix(prefix: str, stats: dict[str, float]):
@@ -53,6 +47,7 @@ def maybe_save_checkpoint(accelerator: Accelerator, args: DictConfig, shared: Na
             is_best = False
 
         output_dir = f"checkpoint-{shared.current_train_step}"
+        accelerator.wait_for_everyone()
         # Saving T5 has an issue that safe serialization removes shared tensors and then the model can't be loaded.
         accelerator.save_state(output_dir=output_dir, safe_serialization=False)
 
@@ -171,6 +166,7 @@ def maybe_grad_clip_and_grad_calc(
         return {}
 
 
+# noinspection PyUnresolvedReferences,PyTypeChecker
 def eval_model(
         model: OsuT,
         accelerator: Accelerator,
@@ -189,7 +185,26 @@ def eval_model(
         # We can't use the beatmap idx of the test set because these are not known by the model
         del batch["beatmap_idx"]
 
-        _, stats = forward(model, batch, tokenizer)
+        outputs = forward_eval(model, batch)
+
+        # Reduce loss over all processes
+        loss = outputs.loss
+        loss = accelerator.reduce(loss, reduction="mean")
+
+        # Gether labels and predictions over all processes and drop duplicates
+        preds = torch.argmax(outputs.logits, dim=-1)
+        labels = batch["labels"]
+        accelerator.gather_for_metrics((preds, labels))
+
+        # Calculate accuracy metrics
+        stats = {"loss": loss.detach().float().item(),
+                 "timing_acc": acc_range(preds, labels, tokenizer.event_start[EventType.TIME_SHIFT],
+                                         tokenizer.event_end[EventType.TIME_SHIFT]),
+                 "spacing_acc": acc_range(preds, labels, tokenizer.event_start[EventType.DISTANCE],
+                                          tokenizer.event_end[EventType.DISTANCE]),
+                 "other_acc": acc_range(preds, labels, tokenizer.event_end[EventType.DISTANCE],
+                                        tokenizer.event_end[EventType.DISTANCE] + tokenizer.vocab_size_out)}
+
         averager.update(stats)
 
     averager.update({"time": time.time() - shared.last_log})

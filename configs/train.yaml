@@ -38,8 +38,8 @@ dataloader:             # Dataloader settings
 
 optim:                  # Optimizer settings
   name: adamwscale
-  base_lr: 2e-2
-  batch_size: 129
+  base_lr: 2e-2         # Should be scaled with the number of devices present
+  batch_size: 129       # This is the batch size per GPU
   total_steps: 65536
   warmup_steps: 10000
   lr_scheduler: cosine
