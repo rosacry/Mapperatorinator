@@ -4,6 +4,7 @@ defaults:
   - model: t5_small
 
 data:                  # Data settings
+  tgt_seq_len: 512
   center_pad_decoder: true            # Center pad decoder input
   add_empty_sequences: false
   add_empty_sequences_at_step: 35000

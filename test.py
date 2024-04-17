@@ -79,7 +79,7 @@ def main(args: DictConfig):
         start_time = time.time()
         averager = Averager()
 
-        max_time = 1000 * args.model.max_seq_len * args.model.spectrogram.hop_length / args.model.spectrogram.sample_rate
+        max_time = 1000 * args.data.src_seq_len * args.model.spectrogram.hop_length / args.model.spectrogram.sample_rate
         n_bins = 100
         bins = np.linspace(0, max_time, n_bins + 1)[1:]
         bin_totals = np.zeros(n_bins)

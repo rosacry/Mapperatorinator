@@ -58,8 +58,8 @@ def maybe_save_checkpoint(accelerator: Accelerator, args: DictConfig, shared: Na
                 type="model",
                 metadata={
                     "format": "accelerate",
-                    "max_seq_len": args.model.max_seq_len,
-                    "max_target_len": args.model.max_target_len,
+                    "src_seq_len": args.data.src_seq_len,
+                    "tgt_seq_len": args.data.tgt_seq_len,
                     "num_classes": args.data.num_classes,
                     "num_diff_classes": args.data.num_diff_classes,
                     "max_difficulty": args.data.max_diff,

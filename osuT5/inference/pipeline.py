@@ -16,8 +16,8 @@ class Pipeline(object):
         """Model inference stage that processes sequences."""
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.tokenizer = tokenizer
-        self.tgt_seq_len = args.model.max_target_len
-        self.frame_seq_len = args.model.max_seq_len - 1
+        self.tgt_seq_len = args.data.tgt_seq_len
+        self.frame_seq_len = args.data.src_seq_len - 1
         self.frame_size = args.model.spectrogram.hop_length
         self.sample_rate = args.model.spectrogram.sample_rate
         self.samples_per_sequence = self.frame_seq_len * self.frame_size

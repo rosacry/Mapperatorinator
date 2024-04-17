@@ -12,8 +12,8 @@ data:                  # Data settings
   test_dataset_path: '/root/ORS16291'   # Testing/validation dataset directory
   test_dataset_start: 16200   # Testing/validation dataset start index
   test_dataset_end: 16291     # Testing/validation dataset end index
-  src_seq_len: ${model.max_seq_len}
-  tgt_seq_len: ${model.max_target_len}
+  src_seq_len: 512
+  tgt_seq_len: 384
   sample_rate: ${model.spectrogram.sample_rate}
   hop_length: ${model.spectrogram.hop_length}
   cycle_length: 16
