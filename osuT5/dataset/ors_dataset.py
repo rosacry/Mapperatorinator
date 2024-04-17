@@ -294,16 +294,18 @@ class BeatmapDatasetIterable:
                 "time": frame_times[split_start_idx],
                 "frames": frames[split_start_idx:split_end_idx],
                 "events": events[target_start_idx:target_end_idx],
-                "pre_events": events[target_pre_idx:target_start_idx],
                 "beatmap_idx": beatmap_idx,
                 "difficulty": difficulty,
             }
+
+            if self.args.add_pre_tokens or self.args.add_pre_tokens_at_step >= 0:
+                sequence["pre_events"] = events[target_pre_idx:target_start_idx]
+
             sequences.append(sequence)
 
         return sequences
 
-    @staticmethod
-    def _trim_time_shifts(sequence: dict) -> dict:
+    def _trim_time_shifts(self, sequence: dict) -> dict:
         """Make all time shifts in the sequence relative to the start time of the sequence,
         and normalize time values,
         and remove any time shifts for anchor events.
@@ -314,7 +316,7 @@ class BeatmapDatasetIterable:
         Returns:
             The same sequence with trimmed time shifts.
         """
-        def process(events: list[Event]) -> list[Event]:
+        def process(events: list[Event], start_time) -> list[Event]:
             for i, event in enumerate(events):
                 if event.type == EventType.TIME_SHIFT:
                     # We cant modify the event objects themselves because that will affect subsequent sequences
@@ -334,8 +336,10 @@ class BeatmapDatasetIterable:
             return events
 
         start_time = sequence["time"]
-        sequence["events"] = process(sequence["events"])
-        sequence["pre_events"] = process(sequence["pre_events"])
+        sequence["events"] = process(sequence["events"], start_time)
+        if "pre_events" in sequence:
+            sequence["pre_events"] = process(sequence["pre_events"], start_time)
+
         del sequence["time"]
 
         return sequence
@@ -360,11 +364,12 @@ class BeatmapDatasetIterable:
         sequence["tokens"] = tokens
         del sequence["events"]
 
-        pre_tokens = torch.empty(len(sequence["pre_events"]), dtype=torch.long)
-        for i, event in enumerate(sequence["pre_events"]):
-            pre_tokens[i] = self.tokenizer.encode(event)
-        sequence["pre_tokens"] = pre_tokens
-        del sequence["pre_events"]
+        if "pre_events" in sequence:
+            pre_tokens = torch.empty(len(sequence["pre_events"]), dtype=torch.long)
+            for i, event in enumerate(sequence["pre_events"]):
+                pre_tokens[i] = self.tokenizer.encode(event)
+            sequence["pre_tokens"] = pre_tokens
+            del sequence["pre_events"]
 
         sequence["beatmap_idx_token"] = self.tokenizer.encode_style_idx(sequence["beatmap_idx"])\
             if random.random() >= self.args.class_dropout_prob else self.tokenizer.style_unk
@@ -396,7 +401,7 @@ class BeatmapDatasetIterable:
         special_token_length = self.args.special_token_len
 
         tokens = sequence["tokens"]
-        pre_tokens = sequence["pre_tokens"]
+        pre_tokens = sequence["pre_tokens"] if "pre_tokens" in sequence else torch.empty(0, dtype=tokens.dtype)
         num_pre_tokens = len(pre_tokens) if self.args.add_pre_tokens else 0
 
         if self.args.max_pre_token_len > 0:
@@ -437,7 +442,8 @@ class BeatmapDatasetIterable:
         sequence["labels"] = label_tokens
 
         del sequence["tokens"]
-        del sequence["pre_tokens"]
+        if "pre_tokens" in sequence:
+            del sequence["pre_tokens"]
         del sequence["difficulty_token"]
         del sequence["beatmap_idx_token"]
         del sequence["difficulty"]
