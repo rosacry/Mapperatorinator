@@ -22,7 +22,7 @@ def forward(model: OsuT, batch):
     outputs = model(**batch)
     loss = outputs.loss
 
-    stats = {"loss": loss.detach().float().item()}
+    stats = {"loss": loss.detach()}
     return loss, stats
 
 
@@ -197,7 +197,7 @@ def eval_model(
         accelerator.gather_for_metrics((preds, labels))
 
         # Calculate accuracy metrics
-        stats = {"loss": loss.detach().float().item(),
+        stats = {"loss": loss.detach(),
                  "timing_acc": acc_range(preds, labels, tokenizer.event_start[EventType.TIME_SHIFT],
                                          tokenizer.event_end[EventType.TIME_SHIFT]),
                  "spacing_acc": acc_range(preds, labels, tokenizer.event_start[EventType.DISTANCE],
