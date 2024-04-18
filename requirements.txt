@@ -6,3 +6,4 @@ transformers
 hydra-core
 tensorboard
 slider==0.8.1
+torch_tb_profiler

@@ -61,6 +61,14 @@ logging:                # Logging settings
   grad_l2: true
   weights_l2: true
 
+profile:                # Profiling settings
+  do_profile: false
+  early_stop: false
+  wait: 8
+  warmup: 8
+  active: 8
+  repeat: 1
+
 hydra:
   job:
     chdir: True
