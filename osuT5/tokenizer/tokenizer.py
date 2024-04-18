@@ -178,7 +178,7 @@ class Tokenizer:
     @property
     def style_unk(self) -> int:
         """Gets the unknown style value token id."""
-        return self.encode(Event(type=EventType.STYLE, value=self.num_diff_classes))
+        return self.encode(Event(type=EventType.STYLE, value=self.num_classes))
 
     def _init_beatmap_idx(self, args: DictConfig) -> None:
         """Initializes and caches the beatmap index."""
