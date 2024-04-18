@@ -20,9 +20,6 @@ def opti_flags(args: DictConfig) -> None:
     torch.backends.cuda.matmul.allow_tf32 = True
     torch.backends.cudnn.allow_tf32 = True
 
-    if args.precision == "bf16" and args.device == "gpu":
-        args.model.add_config.is_bf16 = True
-
 
 def update_args_with_env_info(args: DictConfig) -> None:
     with open_dict(args):

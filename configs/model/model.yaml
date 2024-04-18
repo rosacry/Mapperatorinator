@@ -1,0 +1,7 @@
+input_features: false
+
+spectrogram:
+  sample_rate: 16000
+  hop_length: 128
+  n_fft: 1024
+  n_mels: 388

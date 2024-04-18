@@ -1,11 +1,10 @@
+defaults:
+  - model
+  - _self_
+
 name: 'google/t5-v1_1-small'
 overwrite:
   dropout_rate: 0.0
-add_config:
-  is_bf16: false
 
 spectrogram:
-  sample_rate: 16000
-  hop_length: 128
-  n_fft: 1024
   n_mels: 512
