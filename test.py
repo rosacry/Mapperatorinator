@@ -50,7 +50,7 @@ def main(args: DictConfig):
     shared.current_train_step = args.optim.total_steps
 
     tokenizer = get_tokenizer(args)
-    model = get_model(args.model, tokenizer)
+    model = get_model(args, tokenizer)
     optimizer = get_optimizer(model, args)
     scheduler = get_scheduler(optimizer, args)
     train_dataloader, test_dataloader = get_dataloaders(tokenizer, args, shared)

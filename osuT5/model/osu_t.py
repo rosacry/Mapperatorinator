@@ -5,36 +5,70 @@ from typing import Optional
 import torch
 import torch.nn as nn
 from omegaconf import DictConfig
-from torch.nn import Parameter
-from transformers import T5Config, T5ForConditionalGeneration
+from transformers import T5Config, T5ForConditionalGeneration, WhisperForConditionalGeneration, WhisperConfig
 from transformers.modeling_outputs import Seq2SeqLMOutput
 
 from osuT5.model.spectrogram import MelSpectrogram
+from osuT5.tokenizer import Tokenizer
+
+
+def get_backbone_model(args, tokenizer: Tokenizer):
+    if args.model.name.startswith("google/t5"):
+        config = T5Config.from_pretrained(args.name)
+    elif args.model.name.startswith("openai/whisper"):
+        config = WhisperConfig.from_pretrained("openai/whisper-base")
+    else:
+        raise NotImplementedError
+
+    config.vocab_size = tokenizer.vocab_size_out
+
+    if hasattr(args, "overwrite"):
+        for k, v in args.overwrite.items():
+            assert hasattr(config, k), f"config does not have attribute {k}"
+            setattr(config, k, v)
+
+    if hasattr(args, "add_config"):
+        for k, v in args.add_config.items():
+            assert not hasattr(config, k), f"config already has attribute {k}"
+            setattr(config, k, v)
+
+    if args.model.name.startswith("google/t5"):
+        model = T5ForConditionalGeneration(config)
+    elif args.model.name.startswith("openai/whisper"):
+        config.num_mel_bins = config.d_model
+        config.pad_token_id = tokenizer.pad_id
+        config.bos_token_id = tokenizer.sos_id
+        config.eos_token_id = tokenizer.eos_id
+        config.max_source_positions = args.data.src_seq_len // 2
+        config.max_target_positions = args.data.tgt_seq_len
+        model = WhisperForConditionalGeneration(config)
+    else:
+        raise NotImplementedError
+
+    return model, config.d_model
 
 
 class OsuT(nn.Module):
     __slots__ = ["spectrogram", "decoder_embedder", "encoder_embedder", "transformer", "style_embedder", "num_classes"]
 
-    def __init__(self, args: DictConfig):
+    def __init__(self, args: DictConfig, tokenizer: Tokenizer):
         super().__init__()
 
-        config = get_t5_config(args)
-        setattr(config, "vocab_size", args.vocab_size_out)
+        self.transformer, d_model = get_backbone_model(args, tokenizer)
+        self.num_classes = tokenizer.num_classes
+        self.input_features = args.model.input_features
 
-        self.num_classes = args.num_classes
-
-        self.decoder_embedder = nn.Embedding(args.vocab_size_in, config.d_model)
+        self.decoder_embedder = nn.Embedding(tokenizer.vocab_size_in, d_model)
         self.decoder_embedder.weight.data.normal_(mean=0.0, std=1.0)
         # self.class_ids = Parameter(torch.full([self.num_classes + 1], -1, dtype=torch.long), requires_grad=False)
 
         self.spectrogram = MelSpectrogram(
-            args.spectrogram.sample_rate, args.spectrogram.n_fft, args.spectrogram.n_mels, args.spectrogram.hop_length
+            args.model.spectrogram.sample_rate, args.model.spectrogram.n_fft,
+            args.model.spectrogram.n_mels, args.model.spectrogram.hop_length
         )
-        self.style_embedder = LabelEmbedder(args.num_classes, config.d_model)
-        self.encoder_embedder = nn.Linear(args.spectrogram.n_mels + config.d_model, config.d_model)
+        self.style_embedder = LabelEmbedder(self.num_classes, d_model)
+        self.encoder_embedder = nn.Linear(args.model.spectrogram.n_mels + d_model, d_model)
         nn.init.normal_(self.style_embedder.embedding_table.weight, std=0.02)
-
-        self.transformer = T5ForConditionalGeneration(config)
 
     def forward(
             self,
@@ -64,7 +98,14 @@ class OsuT(nn.Module):
             inputs_embeds = self.encoder_embedder(frames_concat)
 
         decoder_inputs_embeds = self.decoder_embedder(decoder_input_ids)
-        output = self.transformer.forward(inputs_embeds=inputs_embeds, decoder_inputs_embeds=decoder_inputs_embeds, encoder_outputs=encoder_outputs, **kwargs)
+        if self.input_features:
+            input_features = torch.swapaxes(inputs_embeds, 1, 2)
+            # noinspection PyTypeChecker
+            output = self.transformer.forward(input_features=input_features, decoder_inputs_embeds=decoder_inputs_embeds,
+                                              encoder_outputs=encoder_outputs, **kwargs)
+        else:
+            output = self.transformer.forward(inputs_embeds=inputs_embeds, decoder_inputs_embeds=decoder_inputs_embeds,
+                                              encoder_outputs=encoder_outputs, **kwargs)
         # output = self.transformer.forward(inputs_embeds=inputs_embeds, decoder_input_ids=decoder_input_ids,encoder_outputs=encoder_outputs, **kwargs)
 
         return output
@@ -85,19 +126,3 @@ class LabelEmbedder(nn.Module):
     def forward(self, labels):
         embeddings = self.embedding_table(labels)
         return embeddings
-
-
-def get_t5_config(args: DictConfig) -> T5Config:
-    config = T5Config.from_pretrained(args.name)
-
-    if hasattr(args, "overwrite"):
-        for k, v in args.overwrite.items():
-            assert hasattr(config, k), f"config does not have attribute {k}"
-            setattr(config, k, v)
-
-    if hasattr(args, "add_config"):
-        for k, v in args.add_config.items():
-            assert not hasattr(config, k), f"config already has attribute {k}"
-            setattr(config, k, v)
-
-    return config

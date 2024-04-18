@@ -44,7 +44,7 @@ def main(args: DictConfig):
     tokenizer = Tokenizer()
     tokenizer.load_state_dict(tokenizer_state)
 
-    model = get_model(args.model, tokenizer)
+    model = get_model(args, tokenizer)
     model.load_state_dict(model_state)
     model.eval()
     model.to(device)

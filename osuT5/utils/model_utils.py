@@ -31,12 +31,7 @@ def get_shared_training_state() -> Namespace:
 
 
 def get_model(args: DictConfig, tokenizer: Tokenizer) -> OsuT:
-    with open_dict(args):
-        args.num_classes = tokenizer.num_classes
-        args.vocab_size_in = tokenizer.vocab_size_in
-        args.vocab_size_out = tokenizer.vocab_size_out
-
-    model = OsuT(args)
+    model = OsuT(args, tokenizer)
     return model
 
 

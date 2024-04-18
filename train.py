@@ -48,7 +48,7 @@ def main(args: DictConfig):
 
     shared = get_shared_training_state()
     tokenizer = get_tokenizer(args)
-    model = get_model(args.model, tokenizer)
+    model = get_model(args, tokenizer)
     optimizer = get_optimizer(model, args)
     scheduler = get_scheduler(optimizer, args)
     train_dataloader, test_dataloader = get_dataloaders(tokenizer, args, shared)
