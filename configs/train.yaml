@@ -32,6 +32,7 @@ data:                  # Data settings
   add_pre_tokens: true
   add_pre_tokens_at_step: -1
   max_pre_token_len: -1
+  timing_random_offset: 0
 
 dataloader:             # Dataloader settings
   num_workers: 8
