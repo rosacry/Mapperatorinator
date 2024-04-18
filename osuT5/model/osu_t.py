@@ -14,9 +14,9 @@ from osuT5.tokenizer import Tokenizer
 
 def get_backbone_model(args, tokenizer: Tokenizer):
     if args.model.name.startswith("google/t5"):
-        config = T5Config.from_pretrained(args.name)
+        config = T5Config.from_pretrained(args.model.name)
     elif args.model.name.startswith("openai/whisper"):
-        config = WhisperConfig.from_pretrained("openai/whisper-base")
+        config = WhisperConfig.from_pretrained(args.model.name)
     else:
         raise NotImplementedError
 
