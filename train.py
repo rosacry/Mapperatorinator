@@ -11,6 +11,7 @@ import time
 from osuT5.utils import (
     setup_args,
     train,
+    train_profiling,
     get_model,
     get_tokenizer,
     get_scheduler,
@@ -38,6 +39,7 @@ def main(args: DictConfig):
                 "entity": "mappingtools",
                 "job_type": "training",
                 "config": dict(args),
+                "sync_tensorboard": args.profile.do_profile,
             }
         }
     )
@@ -71,7 +73,9 @@ def main(args: DictConfig):
     if args.compile:
         model = torch.compile(model)
 
-    train(
+    func = train_profiling if args.profile.do_profile else train
+
+    func(
         model,
         train_dataloader,
         test_dataloader,
