@@ -1,3 +1,4 @@
+import glob
 import os.path
 import time
 from multiprocessing.managers import Namespace
@@ -233,6 +234,7 @@ def train(
         tokenizer: Tokenizer,
         args: DictConfig,
         shared: Namespace,
+        profiler=None,
 ):
     model.train()
 
@@ -259,6 +261,9 @@ def train(
                 optimizer.step()
                 lr_scheduler.step()
 
+                if profiler is not None:
+                    profiler.step()
+
                 if accelerator.sync_gradients:
                     maybe_logging(model, accelerator, optimizer, train_averager, args, shared)
                     maybe_eval(model, accelerator, test_dataloader, tokenizer, args, shared)
@@ -268,7 +273,62 @@ def train(
 
         shared.current_epoch += 1
 
-    maybe_eval(model, accelerator, test_dataloader, tokenizer, args, shared)
-    maybe_save_checkpoint(accelerator, args, shared)
+    if not (args.profile.do_profile and args.profile.early_stop):
+        maybe_eval(model, accelerator, test_dataloader, tokenizer, args, shared)
+        maybe_save_checkpoint(accelerator, args, shared)
 
     accelerator.end_training()
+
+
+def train_profiling(
+        model: OsuT,
+        train_dataloader: DataLoader,
+        test_dataloader: DataLoader,
+        accelerator: Accelerator,
+        lr_scheduler: LRScheduler,
+        optimizer: Optimizer,
+        tokenizer: Tokenizer,
+        args: DictConfig,
+        shared: Namespace,
+):
+    tensorboard_trace_handler = torch.profiler.tensorboard_trace_handler(
+        "./profiler_logs", worker_name=f"worker_{accelerator.process_index}")
+
+    if args.profile.early_stop:
+        stop_step = (args.profile.wait + args.profile.warmup + args.profile.active) * args.profile.repeat / args.optim.grad_acc
+        args.optim.total_steps = shared.current_train_step + stop_step
+
+    def on_trace_ready(trace):
+        tensorboard_trace_handler(trace)
+        wandb_tracker = accelerator.get_tracker("wandb")
+        if wandb_tracker is not None:
+            wandb.save(glob.glob(f"./profiler_logs/*.pt.trace.json")[0], base_path="profiler_logs")
+
+    with torch.profiler.profile(
+            activities=[
+                torch.profiler.ProfilerActivity.CPU,
+                torch.profiler.ProfilerActivity.CUDA,
+            ],
+            schedule=torch.profiler.schedule(
+                wait=args.profile.wait,
+                warmup=args.profile.warmup,
+                active=args.profile.active,
+                repeat=args.profile.repeat,
+            ),
+            on_trace_ready=on_trace_ready,
+            record_shapes=True,
+            profile_memory=True,
+            with_stack=True,
+    ) as p:
+        train(
+            model,
+            train_dataloader,
+            test_dataloader,
+            accelerator,
+            lr_scheduler,
+            optimizer,
+            tokenizer,
+            args,
+            shared,
+            p
+        )
