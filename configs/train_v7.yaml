@@ -22,8 +22,13 @@ data:                  # Data settings
   test_dataset_end: 100     # Testing/validation dataset end index
 
 dataloader:             # Dataloader settings
-  num_workers: 8
+  num_workers: 4
 
 optim:                  # Optimizer settings
-  batch_size: 128
-  grad_acc: 8
+  batch_size: 64
+  grad_acc: 4
+  base_lr: 4e-2         # Should be scaled with the number of devices present
+  final_cosine: 2e-5
+
+logging:                # Logging settings
+  every_steps: 1
