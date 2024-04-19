@@ -241,7 +241,7 @@ def train(
     train_averager = Averager()
 
     while shared.current_train_step <= args.optim.total_steps:
-        print(f"Epoch {shared.current_epoch}")
+        accelerator.print(f"Epoch {shared.current_epoch}")
 
         for batch_id, batch in enumerate(train_dataloader, start=1):
             with accelerator.accumulate(model):
