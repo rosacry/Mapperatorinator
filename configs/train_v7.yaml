@@ -14,6 +14,12 @@ data:                  # Data settings
   style_token_index: 1
   max_pre_token_len: 4
   timing_random_offset: 0
+  train_dataset_path: '/root/ORS100'  # Training dataset directory
+  train_dataset_start: 0  # Training dataset start index
+  train_dataset_end: 90    # Training dataset end index
+  test_dataset_path: '/root/ORS100'   # Testing/validation dataset directory
+  test_dataset_start: 90   # Testing/validation dataset start index
+  test_dataset_end: 100     # Testing/validation dataset end index
 
 dataloader:             # Dataloader settings
   num_workers: 8
