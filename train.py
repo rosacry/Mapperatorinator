@@ -1,7 +1,7 @@
 import multiprocessing
 
 import numpy as np
-from accelerate import Accelerator
+from accelerate import Accelerator, DistributedDataParallelKwargs
 from accelerate.utils import ProjectConfiguration
 from omegaconf import open_dict, DictConfig
 import hydra
@@ -23,6 +23,7 @@ from osuT5.utils import (
 
 @hydra.main(config_path="configs", config_name="train_v1", version_base="1.1")
 def main(args: DictConfig):
+    ddp_kwargs = DistributedDataParallelKwargs(find_unused_parameters=args.optim.grad_acc > 1)
     accelerator = Accelerator(
         cpu=args.device == "cpu",
         mixed_precision=args.precision,
@@ -31,6 +32,7 @@ def main(args: DictConfig):
         project_config=ProjectConfiguration(
             project_dir=".", logging_dir="tensorboard_logs"
         ),
+        kwargs_handlers=[ddp_kwargs],
     )
     accelerator.init_trackers(
         "osuT5",
