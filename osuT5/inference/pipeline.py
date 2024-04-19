@@ -31,6 +31,7 @@ class Pipeline(object):
         self.diff_token_index = args.data.diff_token_index
         self.style_token_index = args.data.style_token_index
         self.max_pre_token_len = args.data.max_pre_token_len
+        self.add_pre_tokens = args.data.add_pre_tokens
 
     def generate(self, model: OsuT, sequences: torch.Tensor) -> list[Event]:
         """Generate a list of Event object lists and their timestamps given source sequences.
@@ -65,7 +66,7 @@ class Pipeline(object):
             # Get tokens of previous frame
             frame_time = sequence_index * self.miliseconds_per_stride
             prev_events = self._get_events_time_range(
-                events, event_times, frame_time - self.miliseconds_per_sequence, frame_time)
+                events, event_times, frame_time - self.miliseconds_per_sequence, frame_time) if self.add_pre_tokens else []
             post_events = self._get_events_time_range(
                 events, event_times, frame_time, frame_time + self.miliseconds_per_sequence)
             prev_tokens = self._encode(prev_events, frame_time)
