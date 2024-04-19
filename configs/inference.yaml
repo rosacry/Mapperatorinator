@@ -23,6 +23,7 @@ data:                  # Data settings
   diff_token_index: -1
   style_token_index: -1
   max_pre_token_len: -1
+  add_pre_tokens: true
 
 hydra:
   job:
