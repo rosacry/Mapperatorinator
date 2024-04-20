@@ -25,10 +25,10 @@ dataloader:             # Dataloader settings
   num_workers: 4
 
 optim:                  # Optimizer settings
-  batch_size: 64
-  grad_acc: 16
-  base_lr: 4e-2         # Should be scaled with the number of devices present
-  final_cosine: 2e-5
+  batch_size: 128
+  grad_acc: 32
+#  base_lr: 4e-2         # Should be scaled with the number of devices present
+#  final_cosine: 2e-5
 
 logging:                # Logging settings
   every_steps: 1
