@@ -5,6 +5,3 @@ defaults:
 name: 'google/t5-v1_1-base'
 overwrite:
   dropout_rate: 0.0
-
-spectrogram:
-  n_mels: 512
