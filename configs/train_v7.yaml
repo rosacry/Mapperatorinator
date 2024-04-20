@@ -20,9 +20,10 @@ data:                  # Data settings
   test_dataset_path: '/root/ORS100'   # Testing/validation dataset directory
   test_dataset_start: 90   # Testing/validation dataset start index
   test_dataset_end: 100     # Testing/validation dataset end index
+  per_track: true      # Loads all beatmaps in a track sequentially which optimizes audio data loading
 
 dataloader:             # Dataloader settings
-  num_workers: 4
+  num_workers: 8
 
 optim:                  # Optimizer settings
   batch_size: 128
