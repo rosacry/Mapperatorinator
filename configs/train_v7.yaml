@@ -7,8 +7,8 @@ compile: true          # PyTorch 2.0 optimization
 precision: 'bf16'         # Enable mixed precision (no/fp16/bf16/fp8)
 
 data:                  # Data settings
-  src_seq_len: 1024
-  tgt_seq_len: 512
+  src_seq_len: 512
+  tgt_seq_len: 256
   special_token_len: 2
   diff_token_index: 0
   style_token_index: 1
@@ -20,14 +20,13 @@ data:                  # Data settings
   test_dataset_path: '/root/ORS100'   # Testing/validation dataset directory
   test_dataset_start: 90   # Testing/validation dataset start index
   test_dataset_end: 100     # Testing/validation dataset end index
-  per_track: true      # Loads all beatmaps in a track sequentially which optimizes audio data loading
 
 dataloader:             # Dataloader settings
   num_workers: 8
 
 optim:                  # Optimizer settings
   batch_size: 128
-  grad_acc: 32
+  grad_acc: 16
 #  base_lr: 4e-2         # Should be scaled with the number of devices present
 #  final_cosine: 2e-5
 
