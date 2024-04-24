@@ -1,4 +1,5 @@
 input_features: false
+do_style_embed: true
 
 spectrogram:
   sample_rate: 16000
