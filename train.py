@@ -55,6 +55,14 @@ def main(args: DictConfig):
     scheduler = get_scheduler(optimizer, args)
     train_dataloader, test_dataloader = get_dataloaders(tokenizer, args, shared)
 
+    if args.pretrained_path:
+        state_dict = torch.load(args.pretrained_path)
+        del state_dict["shared.weight"]
+        del state_dict["encoder.embed_tokens.weight"]
+        del state_dict["decoder.embed_tokens.weight"]
+        del state_dict["lm_head.weight"]
+        model.transformer.load_state_dict(state_dict, strict=False)
+
     # noinspection PyTypeChecker
     (
         model,
