@@ -4,6 +4,7 @@ precision: 'bf16'         # Enable mixed precision (no/fp16/bf16/fp8)
 seed: 42                # Project seed
 
 checkpoint_path: ''     # Project checkpoint directory (to resume training)
+pretrained_path: ''     # Path to pretrained model weights (to do transfer learning)
 
 data:                  # Data settings
   train_dataset_path: '/root/ORS16291'  # Training dataset directory
