@@ -66,9 +66,15 @@ class OsuT(nn.Module):
             args.model.spectrogram.sample_rate, args.model.spectrogram.n_fft,
             args.model.spectrogram.n_mels, args.model.spectrogram.hop_length
         )
-        self.style_embedder = LabelEmbedder(self.num_classes, d_model)
-        self.encoder_embedder = nn.Linear(args.model.spectrogram.n_mels + d_model, d_model)
-        nn.init.normal_(self.style_embedder.embedding_table.weight, std=0.02)
+
+        self.do_style_embed = args.model.do_style_embed
+
+        if self.do_style_embed:
+            self.style_embedder = LabelEmbedder(self.num_classes, d_model)
+            self.encoder_embedder = nn.Linear(args.model.spectrogram.n_mels + d_model, d_model)
+            nn.init.normal_(self.style_embedder.embedding_table.weight, std=0.02)
+        else:
+            self.encoder_embedder = nn.Linear(args.model.spectrogram.n_mels, d_model)
 
     def forward(
             self,
@@ -93,9 +99,12 @@ class OsuT(nn.Module):
         inputs_embeds = None
         if encoder_outputs is None:
             frames = self.spectrogram(frames)  # (N, L, M)
-            style_embeds = self.style_embedder(beatmap_idx)  # (N, D)
-            frames_concat = torch.concatenate((frames, style_embeds.unsqueeze(1).expand((-1, frames.shape[1], -1))), -1)
-            inputs_embeds = self.encoder_embedder(frames_concat)
+            if self.do_style_embed:
+                style_embeds = self.style_embedder(beatmap_idx)  # (N, D)
+                frames_concat = torch.concatenate((frames, style_embeds.unsqueeze(1).expand((-1, frames.shape[1], -1))), -1)
+                inputs_embeds = self.encoder_embedder(frames_concat)
+            else:
+                inputs_embeds = self.encoder_embedder(frames)
 
         decoder_inputs_embeds = self.decoder_embedder(decoder_input_ids)
         if self.input_features:
