@@ -62,6 +62,7 @@ logging:                # Logging settings
   every_steps: 10
   grad_l2: true
   weights_l2: true
+  mode: 'online'
 
 profile:                # Profiling settings
   do_profile: false
