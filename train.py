@@ -42,6 +42,7 @@ def main(args: DictConfig):
                 "job_type": "training",
                 "config": dict(args),
                 "sync_tensorboard": args.profile.do_profile,
+                "mode": args.logging.mode,
             }
         }
     )
