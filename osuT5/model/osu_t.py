@@ -99,7 +99,7 @@ class OsuT(nn.Module):
         inputs_embeds = None
         if encoder_outputs is None:
             frames = self.spectrogram(frames)  # (N, L, M)
-            frames.mul_(0.25)  # Normalize values a little bit
+            # frames.mul_(0.25)  # Normalize values a little bit
             if self.do_style_embed:
                 style_embeds = self.style_embedder(beatmap_idx)  # (N, D)
                 frames_concat = torch.concatenate((frames, style_embeds.unsqueeze(1).expand((-1, frames.shape[1], -1))), -1)
