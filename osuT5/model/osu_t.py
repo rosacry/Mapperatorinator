@@ -22,13 +22,13 @@ def get_backbone_model(args, tokenizer: Tokenizer):
 
     config.vocab_size = tokenizer.vocab_size_out
 
-    if hasattr(args, "overwrite"):
-        for k, v in args.overwrite.items():
+    if hasattr(args.model, "overwrite"):
+        for k, v in args.model.overwrite.items():
             assert hasattr(config, k), f"config does not have attribute {k}"
             setattr(config, k, v)
 
-    if hasattr(args, "add_config"):
-        for k, v in args.add_config.items():
+    if hasattr(args.model, "add_config"):
+        for k, v in args.model.add_config.items():
             assert not hasattr(config, k), f"config already has attribute {k}"
             setattr(config, k, v)
 
