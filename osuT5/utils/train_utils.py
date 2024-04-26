@@ -241,6 +241,9 @@ def train(
     train_averager = Averager()
 
     while shared.current_train_step <= args.optim.total_steps:
+        # In case there is a remainder from previous epoch, we need to reset the optimizer
+        optimizer.zero_grad(set_to_none=True)
+
         accelerator.print(f"Epoch {shared.current_epoch}")
 
         for batch_id, batch in enumerate(train_dataloader, start=1):
@@ -248,7 +251,6 @@ def train(
                 if shared.current_train_step > args.optim.total_steps:
                     break
 
-                optimizer.zero_grad(set_to_none=True)
                 loss, stats = forward(model, batch)
 
                 accelerator.backward(loss)
@@ -260,6 +262,7 @@ def train(
 
                 optimizer.step()
                 lr_scheduler.step()
+                optimizer.zero_grad(set_to_none=True)
 
                 if profiler is not None:
                     profiler.step()
