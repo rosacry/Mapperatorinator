@@ -18,7 +18,6 @@ dataloader:             # Dataloader settings
 optim:                  # Optimizer settings
   batch_size: 128
   grad_acc: 8
-  grad_clip: 0.5
 
 logging:
   mode: 'offline'
