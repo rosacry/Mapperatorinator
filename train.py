@@ -1,12 +1,8 @@
-import multiprocessing
-
-import numpy as np
-from accelerate import Accelerator, DistributedDataParallelKwargs
-from accelerate.utils import ProjectConfiguration
-from omegaconf import open_dict, DictConfig
 import hydra
 import torch
-import time
+from accelerate import Accelerator, DistributedDataParallelKwargs
+from accelerate.utils import ProjectConfiguration
+from omegaconf import DictConfig
 
 from osuT5.utils import (
     setup_args,
@@ -58,11 +54,14 @@ def main(args: DictConfig):
 
     if args.pretrained_path:
         state_dict = torch.load(args.pretrained_path)
-        del state_dict["shared.weight"]
-        del state_dict["encoder.embed_tokens.weight"]
-        del state_dict["decoder.embed_tokens.weight"]
-        del state_dict["lm_head.weight"]
-        model.transformer.load_state_dict(state_dict, strict=False)
+        if args.pretrained_t5_compat:
+            del state_dict["shared.weight"]
+            del state_dict["encoder.embed_tokens.weight"]
+            del state_dict["decoder.embed_tokens.weight"]
+            del state_dict["lm_head.weight"]
+            model.transformer.load_state_dict(state_dict, strict=False)
+        else:
+            model.load_state_dict(state_dict)
 
     # noinspection PyTypeChecker
     (
