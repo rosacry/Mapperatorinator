@@ -56,16 +56,16 @@ def main(args: DictConfig):
         diff_unks = 0
         style_unks = 0
         for b in tqdm.tqdm(dataloader, smoothing=0.01):
-            # for i in range(len(b["frames"])):  # batch size
-            #     length = b['decoder_attention_mask'][i].sum().item()
-            #     lengths.append(length)
-            #     if b['decoder_input_ids'][i][0] == tokenizer.diff_unk:
-            #         diff_unks += 1
-            #     if b['decoder_input_ids'][i][1] == tokenizer.style_unk:
-            #         style_unks += 1
+            for i in range(len(b["frames"])):  # batch size
+                length = b['decoder_attention_mask'][i].sum().item()
+                lengths.append(length)
+                if b['decoder_input_ids'][i][0] == tokenizer.diff_unk:
+                    diff_unks += 1
+                if b['decoder_input_ids'][i][1] == tokenizer.style_unk:
+                    style_unks += 1
             shared.current_train_step += 1
-            # if len(lengths) > 1000:
-            #     break
+            if len(lengths) > 10000:
+                break
 
         plt.hist(lengths, bins=100)
         plt.show()
@@ -98,11 +98,19 @@ def main(args: DictConfig):
 
                 # plot the timing of events as vertical lines
                 timings = b["decoder_input_ids"][i]
-                for t in timings:
+                start_index = ((timings == tokenizer.sos_id).nonzero(as_tuple=True)[0]).item()
+                context = timings[:start_index]
+                labels = timings[start_index:]
+                for t in context:
                     if tokenizer.event_start[EventType.TIME_SHIFT] <= t < tokenizer.event_end[EventType.TIME_SHIFT]:
                         time_event = tokenizer.decode(t.item())
                         x = time_event.value / STEPS_PER_MILLISECOND / 1000 * args.model.spectrogram.sample_rate / args.model.spectrogram.hop_length
-                        plt.vlines(x=x, ymin=0, ymax=mels[i].shape[0], color='b')
+                        plt.vlines(x=x, ymin=0, ymax=mels[i].shape[0], color='r')
+                for t in labels:
+                    if tokenizer.event_start[EventType.TIME_SHIFT] <= t < tokenizer.event_end[EventType.TIME_SHIFT]:
+                        time_event = tokenizer.decode(t.item())
+                        x = time_event.value / STEPS_PER_MILLISECOND / 1000 * args.model.spectrogram.sample_rate / args.model.spectrogram.hop_length
+                        plt.vlines(x=x, ymin=0, ymax=mels[i].shape[0] / 2, color='b')
 
                 plt.show()
             break

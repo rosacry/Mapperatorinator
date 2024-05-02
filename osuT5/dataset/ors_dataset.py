@@ -137,7 +137,7 @@ class InterleavingBeatmapDatasetIterable:
         self.workers = [
             iterable_factory(
                 beatmap_files[
-                    i * per_worker: min(len(beatmap_files), (i + 1) * per_worker)
+                i * per_worker: min(len(beatmap_files), (i + 1) * per_worker)
                 ]
             ).__iter__()
             for i in range(cycle_length)
@@ -200,7 +200,7 @@ class BeatmapDatasetIterable:
         # [SOS] token + event_tokens + [EOS] token creates N+1 tokens
         # [SOS] token + event_tokens[:-1] creates N target sequence
         # event_tokens[1:] + [EOS] token creates N label sequence
-        self.min_pre_token_len = 64
+        self.min_pre_token_len = 4
         self.pre_token_len = args.tgt_seq_len // 2
         self.class_dropout_prob = 1 if self.test else args.class_dropout_prob
         self.diff_dropout_prob = 0 if self.test else args.diff_dropout_prob
@@ -247,11 +247,14 @@ class BeatmapDatasetIterable:
 
     def _create_sequences(
             self,
-            events: list[Event],
             frames: npt.NDArray,
             frame_times: npt.NDArray,
+            events: list[Event],
             beatmap_idx: int,
             difficulty: float,
+            other_events: Optional[list[Event]] = None,
+            other_beatmap_idx: Optional[int] = None,
+            other_difficulty: Optional[float] = None,
     ) -> list[dict[str, int | npt.NDArray | list[Event]]]:
         """Create frame and token sequences for training/testing.
 
@@ -262,37 +265,48 @@ class BeatmapDatasetIterable:
         Returns:
             A list of source and target sequences.
         """
-        # Corresponding start event index for every audio frame.
-        event_start_indices = []
-        event_index = 0
-        event_time = -np.inf
 
-        for current_time in frame_times:
-            while event_time < current_time and event_index < len(events):
-                if events[event_index].type == EventType.TIME_SHIFT:
-                    event_time = events[event_index].value
-                event_index += 1
-            event_start_indices.append(event_index - 1)
+        def get_event_indices(events2: list[Event]) -> tuple[list[int], list[int]]:
+            # Corresponding start event index for every audio frame.
+            start_indices = []
+            event_index = 0
+            event_time = -np.inf
 
-        # Corresponding end event index for every audio frame.
-        event_end_indices = event_start_indices[1:] + [len(events)]
+            for current_time in frame_times:
+                while event_time < current_time and event_index < len(events2):
+                    if events2[event_index].type == EventType.TIME_SHIFT:
+                        event_time = events2[event_index].value
+                    event_index += 1
+                start_indices.append(event_index - 1)
+
+            # Corresponding end event index for every audio frame.
+            end_indices = start_indices[1:] + [len(events2)]
+
+            return start_indices, end_indices
+
+        event_start_indices, event_end_indices = get_event_indices(events)
+
+        other_event_start_indices, other_event_end_indices = None, None
+        if other_events is not None:
+            other_event_start_indices, other_event_end_indices = get_event_indices(other_events)
 
         sequences = []
         n_frames = len(frames)
         offset = random.randint(0, self.frame_seq_len)
         # Divide audio frames into splits
-        for split_start_idx in range(offset, n_frames, self.frame_seq_len):
-            split_end_idx = min(split_start_idx + self.frame_seq_len, n_frames)
-            target_start_idx = event_start_indices[split_start_idx]
-            target_end_idx = event_end_indices[split_end_idx - 1]
+        for frame_start_idx in range(offset, n_frames, self.frame_seq_len):
+            frame_end_idx = min(frame_start_idx + self.frame_seq_len, n_frames)
 
-            split_pre_idx = max(split_start_idx - self.frame_seq_len, 0)
-            target_pre_idx = event_start_indices[split_pre_idx]
+            target_start_idx = event_start_indices[frame_start_idx]
+            target_end_idx = event_end_indices[frame_end_idx - 1]
+
+            frame_pre_idx = max(frame_start_idx - self.frame_seq_len, 0)
+            target_pre_idx = event_start_indices[frame_pre_idx]
 
             # Create the sequence
             sequence = {
-                "time": frame_times[split_start_idx],
-                "frames": frames[split_start_idx:split_end_idx],
+                "time": frame_times[frame_start_idx],
+                "frames": frames[frame_start_idx:frame_end_idx],
                 "events": events[target_start_idx:target_end_idx],
                 "beatmap_idx": beatmap_idx,
                 "difficulty": difficulty,
@@ -300,6 +314,13 @@ class BeatmapDatasetIterable:
 
             if self.args.add_pre_tokens or self.args.add_pre_tokens_at_step >= 0:
                 sequence["pre_events"] = events[target_pre_idx:target_start_idx]
+
+            if other_events is not None:
+                other_target_start_idx = other_event_start_indices[frame_start_idx]
+                other_target_end_idx = other_event_end_indices[frame_end_idx - 1]
+                sequence["other_events"] = other_events[other_target_start_idx:other_target_end_idx]
+                sequence["other_beatmap_idx"] = other_beatmap_idx
+                sequence["other_difficulty"] = other_difficulty
 
             sequences.append(sequence)
 
@@ -316,6 +337,7 @@ class BeatmapDatasetIterable:
         Returns:
             The same sequence with trimmed time shifts.
         """
+
         def process(events: list[Event], start_time) -> list[Event]:
             for i, event in enumerate(events):
                 if event.type == EventType.TIME_SHIFT:
@@ -336,11 +358,15 @@ class BeatmapDatasetIterable:
             return events
 
         start_time = sequence["time"]
+        del sequence["time"]
+
         sequence["events"] = process(sequence["events"], start_time)
+
         if "pre_events" in sequence:
             sequence["pre_events"] = process(sequence["pre_events"], start_time)
 
-        del sequence["time"]
+        if "other_events" in sequence:
+            sequence["other_events"] = process(sequence["other_events"], start_time)
 
         return sequence
 
@@ -371,14 +397,27 @@ class BeatmapDatasetIterable:
             sequence["pre_tokens"] = pre_tokens
             del sequence["pre_events"]
 
-        sequence["beatmap_idx_token"] = self.tokenizer.encode_style_idx(sequence["beatmap_idx"])\
+        sequence["beatmap_idx_token"] = self.tokenizer.encode_style_idx(sequence["beatmap_idx"]) \
             if random.random() >= self.args.class_dropout_prob else self.tokenizer.style_unk
 
-        sequence["difficulty_token"] = self.tokenizer.encode_diff(sequence["difficulty"])\
+        sequence["difficulty_token"] = self.tokenizer.encode_diff(sequence["difficulty"]) \
             if random.random() >= self.args.diff_dropout_prob else self.tokenizer.diff_unk
 
-        sequence["beatmap_idx"] = sequence["beatmap_idx"]\
+        sequence["beatmap_idx"] = sequence["beatmap_idx"] \
             if random.random() >= self.args.class_dropout_prob else self.tokenizer.num_classes
+
+        if "other_events" in sequence:
+            other_tokens = torch.empty(len(sequence["other_events"]), dtype=torch.long)
+            for i, event in enumerate(sequence["other_events"]):
+                other_tokens[i] = self.tokenizer.encode(event)
+            sequence["other_tokens"] = other_tokens
+            del sequence["other_events"]
+
+            sequence["other_beatmap_idx_token"] = self.tokenizer.encode_style_idx(sequence["other_beatmap_idx"]) \
+                if random.random() >= self.args.class_dropout_prob else self.tokenizer.style_unk
+
+            sequence["other_difficulty_token"] = self.tokenizer.encode_diff(sequence["other_difficulty"]) \
+                if random.random() >= self.args.diff_dropout_prob else self.tokenizer.diff_unk
 
         return sequence
 
@@ -398,7 +437,7 @@ class BeatmapDatasetIterable:
         Returns:
             The same sequence with padded tokens.
         """
-        special_token_length = self.args.special_token_len
+        stl = self.args.special_token_len
 
         tokens = sequence["tokens"]
         pre_tokens = sequence["pre_tokens"] if "pre_tokens" in sequence else torch.empty(0, dtype=tokens.dtype)
@@ -407,33 +446,52 @@ class BeatmapDatasetIterable:
         if self.args.max_pre_token_len > 0:
             num_pre_tokens = min(num_pre_tokens, self.args.max_pre_token_len)
 
-        input_tokens = torch.full((self.args.tgt_seq_len,), self.tokenizer.pad_id, dtype=tokens.dtype, device=tokens.device)
+        other_tokens = sequence["other_tokens"] if "other_tokens" in sequence else torch.empty(0, dtype=tokens.dtype)
+        num_other_tokens = len(other_tokens) + stl if "other_tokens" in sequence else 0
+
+        input_tokens = torch.full((self.args.tgt_seq_len,), self.tokenizer.pad_id, dtype=tokens.dtype,
+                                  device=tokens.device)
         label_tokens = torch.full((self.args.tgt_seq_len,), LABEL_IGNORE_ID, dtype=tokens.dtype, device=tokens.device)
 
         if self.args.center_pad_decoder:
             n = min(self.args.tgt_seq_len - self.pre_token_len, len(tokens) - 1)
-            m = min(self.pre_token_len - special_token_length, num_pre_tokens)
-            start_index = self.pre_token_len - m - special_token_length
+            m = min(self.pre_token_len - stl, num_pre_tokens)
+            o = min(self.pre_token_len - m - stl, num_other_tokens)
+            start_index = self.pre_token_len - m - stl - o
         else:
-            # n + m + special_token_length + padding = tgt_seq_len
-            n = min(self.args.tgt_seq_len - special_token_length - min(self.min_pre_token_len, num_pre_tokens), len(tokens) - 1)
-            m = min(self.args.tgt_seq_len - n - special_token_length, num_pre_tokens)
+            # n + m + special_token_length + num_other_tokens + padding = tgt_seq_len
+            n = min(self.args.tgt_seq_len - stl - min(self.min_pre_token_len, num_pre_tokens),
+                    len(tokens) - 1)
+            m = min(self.args.tgt_seq_len - n - stl, num_pre_tokens)
+            o = min(self.args.tgt_seq_len - n - stl - m, num_other_tokens)
             start_index = 0
+
+        if o > 0:
+            if self.args.diff_token_index >= 0:
+                input_tokens[start_index + self.args.diff_token_index] = sequence["other_difficulty_token"]
+            if self.args.style_token_index >= 0:
+                input_tokens[start_index + self.args.style_token_index] = sequence["other_beatmap_idx_token"]
+            if o > stl:
+                input_tokens[start_index + stl:start_index + o] = other_tokens[:o - stl]
+        start_index += o
 
         if self.args.diff_token_index >= 0:
             input_tokens[start_index + self.args.diff_token_index] = sequence["difficulty_token"]
         if self.args.style_token_index >= 0:
             input_tokens[start_index + self.args.style_token_index] = sequence["beatmap_idx_token"]
         if m > 0:
-            input_tokens[start_index + special_token_length:start_index + m + special_token_length] = pre_tokens[-m:]
-        input_tokens[start_index + m + special_token_length:start_index + m + special_token_length + n] = tokens[:n]
-        label_tokens[start_index + m + special_token_length:start_index + m + special_token_length + n] = tokens[1:n + 1]
+            input_tokens[start_index + stl:start_index + m + stl] = pre_tokens[-m:]
+        input_tokens[start_index + m + stl:start_index + m + stl + n] = tokens[:n]
+        label_tokens[start_index + m + stl:start_index + m + stl + n] = tokens[1:n + 1]
 
         # Randomize some input tokens
         if self.args.timing_random_offset > 0:
             offset = random.randint(-self.args.timing_random_offset, self.frame_seq_len)
-            input_tokens = torch.where((self.tokenizer.event_start[EventType.TIME_SHIFT] <= input_tokens) & (input_tokens < self.tokenizer.event_end[EventType.TIME_SHIFT]),
-                                       torch.clamp(input_tokens + offset, self.tokenizer.event_start[EventType.TIME_SHIFT], self.tokenizer.event_end[EventType.TIME_SHIFT] - 1),
+            input_tokens = torch.where((self.tokenizer.event_start[EventType.TIME_SHIFT] <= input_tokens) & (
+                        input_tokens < self.tokenizer.event_end[EventType.TIME_SHIFT]),
+                                       torch.clamp(input_tokens + offset,
+                                                   self.tokenizer.event_start[EventType.TIME_SHIFT],
+                                                   self.tokenizer.event_end[EventType.TIME_SHIFT] - 1),
                                        input_tokens)
         # input_tokens = torch.where((self.tokenizer.event_start[EventType.DISTANCE] <= input_tokens) & (input_tokens < self.tokenizer.event_end[EventType.DISTANCE]),
         #                               torch.clamp(input_tokens + torch.randint_like(input_tokens, -10, 10), self.tokenizer.event_start[EventType.DISTANCE], self.tokenizer.event_end[EventType.DISTANCE] - 1),
@@ -449,6 +507,14 @@ class BeatmapDatasetIterable:
         del sequence["difficulty_token"]
         del sequence["beatmap_idx_token"]
         del sequence["difficulty"]
+        # We keep beatmap_idx because it is a model input
+
+        if "other_tokens" in sequence:
+            del sequence["other_tokens"]
+            del sequence["other_difficulty_token"]
+            del sequence["other_beatmap_idx_token"]
+            del sequence["other_difficulty"]
+            del sequence["other_beatmap_idx"]
 
         return sequence
 
@@ -499,44 +565,71 @@ class BeatmapDatasetIterable:
         with open(metadata_file) as f:
             return json.load(f)
 
+    @staticmethod
+    def _get_difficulty(metadata: dict, beatmap_name: str):
+        return metadata["Beatmaps"][beatmap_name]["StandardStarRating"]["0"]
+
+    @staticmethod
+    def _get_idx(metadata: dict, beatmap_name: str):
+        return metadata["Beatmaps"][beatmap_name]["Index"]
+
     def _get_next_beatmaps(self) -> dict:
         for beatmap_path in self.beatmap_files:
             metadata = self._load_metadata(beatmap_path.parents[1])
-            difficulty = metadata["Beatmaps"][beatmap_path.stem]["StandardStarRating"]["0"]
+
+            if self.args.add_gd_context and len(metadata["Beatmaps"]) <= 1:
+                continue
 
             audio_path = beatmap_path.parents[1] / list(beatmap_path.parents[1].glob('audio.*'))[0]
             audio_samples = self._load_audio_file(audio_path)
 
-            for sample in self._get_next_beatmap(audio_samples, beatmap_path, difficulty):
+            for sample in self._get_next_beatmap(audio_samples, beatmap_path, metadata):
                 yield sample
 
     def _get_next_tracks(self) -> dict:
         for track_path in self.beatmap_files:
             metadata = self._load_metadata(track_path)
 
+            if self.args.add_gd_context and len(metadata["Beatmaps"]) <= 1:
+                continue
+
             audio_path = track_path / list(track_path.glob('audio.*'))[0]
             audio_samples = self._load_audio_file(audio_path)
 
             for beatmap_name in metadata["Beatmaps"]:
                 beatmap_path = (track_path / "beatmaps" / beatmap_name).with_suffix(".osu")
-                difficulty = metadata["Beatmaps"][beatmap_name]["StandardStarRating"]["0"]
 
-                for sample in self._get_next_beatmap(audio_samples, beatmap_path, difficulty):
+                for sample in self._get_next_beatmap(audio_samples, beatmap_path, metadata):
                     yield sample
 
-    def _get_next_beatmap(self, audio_samples, beatmap_path, difficulty: float) -> dict:
-        osu_beatmap = Beatmap.from_path(beatmap_path)
-        current_idx = int(os.path.basename(beatmap_path)[:6])
-
+    def _get_next_beatmap(self, audio_samples, beatmap_path: Path, metadata: dict) -> dict:
+        beatmap_name = beatmap_path.stem
         frames, frame_times = self._get_frames(audio_samples)
+
+        other_events, other_idx, other_difficulty = None, None, None
+        if self.args.add_gd_context:
+            other_beatmaps = [k for k in metadata["Beatmaps"] if k != beatmap_name]
+            other_name = random.choice(other_beatmaps)
+            other_beatmap_path = (beatmap_path.parent / other_name).with_suffix(".osu")
+            other_beatmap = Beatmap.from_path(other_beatmap_path)
+            other_events = self.parser.parse(other_beatmap)
+            other_idx = self._get_idx(metadata, other_name)
+            other_difficulty = self._get_difficulty(metadata, other_name)
+
+        osu_beatmap = Beatmap.from_path(beatmap_path)
         events = self.parser.parse(osu_beatmap)
+        current_idx = self._get_idx(metadata, beatmap_name)
+        difficulty = self._get_difficulty(metadata, beatmap_name)
 
         sequences = self._create_sequences(
-            events,
             frames,
             frame_times,
+            events,
             current_idx,
             difficulty,
+            other_events,
+            other_idx,
+            other_difficulty
         )
 
         for sequence in sequences:
@@ -545,7 +638,8 @@ class BeatmapDatasetIterable:
             sequence = self._tokenize_sequence(sequence)
             sequence = self._pad_frame_sequence(sequence)
             sequence = self._pad_and_split_token_sequence(sequence)
-            if not self.add_empty_sequences and ((sequence["labels"] == self.tokenizer.eos_id) | (sequence["labels"] == self.tokenizer.pad_id)).all():
+            if not self.add_empty_sequences and ((sequence["labels"] == self.tokenizer.eos_id) | (
+                    sequence["labels"] == self.tokenizer.pad_id)).all():
                 continue
             # if sequence["decoder_input_ids"][self.pre_token_len - 1] != self.tokenizer.pad_id:
             #     continue
