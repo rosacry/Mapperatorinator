@@ -5,17 +5,21 @@ defaults:
 
 compile: false          # PyTorch 2.0 optimization
 precision: 'no'         # Enable mixed precision (no/fp16/bf16/fp8)
+pretrained_path: ''     # Path to pretrained model weights (to do transfer learning)
 
 data:                  # Data settings
   special_token_len: 2
   diff_token_index: 0
   style_token_index: 1
   max_pre_token_len: 4
+  add_gd_context: true  # Prefix the decoder with tokens of another beatmap in the mapset
 
 dataloader:             # Dataloader settings
   num_workers: 3
 
 optim:                  # Optimizer settings
-  base_lr: 5e-3         # Should be scaled with the number of devices present
   batch_size: 128
   grad_acc: 8
+  base_lr: 5e-3         # Should be scaled with the number of devices present
+  total_steps: 32768
+  warmup_steps: 5000

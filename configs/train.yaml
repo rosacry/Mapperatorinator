@@ -35,6 +35,7 @@ data:                  # Data settings
   add_pre_tokens_at_step: -1
   max_pre_token_len: -1
   timing_random_offset: 0
+  add_gd_context: false  # Prefix the decoder with tokens of another beatmap in the mapset
 
 dataloader:             # Dataloader settings
   num_workers: 8
