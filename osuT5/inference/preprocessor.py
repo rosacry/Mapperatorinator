@@ -1,9 +1,13 @@
 from __future__ import annotations
+
+from pathlib import Path
+
 import torch
 import numpy as np
 import numpy.typing as npt
-from pydub import AudioSegment
 from omegaconf import DictConfig
+
+from osuT5.dataset.data_utils import load_audio_file
 
 
 class Preprocessor(object):
@@ -15,7 +19,7 @@ class Preprocessor(object):
         self.samples_per_sequence = self.frame_seq_len * self.frame_size
         self.sequence_stride = int(self.samples_per_sequence * args.data.sequence_stride)
 
-    def load(self, path: str) -> npt.ArrayLike:
+    def load(self, path: Path) -> npt.ArrayLike:
         """Load an audio file as audio frames. Convert stereo to mono, normalize.
 
         Args:
@@ -24,12 +28,7 @@ class Preprocessor(object):
         Returns:
             samples: Audio time-series.
         """
-        audio = AudioSegment.from_file(path)
-        audio = audio.set_frame_rate(self.sample_rate)
-        audio = audio.set_channels(1)
-        samples = np.array(audio.get_array_of_samples()).astype(np.float32)
-        samples *= 1.0 / np.max(np.abs(samples))
-        return samples
+        return load_audio_file(path, self.sample_rate)
 
     def segment(self, samples: npt.ArrayLike) -> torch.Tensor:
         """Segment audio samples into sequences. Sequences are flattened frames.

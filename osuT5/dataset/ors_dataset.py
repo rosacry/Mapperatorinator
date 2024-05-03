@@ -15,6 +15,7 @@ from pydub import AudioSegment
 from slider import Beatmap
 from torch.utils.data import IterableDataset
 
+from .data_utils import load_audio_file
 from .osu_parser import OsuParser
 from osuT5.tokenizer import Event, EventType, Tokenizer
 
@@ -206,23 +207,6 @@ class BeatmapDatasetIterable:
         self.diff_dropout_prob = 0 if self.test else args.diff_dropout_prob
         self.add_pre_tokens = args.add_pre_tokens
         self.add_empty_sequences = args.add_empty_sequences
-
-    def _load_audio_file(self, file: Path) -> npt.NDArray:
-        """Load an audio file as a numpy time-series array
-
-        The signals are resampled, converted to mono channel, and normalized.
-
-        Args:
-            file: Path to audio file.
-        Returns:
-            samples: Audio time series.
-        """
-        audio = AudioSegment.from_file(file, format=file.suffix[1:])
-        audio = audio.set_frame_rate(self.args.sample_rate)
-        audio = audio.set_channels(1)
-        samples = np.array(audio.get_array_of_samples()).astype(np.float32)
-        samples *= 1.0 / np.max(np.abs(samples))
-        return samples
 
     def _get_frames(self, samples: npt.NDArray) -> tuple[npt.NDArray, npt.NDArray]:
         """Segment audio samples into frames.
@@ -581,7 +565,7 @@ class BeatmapDatasetIterable:
                 continue
 
             audio_path = beatmap_path.parents[1] / list(beatmap_path.parents[1].glob('audio.*'))[0]
-            audio_samples = self._load_audio_file(audio_path)
+            audio_samples = load_audio_file(audio_path, self.args.sample_rate)
 
             for sample in self._get_next_beatmap(audio_samples, beatmap_path, metadata):
                 yield sample
@@ -594,7 +578,7 @@ class BeatmapDatasetIterable:
                 continue
 
             audio_path = track_path / list(track_path.glob('audio.*'))[0]
-            audio_samples = self._load_audio_file(audio_path)
+            audio_samples = load_audio_file(audio_path, self.args.sample_rate)
 
             for beatmap_name in metadata["Beatmaps"]:
                 beatmap_path = (track_path / "beatmaps" / beatmap_name).with_suffix(".osu")
