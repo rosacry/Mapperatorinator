@@ -7,6 +7,7 @@ slider_multiplier: 1.8  # Multiplier for slider velocity
 title: ''               # Song title
 artist: ''              # Song artist
 beatmap_path: ''        # Path to .osu file which will be remapped
+other_beatmap_path: ''  # Path to .osu file of other beatmap in the mapset to use as reference
 beatmap_id: -1          # Beatmap ID to use as style
 difficulty: -1           # Difficulty star rating to map
 creator: 'osuT5'        # Beatmap creator
@@ -24,6 +25,7 @@ data:                  # Data settings
   style_token_index: -1
   max_pre_token_len: -1
   add_pre_tokens: true
+  add_gd_context: false  # Prefix the decoder with tokens of another beatmap in the mapset
 
 hydra:
   job:
