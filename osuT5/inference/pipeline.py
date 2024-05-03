@@ -1,9 +1,15 @@
 from __future__ import annotations
+
+from pathlib import Path
+
 import torch
 import torch.nn.functional as F
+from slider import Beatmap
 from tqdm import tqdm
 
 from omegaconf import DictConfig
+
+from osuT5.dataset import OsuParser
 from osuT5.tokenizer import Event, EventType, Tokenizer
 from osuT5.model import OsuT
 
@@ -32,6 +38,20 @@ class Pipeline(object):
         self.style_token_index = args.data.style_token_index
         self.max_pre_token_len = args.data.max_pre_token_len
         self.add_pre_tokens = args.data.add_pre_tokens
+        self.add_gd_context = args.data.add_gd_context
+
+        if self.add_gd_context:
+            other_beatmap_path = Path(args.other_beatmap_path)
+
+            if not other_beatmap_path.is_file():
+                raise FileNotFoundError(f"Beatmap file {other_beatmap_path} not found.")
+
+            other_beatmap = Beatmap.from_path(other_beatmap_path)
+            self.other_beatmap_id = other_beatmap.beatmap_id
+            self.other_difficulty = float(other_beatmap.stars())
+            parser = OsuParser(tokenizer)
+            self.other_events = parser.parse(other_beatmap)
+            self.other_events, self.other_event_times = self._prepare_events(self.other_events)
 
     def generate(self, model: OsuT, sequences: torch.Tensor) -> list[Event]:
         """Generate a list of Event object lists and their timestamps given source sequences.
@@ -52,7 +72,7 @@ class Pipeline(object):
             beatmap_idx = torch.tensor([idx_dict[self.beatmap_id]], dtype=torch.long, device=self.device)
             style_token = self.tokenizer.encode_style(self.beatmap_id)
         else:
-            print(f"Beatmap ID {self.beatmap_id} not found in dataset, using default beatmap.")
+            print(f"Beatmap ID {self.beatmap_id} not found in dataset, using default style.")
             beatmap_idx = torch.tensor([self.tokenizer.num_classes], dtype=torch.long, device=self.device)
             style_token = self.tokenizer.style_unk
 
@@ -62,22 +82,40 @@ class Pipeline(object):
         special_tokens[:, self.diff_token_index] = diff_token
         special_tokens[:, self.style_token_index] = style_token
 
+        if self.add_gd_context:
+            if self.other_beatmap_id in idx_dict:
+                other_style_token = self.tokenizer.encode_style(self.other_beatmap_id)
+            else:
+                print(f"Other beatmap ID {self.other_beatmap_id} not found in dataset, using default style.")
+                other_style_token = self.tokenizer.style_unk
+
+            other_special_tokens = torch.empty((1, self.special_token_len), dtype=torch.long, device=self.device)
+            other_special_tokens[:, self.diff_token_index] = self.tokenizer.encode_diff(self.other_difficulty)
+            other_special_tokens[:, self.style_token_index] = other_style_token
+        else:
+            other_special_tokens = torch.empty((1, 0), dtype=torch.long, device=self.device)
+
         for sequence_index, frames in enumerate(tqdm(sequences)):
             # Get tokens of previous frame
             frame_time = sequence_index * self.miliseconds_per_stride
+
             prev_events = self._get_events_time_range(
                 events, event_times, frame_time - self.miliseconds_per_sequence, frame_time) if self.add_pre_tokens else []
-            post_events = self._get_events_time_range(
-                events, event_times, frame_time, frame_time + self.miliseconds_per_sequence)
             prev_tokens = self._encode(prev_events, frame_time)
-            post_tokens = self._encode(post_events, frame_time)
-            post_token_length = post_tokens.shape[1]
-
             if 0 <= self.max_pre_token_len < prev_tokens.shape[1]:
                 prev_tokens = prev_tokens[:, -self.max_pre_token_len:]
 
+            post_events = self._get_events_time_range(
+                events, event_times, frame_time, frame_time + self.miliseconds_per_sequence)
+            post_tokens = self._encode(post_events, frame_time)
+            post_token_length = post_tokens.shape[1]
+
+            other_events = self._get_events_time_range(
+                self.other_events, self.other_event_times, frame_time, frame_time + self.miliseconds_per_sequence) if self.add_gd_context else []
+            other_tokens = self._encode(other_events, frame_time)
+
             # Get prefix tokens
-            prefix = torch.concatenate([special_tokens, prev_tokens], dim=-1)
+            prefix = torch.concatenate([other_special_tokens, other_tokens, special_tokens, prev_tokens], dim=-1)
             if self.center_pad_decoder:
                 prefix = F.pad(prefix, (self.tgt_seq_len // 2 - prefix.shape[1], 0), value=self.tokenizer.pad_id)
             prefix_length = prefix.shape[1]
@@ -89,7 +127,7 @@ class Pipeline(object):
             frames = frames.to(self.device).unsqueeze(0)
             encoder_outputs = None
 
-            for _ in range(self.tgt_seq_len // 2):
+            for _ in range(self.tgt_seq_len):
                 out = model.forward(
                     frames=frames,
                     decoder_input_ids=tokens,
@@ -120,6 +158,29 @@ class Pipeline(object):
             self._update_event_times(events, event_times, frame_time)
 
         return events
+
+    def _prepare_events(self, events: list[Event]) -> tuple[list[Event], list[float]]:
+        """Pre-process raw list of events for inference. Calculates event times and removes redundant time shifts."""
+        ct = 0
+        event_times = []
+        for event in events:
+            if event.type == EventType.TIME_SHIFT:
+                ct = event.value
+            event_times.append(ct)
+
+        # Loop through the events in reverse to remove any time shifts that occur before anchor events
+        delete_next_time_shift = False
+        for i in range(len(events) - 1, -1, -1):
+            if events[i].type == EventType.TIME_SHIFT and delete_next_time_shift:
+                delete_next_time_shift = False
+                del events[i]
+                del event_times[i]
+                continue
+            elif events[i].type in [EventType.BEZIER_ANCHOR, EventType.PERFECT_ANCHOR, EventType.CATMULL_ANCHOR,
+                                    EventType.RED_ANCHOR]:
+                delete_next_time_shift = True
+
+        return events, event_times
 
     def _get_events_time_range(self, events: list[Event], event_times: list[float], start_time: float, end_time: float):
         # Look from the end of the list
