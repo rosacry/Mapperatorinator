@@ -5,7 +5,8 @@ import torch
 from omegaconf import DictConfig
 from slider import Beatmap
 
-from osuT5.inference import Preprocessor, Pipeline, Postprocessor
+from osudiffusion import DiT_models
+from osuT5.inference import Preprocessor, Pipeline, Postprocessor, DiffisionPipeline
 from osuT5.tokenizer import Tokenizer
 from osuT5.utils import get_model
 
@@ -28,7 +29,23 @@ def get_args_from_beatmap(args: DictConfig):
     args.title = beatmap.title
     args.artist = beatmap.artist
     args.beatmap_id = beatmap.beatmap_id if args.beatmap_id == -1 else args.beatmap_id
+    args.diffusion.style_id = beatmap.beatmap_id if args.diffusion.style_id == -1 else args.diffusion.style_id
     args.difficulty = float(beatmap.stars()) if args.difficulty == -1 else args.difficulty
+
+
+def find_model(ckpt_path, args: DictConfig, device):
+    assert Path(ckpt_path).exists(), f"Could not find DiT checkpoint at {ckpt_path}"
+    checkpoint = torch.load(ckpt_path, map_location=lambda storage, loc: storage)
+    if "ema" in checkpoint:  # supports checkpoints from train.py
+        checkpoint = checkpoint["ema"]
+
+    model = DiT_models[args.diffusion.model](
+        num_classes=args.diffusion.num_classes,
+        context_size=19 - 3 + 128,
+    ).to(device)
+    model.load_state_dict(checkpoint)
+    model.eval()  # important!
+    return model
 
 
 @hydra.main(config_path="configs", config_name="inference_v1", version_base="1.1")
@@ -56,6 +73,13 @@ def main(args: DictConfig):
     audio = preprocessor.load(args.audio_path)
     sequences = preprocessor.segment(audio)
     events = pipeline.generate(model, sequences)
+
+    if args.generate_positions:
+        model = find_model(args.diff_ckpt, args, device)
+        refine_model = find_model(args.diff_refine_ckpt, args, device) if len(args.diff_refine_ckpt) > 0 else None
+        diffusion_pipeline = DiffisionPipeline(args.diffusion)
+        events = diffusion_pipeline.generate(model, events, refine_model)
+
     postprocessor.generate(events)
 
 
