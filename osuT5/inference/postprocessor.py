@@ -58,6 +58,22 @@ def calculate_coordinates(last_pos, dist, num_samples, playfield_size):
     return coordinates
 
 
+def position_to_progress(slider_path: SliderPath, pos: np.ndarray) -> np.ndarray:
+    eps = 1e-4
+    lr = 1
+    t = 1
+    for i in range(100):
+        grad = np.linalg.norm(slider_path.position_at(t) - pos) - np.linalg.norm(
+            slider_path.position_at(t - eps) - pos,
+        )
+        t -= lr * grad
+
+        if grad == 0 or t < 0 or t > 1:
+            break
+
+    return np.clip(t, 0, 1)
+
+
 class Postprocessor(object):
     def __init__(self, args: DictConfig):
         """Postprocessing stage that converts a list of Event objects to a beatmap file."""
@@ -96,10 +112,12 @@ class Postprocessor(object):
         hit_object_strings = []
         time = 0
         dist = 0
+        x = 256
+        y = 192
+        has_pos = False
         new_combo = 0
         ho_info = []
         anchor_info = []
-        last_pos = (256, 192)
 
         timing_point_strings = [
             f"{self.offset},{self.beat_length},4,2,0,100,1,0"
@@ -113,17 +131,23 @@ class Postprocessor(object):
                 time = event.value
                 continue
             elif hit_type == EventType.DISTANCE:
+                # Find a point which is dist away from the last point but still within the playfield
                 dist = event.value
+                coordinates = calculate_coordinates((x, y), dist, 500, (512, 384))
+                pos = coordinates[np.random.randint(len(coordinates))]
+                x, y = pos
+                continue
+            elif hit_type == EventType.POS_X:
+                x = event.value
+                has_pos = True
+                continue
+            elif hit_type == EventType.POS_Y:
+                y = event.value
+                has_pos = True
                 continue
             elif hit_type == EventType.NEW_COMBO:
                 new_combo = 4
                 continue
-
-            # Find a point which is dist away from the last point but still within the playfield
-            coordinates = calculate_coordinates(last_pos, dist, 500, (512, 384))
-            pos = coordinates[np.random.randint(len(coordinates))]
-            last_pos = pos
-            x, y = pos
 
             if hit_type == EventType.CIRCLE:
                 hit_object_strings.append(f"{int(round(x))},{int(round(y))},{int(round(time))},{1 | new_combo},0")
@@ -169,16 +193,22 @@ class Postprocessor(object):
 
                 slides = max(int(round(total_duration / span_duration)), 1)
                 control_points = "|".join(f"{int(round(cp[1]))}:{int(round(cp[2]))}" for cp in anchor_info)
-                length = SliderPath(self.curve_type_shorthand[curve_type], np.array([(ho_info[0], ho_info[1])] + [(cp[1], cp[2]) for cp in anchor_info], dtype=float)).get_distance() - dist
+                slider_path = SliderPath(self.curve_type_shorthand[curve_type], np.array([(ho_info[0], ho_info[1])] + [(cp[1], cp[2]) for cp in anchor_info], dtype=float))
+                length = slider_path.get_distance()
 
-                if length < 1e-4:
+                req_length = length * position_to_progress(
+                    slider_path,
+                    np.array((x, y)),
+                ) if has_pos else length - dist
+
+                if req_length < 1e-4:
                     continue
 
                 hit_object_strings.append(
-                    f"{int(round(ho_info[0]))},{int(round(ho_info[1]))},{int(round(ho_info[2]))},{2 | ho_info[3]},0,{curve_type}|{control_points},{slides},{length}"
+                    f"{int(round(ho_info[0]))},{int(round(ho_info[1]))},{int(round(ho_info[2]))},{2 | ho_info[3]},0,{curve_type}|{control_points},{slides},{req_length}"
                 )
 
-                sv = span_duration / length / self.beat_length * self.slider_multiplier * -10000
+                sv = span_duration / req_length / self.beat_length * self.slider_multiplier * -10000
                 timing_point_strings.append(
                     f"{int(round(ho_info[2]))},{sv},4,2,0,100,0,0"
                 )

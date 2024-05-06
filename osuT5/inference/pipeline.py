@@ -10,6 +10,7 @@ from tqdm import tqdm
 from omegaconf import DictConfig
 
 from osuT5.dataset import OsuParser
+from osuT5.dataset.data_utils import update_event_times
 from osuT5.tokenizer import Event, EventType, Tokenizer
 from osuT5.model import OsuT
 
@@ -197,72 +198,7 @@ class Pipeline(object):
         return events[s:e]
 
     def _update_event_times(self, events: list[Event], event_times: list[float], frame_time: float):
-        non_timed_events = [
-            EventType.BEZIER_ANCHOR,
-            EventType.PERFECT_ANCHOR,
-            EventType.CATMULL_ANCHOR,
-            EventType.RED_ANCHOR,
-        ]
-        timed_events = [
-            EventType.CIRCLE,
-            EventType.SPINNER,
-            EventType.SPINNER_END,
-            EventType.SLIDER_HEAD,
-            EventType.LAST_ANCHOR,
-            EventType.SLIDER_END,
-        ]
-
-        end_time = frame_time + self.miliseconds_per_sequence
-        start_index = len(event_times)
-        end_index = len(events)
-        ct = 0 if len(event_times) == 0 else event_times[-1]
-        for i in range(start_index, end_index):
-            event = events[i]
-            if event.type == EventType.TIME_SHIFT:
-                ct = event.value
-            event_times.append(ct)
-
-        # Interpolate time for control point events
-        # T-D-Start-D-CP-D-CP-T-D-LCP-T-D-End
-        # 1-1-1-----1-1--1-1--7-7--7--9-9-9--
-        # 1-1-1-----3-3--5-5--7-7--7--9-9-9--
-        ct = end_time
-        interpolate = False
-        for i in range(end_index - 1, start_index - 1, -1):
-            event = events[i]
-
-            if event.type in timed_events:
-                interpolate = False
-
-            if event.type in non_timed_events:
-                interpolate = True
-
-            if not interpolate:
-                ct = event_times[i]
-                continue
-
-            if event.type not in non_timed_events:
-                event_times[i] = ct
-                continue
-
-            # Find the time of the first timed event and the number of control points between
-            j = i
-            count = 0
-            t = ct
-            while j >= 0:
-                event2 = events[j]
-                if event2.type == EventType.TIME_SHIFT:
-                    t = event_times[j]
-                    break
-                if event2.type in non_timed_events:
-                    count += 1
-                j -= 1
-            if i < 0:
-                t = 0
-
-            # Interpolate the time
-            ct = (ct - t) / (count + 1) * count + t
-            event_times[i] = ct
+        update_event_times(events, event_times, frame_time + self.miliseconds_per_sequence)
 
     def _timeshift_tokens(self, tokens: torch.Tensor, time_offset: float) -> torch.Tensor:
         """Changes the time offset of TIME_SHIFT tokens.

@@ -20,6 +20,8 @@ class EventType(Enum):
     SLIDER_END = "slider_end"
     STYLE = "style"
     DIFFICULTY = "difficulty"
+    POS_X = "pos_x"
+    POS_Y = "pos_y"
 
 
 @dataclasses.dataclass
