@@ -23,77 +23,79 @@ class Pipeline(object):
         """Model inference stage that processes sequences."""
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.tokenizer = tokenizer
-        self.tgt_seq_len = args.data.tgt_seq_len
-        self.frame_seq_len = args.data.src_seq_len - 1
-        self.frame_size = args.model.spectrogram.hop_length
-        self.sample_rate = args.model.spectrogram.sample_rate
+        self.tgt_seq_len = args.osut5.data.tgt_seq_len
+        self.frame_seq_len = args.osut5.data.src_seq_len - 1
+        self.frame_size = args.osut5.model.spectrogram.hop_length
+        self.sample_rate = args.osut5.model.spectrogram.sample_rate
         self.samples_per_sequence = self.frame_seq_len * self.frame_size
-        self.sequence_stride = int(self.samples_per_sequence * args.data.sequence_stride)
+        self.sequence_stride = int(self.samples_per_sequence * args.sequence_stride)
         self.miliseconds_per_sequence = self.samples_per_sequence * MILISECONDS_PER_SECOND / self.sample_rate
         self.miliseconds_per_stride = self.sequence_stride * MILISECONDS_PER_SECOND / self.sample_rate
-        self.beatmap_id = args.beatmap_id
-        self.difficulty = args.difficulty
-        self.center_pad_decoder = args.data.center_pad_decoder
-        self.special_token_len = args.data.special_token_len
-        self.diff_token_index = args.data.diff_token_index
-        self.style_token_index = args.data.style_token_index
-        self.max_pre_token_len = args.data.max_pre_token_len
-        self.add_pre_tokens = args.data.add_pre_tokens
-        self.add_gd_context = args.data.add_gd_context
+        self.center_pad_decoder = args.osut5.data.center_pad_decoder
+        self.special_token_len = args.osut5.data.special_token_len
+        self.diff_token_index = args.osut5.data.diff_token_index
+        self.style_token_index = args.osut5.data.style_token_index
+        self.max_pre_token_len = args.osut5.data.max_pre_token_len
+        self.add_pre_tokens = args.osut5.data.add_pre_tokens
+        self.add_gd_context = args.osut5.data.add_gd_context
 
-        if self.add_gd_context:
-            other_beatmap_path = Path(args.other_beatmap_path)
-
-            if not other_beatmap_path.is_file():
-                raise FileNotFoundError(f"Beatmap file {other_beatmap_path} not found.")
-
-            other_beatmap = Beatmap.from_path(other_beatmap_path)
-            self.other_beatmap_id = other_beatmap.beatmap_id
-            self.other_difficulty = float(other_beatmap.stars())
-            parser = OsuParser(tokenizer)
-            self.other_events = parser.parse(other_beatmap)
-            self.other_events, self.other_event_times = self._prepare_events(self.other_events)
-
-    def generate(self, model: OsuT, sequences: torch.Tensor) -> list[Event]:
+    def generate(self, model: OsuT, sequences: torch.Tensor, beatmap_id: int = -1, difficulty: float = -1, other_beatmap_path: str = '') -> list[Event]:
         """Generate a list of Event object lists and their timestamps given source sequences.
 
         Args:
             model: Trained model to use for inference.
             sequences: A list of batched source sequences.
+            beatmap_id: Beatmap ID of the desired style.
+            difficulty: The desired difficulty in star rating.
+            other_beatmap_path: Path to the beatmap file to use as context.
 
         Returns:
             events: List of Event object lists.
             event_times: Corresponding event times of Event object lists in miliseconds.
         """
+
         events = []
         event_times = []
 
         idx_dict = self.tokenizer.beatmap_idx
-        if self.beatmap_id in idx_dict:
-            beatmap_idx = torch.tensor([idx_dict[self.beatmap_id]], dtype=torch.long, device=self.device)
-            style_token = self.tokenizer.encode_style(self.beatmap_id)
+        if beatmap_id in idx_dict:
+            beatmap_idx = torch.tensor([idx_dict[beatmap_id]], dtype=torch.long, device=self.device)
+            style_token = self.tokenizer.encode_style(beatmap_id)
         else:
-            print(f"Beatmap ID {self.beatmap_id} not found in dataset, using default style.")
+            print(f"Beatmap ID {beatmap_id} not found in dataset, using default style.")
             beatmap_idx = torch.tensor([self.tokenizer.num_classes], dtype=torch.long, device=self.device)
             style_token = self.tokenizer.style_unk
 
-        diff_token = self.tokenizer.encode_diff(self.difficulty) if self.difficulty != -1 else self.tokenizer.diff_unk
+        diff_token = self.tokenizer.encode_diff(difficulty) if difficulty != -1 else self.tokenizer.diff_unk
 
         special_tokens = torch.empty((1, self.special_token_len), dtype=torch.long, device=self.device)
         special_tokens[:, self.diff_token_index] = diff_token
         special_tokens[:, self.style_token_index] = style_token
 
         if self.add_gd_context:
-            if self.other_beatmap_id in idx_dict:
-                other_style_token = self.tokenizer.encode_style(self.other_beatmap_id)
+            other_beatmap_path = Path(other_beatmap_path)
+
+            if not other_beatmap_path.is_file():
+                raise FileNotFoundError(f"Beatmap file {other_beatmap_path} not found.")
+
+            other_beatmap = Beatmap.from_path(other_beatmap_path)
+            other_beatmap_id = other_beatmap.beatmap_id
+            other_difficulty = float(other_beatmap.stars())
+            parser = OsuParser(self.tokenizer)
+            other_events = parser.parse(other_beatmap)
+            other_events, other_event_times = self._prepare_events(other_events)
+
+            if other_beatmap_id in idx_dict:
+                other_style_token = self.tokenizer.encode_style(other_beatmap_id)
             else:
-                print(f"Other beatmap ID {self.other_beatmap_id} not found in dataset, using default style.")
+                print(f"Other beatmap ID {other_beatmap_id} not found in dataset, using default style.")
                 other_style_token = self.tokenizer.style_unk
 
             other_special_tokens = torch.empty((1, self.special_token_len), dtype=torch.long, device=self.device)
-            other_special_tokens[:, self.diff_token_index] = self.tokenizer.encode_diff(self.other_difficulty)
+            other_special_tokens[:, self.diff_token_index] = self.tokenizer.encode_diff(other_difficulty)
             other_special_tokens[:, self.style_token_index] = other_style_token
         else:
+            other_events, other_event_times = [], []
             other_special_tokens = torch.empty((1, 0), dtype=torch.long, device=self.device)
 
         for sequence_index, frames in enumerate(tqdm(sequences)):
@@ -112,7 +114,7 @@ class Pipeline(object):
             post_token_length = post_tokens.shape[1]
 
             other_events = self._get_events_time_range(
-                self.other_events, self.other_event_times, frame_time, frame_time + self.miliseconds_per_sequence) if self.add_gd_context else []
+                other_events, other_event_times, frame_time, frame_time + self.miliseconds_per_sequence) if self.add_gd_context else []
             other_tokens = self._encode(other_events, frame_time)
 
             # Get prefix tokens
