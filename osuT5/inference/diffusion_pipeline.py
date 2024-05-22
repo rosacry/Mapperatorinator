@@ -5,10 +5,10 @@ import torch
 from omegaconf import DictConfig
 from tqdm import tqdm
 
-from osudiffusion import timestep_embedding
-from osudiffusion import repeat_type
-from osudiffusion import create_diffusion
-from osudiffusion import DiT
+from osu_diffusion import timestep_embedding
+from osu_diffusion import repeat_type
+from osu_diffusion import create_diffusion
+from osu_diffusion import DiT
 from osuT5.dataset.data_utils import update_event_times
 from osuT5.tokenizer import Event, EventType
 

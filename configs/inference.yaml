@@ -23,7 +23,7 @@ diffusion:
   num_sampling_steps: 1000    # Number of sampling steps
   cfg_scale: 1.0              # Scale of classifier-free guidance
   num_classes: 52670          # Number of classes stored in the model
-  beatmap_idx: 'osudiffusion/beatmap_idx.pickle'  # Path to beatmap index
+  beatmap_idx: 'osu_diffusion/beatmap_idx.pickle'  # Path to beatmap index
   use_amp: true                      # Use automatic mixed precision
   refine_iters: 10                  # Number of refinement iterations
   seq_len: 128                      # Sequence length
