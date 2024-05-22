@@ -5,7 +5,7 @@ import torch
 from omegaconf import DictConfig
 from slider import Beatmap
 
-from osudiffusion import DiT_models
+from osu_diffusion import DiT_models
 from osuT5.inference import Preprocessor, Pipeline, Postprocessor, DiffisionPipeline
 from osuT5.tokenizer import Tokenizer
 from osuT5.utils import get_model
