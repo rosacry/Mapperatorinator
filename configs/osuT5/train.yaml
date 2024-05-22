@@ -16,8 +16,8 @@ data:                  # Data settings
   test_dataset_end: 16291     # Testing/validation dataset end index
   src_seq_len: 512
   tgt_seq_len: 384
-  sample_rate: ${model.spectrogram.sample_rate}
-  hop_length: ${model.spectrogram.hop_length}
+  sample_rate: ${..model.spectrogram.sample_rate}
+  hop_length: ${..model.spectrogram.hop_length}
   cycle_length: 16
   per_track: false      # Loads all beatmaps in a track sequentially which optimizes audio data loading
   center_pad_decoder: false            # Center pad decoder input

@@ -1,11 +1,7 @@
 defaults:
   - inference
+  - osut5: train_v5
+  - diffusion: v1
   - _self_
-  - model: t5_small_v4
 
 version: 'osuT5 V5'        # Beatmap version
-
-data:                  # Data settings
-  special_token_len: 2
-  diff_token_index: 0
-  style_token_index: 1

@@ -6,11 +6,11 @@ from matplotlib import pyplot as plt
 from omegaconf import DictConfig
 from torch.utils.data import DataLoader
 
-from osuT5.dataset import OsuParser, OrsDataset
-from osuT5.dataset.ors_dataset import STEPS_PER_MILLISECOND
-from osuT5.model.spectrogram import MelSpectrogram
-from osuT5.tokenizer import EventType
-from osuT5.utils import (
+from .dataset import OsuParser, OrsDataset
+from .dataset.ors_dataset import STEPS_PER_MILLISECOND
+from .model.spectrogram import MelSpectrogram
+from .tokenizer import EventType
+from .utils import (
     setup_args,
     get_tokenizer,
     worker_init_fn,

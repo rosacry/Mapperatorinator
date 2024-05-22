@@ -1,14 +1,8 @@
 defaults:
   - inference
+  - osut5: train_v8_gd
+  - diffusion: v1
   - _self_
-  - model: t5_small_v4
 
 version: 'osuT5 V8 GD'        # Beatmap version
-
-data:                  # Data settings
-  special_token_len: 2
-  diff_token_index: 0
-  style_token_index: 1
-  max_pre_token_len: 4
-  sequence_stride: 0.5             # Fraction of audio sequence length to shift inference window
-  add_gd_context: true  # Prefix the decoder with tokens of another beatmap in the mapset
+sequence_stride: 0.5             # Fraction of audio sequence length to shift inference window

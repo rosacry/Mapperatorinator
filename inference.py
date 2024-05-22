@@ -5,8 +5,9 @@ import torch
 from omegaconf import DictConfig
 from slider import Beatmap
 
+from diffusion_pipeline import DiffisionPipeline
 from osu_diffusion import DiT_models
-from osuT5.inference import Preprocessor, Pipeline, Postprocessor, DiffisionPipeline
+from osuT5.inference import Preprocessor, Pipeline, Postprocessor
 from osuT5.tokenizer import Tokenizer
 from osuT5.utils import get_model
 
@@ -29,7 +30,7 @@ def get_args_from_beatmap(args: DictConfig):
     args.title = beatmap.title
     args.artist = beatmap.artist
     args.beatmap_id = beatmap.beatmap_id if args.beatmap_id == -1 else args.beatmap_id
-    args.diffusion.style_id = beatmap.beatmap_id if args.diffusion.style_id == -1 else args.diffusion.style_id
+    args.style_id = beatmap.beatmap_id if args.style_id == -1 else args.style_id
     args.difficulty = float(beatmap.stars()) if args.difficulty == -1 else args.difficulty
 
 
@@ -61,7 +62,7 @@ def main(args: DictConfig):
     tokenizer = Tokenizer()
     tokenizer.load_state_dict(tokenizer_state)
 
-    model = get_model(args, tokenizer)
+    model = get_model(args.osut5, tokenizer)
     model.load_state_dict(model_state)
     model.eval()
     model.to(device)
@@ -72,12 +73,12 @@ def main(args: DictConfig):
 
     audio = preprocessor.load(args.audio_path)
     sequences = preprocessor.segment(audio)
-    events = pipeline.generate(model, sequences)
+    events = pipeline.generate(model, sequences, args.beatmap_id, args.difficulty, args.other_beatmap_path)
 
     if args.generate_positions:
         model = find_model(args.diff_ckpt, args, device)
         refine_model = find_model(args.diff_refine_ckpt, args, device) if len(args.diff_refine_ckpt) > 0 else None
-        diffusion_pipeline = DiffisionPipeline(args.diffusion)
+        diffusion_pipeline = DiffisionPipeline(args)
         events = diffusion_pipeline.generate(model, events, refine_model)
 
     postprocessor.generate(events)

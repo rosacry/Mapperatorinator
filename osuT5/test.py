@@ -30,7 +30,7 @@ def main(args: DictConfig):
         mixed_precision=args.precision,
         log_with=args.logging.log_with,
         project_config=ProjectConfiguration(
-            project_dir=".", logging_dir="tensorboard_logs"
+            project_dir="..", logging_dir="tensorboard_logs"
         ),
     )
     accelerator.init_trackers(

@@ -26,12 +26,11 @@ class DiffisionPipeline(object):
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.num_sampling_steps = args.num_sampling_steps
         self.cfg_scale = args.cfg_scale
-        self.seq_len = args.seq_len
-        self.num_classes = args.num_classes
+        self.seq_len = args.diffusion.seq_len
+        self.num_classes = args.diffusion.num_classes
         self.beatmap_idx = get_beatmap_idx(args.beatmap_idx)
         self.style_id = args.style_id
         self.refine_iters = args.refine_iters
-        self.use_amp = args.use_amp
 
         if self.style_id in self.beatmap_idx:
             self.class_label = self.beatmap_idx[self.style_id]

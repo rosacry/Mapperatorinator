@@ -26,7 +26,7 @@ def main(args: DictConfig):
         gradient_accumulation_steps=args.optim.grad_acc,
         log_with=args.logging.log_with,
         project_config=ProjectConfiguration(
-            project_dir=".", logging_dir="tensorboard_logs"
+            project_dir="..", logging_dir="tensorboard_logs"
         ),
         kwargs_handlers=[ddp_kwargs],
     )

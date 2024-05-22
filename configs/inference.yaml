@@ -1,15 +1,17 @@
 model_path: ''          # Path to trained model
 audio_path: ''          # Path to input audio
 output_path: ''         # Path to output directory
+beatmap_path: ''        # Path to .osu file to autofill metadata
+other_beatmap_path: ''  # Path to .osu file of other beatmap in the mapset to use as reference
+sequence_stride: 1             # Fraction of audio sequence length to shift inference window
+beatmap_id: -1          # Beatmap ID to use as style
+difficulty: -1           # Difficulty star rating to map
+
 bpm: 120                # Beats per minute of input audio
 offset: 0               # Start of beat, in miliseconds, from the beginning of input audio
 slider_multiplier: 1.8  # Multiplier for slider velocity
 title: ''               # Song title
 artist: ''              # Song artist
-beatmap_path: ''        # Path to .osu file which will be remapped
-other_beatmap_path: ''  # Path to .osu file of other beatmap in the mapset to use as reference
-beatmap_id: -1          # Beatmap ID to use as style
-difficulty: -1           # Difficulty star rating to map
 creator: 'osuT5'        # Beatmap creator
 version: 'osuT5'        # Beatmap version
 
@@ -17,31 +19,11 @@ version: 'osuT5'        # Beatmap version
 generate_positions: false      # Use diffusion to generate object positions
 diff_ckpt: ''                  # Path to checkpoint for diffusion model
 diff_refine_ckpt: ''           # Path to checkpoint for refining diffusion model
-
-diffusion:
-  style_id: -1                # Style ID to use for diffusion
-  num_sampling_steps: 1000    # Number of sampling steps
-  cfg_scale: 1.0              # Scale of classifier-free guidance
-  num_classes: 52670          # Number of classes stored in the model
-  beatmap_idx: 'osu_diffusion/beatmap_idx.pickle'  # Path to beatmap index
-  use_amp: true                      # Use automatic mixed precision
-  refine_iters: 10                  # Number of refinement iterations
-  seq_len: 128                      # Sequence length
-  model: 'DiT-B'                    # Model architecture
-
-data:                  # Data settings
-  src_seq_len: 512
-  tgt_seq_len: 384
-  sample_rate: ${model.spectrogram.sample_rate}
-  hop_length: ${model.spectrogram.hop_length}
-  sequence_stride: 1             # Fraction of audio sequence length to shift inference window
-  center_pad_decoder: false            # Center pad decoder input
-  special_token_len: 0
-  diff_token_index: -1
-  style_token_index: -1
-  max_pre_token_len: -1
-  add_pre_tokens: true
-  add_gd_context: false  # Prefix the decoder with tokens of another beatmap in the mapset
+beatmap_idx: 'osu_diffusion/beatmap_idx.pickle'  # Path to beatmap index
+style_id: -1                # Style ID to use for diffusion
+num_sampling_steps: 1000    # Number of sampling steps
+cfg_scale: 1.0              # Scale of classifier-free guidance
+refine_iters: 10                  # Number of refinement iterations
 
 hydra:
   job:
