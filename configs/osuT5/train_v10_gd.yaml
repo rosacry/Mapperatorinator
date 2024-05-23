@@ -18,8 +18,8 @@ dataloader:             # Dataloader settings
   num_workers: 3
 
 optim:                  # Optimizer settings
-  batch_size: 128
-  grad_acc: 32
   base_lr: 5e-3         # Should be scaled with the number of devices present
+  batch_size: 128
+  grad_acc: 16
   total_steps: 32768
   warmup_steps: 5000
