@@ -17,7 +17,7 @@ dataloader:             # Dataloader settings
 
 optim:                  # Optimizer settings
   base_lr: 5e-3         # Should be scaled with the number of devices present
+  batch_size: 128
+  grad_acc: 16
   total_steps: 32768
   warmup_steps: 5000
-  batch_size: 128
-  grad_acc: 32
