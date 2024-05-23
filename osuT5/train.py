@@ -4,7 +4,7 @@ from accelerate import Accelerator, DistributedDataParallelKwargs
 from accelerate.utils import ProjectConfiguration
 from omegaconf import DictConfig
 
-from osuT5.utils import (
+from .utils import (
     setup_args,
     train,
     train_profiling,
