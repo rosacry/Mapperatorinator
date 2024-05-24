@@ -15,11 +15,11 @@ data:                  # Data settings
   add_gd_context: true  # Prefix the decoder with tokens of another beatmap in the mapset
 
 dataloader:             # Dataloader settings
-  num_workers: 3
+  num_workers: 6
 
 optim:                  # Optimizer settings
-  base_lr: 5e-3         # Should be scaled with the number of devices present
+  base_lr: 2e-3         # Should be scaled with the number of devices present
   batch_size: 128
   grad_acc: 16
-  total_steps: 16384
-  warmup_steps: 2500
+  total_steps: 32768
+  warmup_steps: 5000
