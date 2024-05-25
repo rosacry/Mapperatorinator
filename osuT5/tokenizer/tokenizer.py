@@ -148,6 +148,14 @@ class Tokenizer:
         offset = self.event_start[event_type]
         return offset, offset + (er.max_value - er.min_value)
 
+    def decode_diff(self, token_id: int) -> float:
+        """Converts token id into difficulty value."""
+        if token_id == self.diff_unk:
+            return -1
+        elif not (self.event_start[EventType.DIFFICULTY] <= token_id < self.event_end[EventType.DIFFICULTY]):
+            raise ValueError(f"token id {token_id} is not a difficulty token")
+        return self.decode(token_id).value * self.max_difficulty / self.num_diff_classes
+
     def encode_diff_event(self, diff: float) -> Event:
         """Converts difficulty value into event."""
         return Event(type=EventType.DIFFICULTY, value=np.clip(
