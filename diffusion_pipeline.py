@@ -180,6 +180,9 @@ class DiffisionPipeline(object):
                     seq_indices[j] = len(data_chunks) - 1
                 indices = []
 
+        for j in indices:
+            seq_indices[j] = len(data_chunks) - 1
+
         seq = torch.stack(data_chunks, 0)
         seq = torch.swapaxes(seq, 0, 1)
         seq_o = seq[0, :]
