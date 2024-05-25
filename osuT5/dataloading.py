@@ -6,18 +6,18 @@ from matplotlib import pyplot as plt
 from omegaconf import DictConfig
 from torch.utils.data import DataLoader
 
-from .dataset import OsuParser, OrsDataset
-from .dataset.ors_dataset import STEPS_PER_MILLISECOND
-from .model.spectrogram import MelSpectrogram
-from .tokenizer import EventType
-from .utils import (
+from dataset import OsuParser, OrsDataset
+from dataset.ors_dataset import STEPS_PER_MILLISECOND
+from model.spectrogram import MelSpectrogram
+from tokenizer import EventType
+from utils import (
     setup_args,
     get_tokenizer,
     worker_init_fn,
 )
 
 
-@hydra.main(config_path="configs", config_name="train_v1", version_base="1.1")
+@hydra.main(config_path="../configs/osuT5", config_name="train_v1", version_base="1.1")
 def main(args: DictConfig):
     setup_args(args)
 

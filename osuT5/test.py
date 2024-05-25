@@ -10,9 +10,9 @@ from accelerate.logging import get_logger
 from accelerate.utils import ProjectConfiguration
 from omegaconf import DictConfig
 
-from osuT5.dataset.ors_dataset import STEPS_PER_MILLISECOND, LABEL_IGNORE_ID
-from osuT5.tokenizer import EventType
-from osuT5.utils import (
+from dataset.ors_dataset import STEPS_PER_MILLISECOND, LABEL_IGNORE_ID
+from tokenizer import EventType
+from utils import (
     setup_args,
     get_model,
     get_tokenizer,
