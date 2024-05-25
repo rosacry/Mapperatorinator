@@ -1,0 +1,8 @@
+defaults:
+  - inference
+  - osut5: train_v10_gd
+  - diffusion: v1
+  - _self_
+
+version: 'osuT5 V10 GD'        # Beatmap version
+sequence_stride: 0.5             # Fraction of audio sequence length to shift inference window
