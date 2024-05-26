@@ -163,7 +163,7 @@ class DiffisionPipeline(object):
                 if event.type == EventType.SLIDER_END:
                     span_duration = last_anchor_time - head_time
                     total_duration = time - head_time
-                    repeats = max(int(round(total_duration / span_duration)), 1)
+                    repeats = max(int(round(total_duration / span_duration)), 1) if span_duration > 0 else 1
                     index += repeat_type(repeats)
                 elif event.type == EventType.SLIDER_HEAD:
                     head_time = time
