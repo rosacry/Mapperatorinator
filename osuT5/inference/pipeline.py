@@ -131,7 +131,7 @@ class Pipeline(object):
             frames = frames.to(self.device).unsqueeze(0)
             encoder_outputs = None
 
-            for _ in range(self.tgt_seq_len):
+            while tokens.shape[-1] < self.tgt_seq_len:
                 out = model.forward(
                     frames=frames,
                     decoder_input_ids=tokens,
