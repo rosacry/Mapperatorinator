@@ -3,7 +3,8 @@ audio_path: ''          # Path to input audio
 output_path: ''         # Path to output directory
 beatmap_path: ''        # Path to .osu file to autofill metadata
 other_beatmap_path: ''  # Path to .osu file of other beatmap in the mapset to use as reference
-sequence_stride: 1             # Fraction of audio sequence length to shift inference window
+lookback: 0             # Fraction of audio sequence to fill with tokens from previous inference window
+lookahead: 0            # Fraction of audio sequence to skip at the end of the audio window
 beatmap_id: -1          # Beatmap ID to use as style
 difficulty: -1           # Difficulty star rating to map
 
