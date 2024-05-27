@@ -28,9 +28,10 @@ class Pipeline(object):
         self.frame_size = args.osut5.model.spectrogram.hop_length
         self.sample_rate = args.osut5.model.spectrogram.sample_rate
         self.samples_per_sequence = self.frame_seq_len * self.frame_size
-        self.sequence_stride = int(self.samples_per_sequence * args.sequence_stride)
+        self.sequence_stride = int(self.samples_per_sequence * (1 - args.lookback - args.lookahead))
         self.miliseconds_per_sequence = self.samples_per_sequence * MILISECONDS_PER_SECOND / self.sample_rate
         self.miliseconds_per_stride = self.sequence_stride * MILISECONDS_PER_SECOND / self.sample_rate
+        self.lookahead_max_time = (1 - args.lookahead) * self.miliseconds_per_sequence
         self.center_pad_decoder = args.osut5.data.center_pad_decoder
         self.special_token_len = args.osut5.data.special_token_len
         self.diff_token_index = args.osut5.data.diff_token_index
@@ -152,6 +153,12 @@ class Pipeline(object):
 
                 # stop preemptively when all sentences have finished
                 if eos_in_sentence.all():
+                    break
+
+                next_event = self.tokenizer.decode(next_tokens[0].item())
+                if (sequence_index != len(sequences) - 1 and
+                        next_event.type == EventType.TIME_SHIFT and
+                        next_event.value * MILISECONDS_PER_STEP > self.lookahead_max_time):
                     break
 
             # Trim prefix, SOS, post-tokens, and EOS tokens

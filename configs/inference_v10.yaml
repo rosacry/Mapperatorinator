@@ -5,4 +5,4 @@ defaults:
   - _self_
 
 version: 'osuT5 V10'        # Beatmap version
-sequence_stride: 0.5             # Fraction of audio sequence length to shift inference window
+lookback: 0.5             # Fraction of audio sequence to fill with tokens from previous inference window

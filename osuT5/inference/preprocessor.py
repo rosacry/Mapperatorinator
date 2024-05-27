@@ -17,7 +17,7 @@ class Preprocessor(object):
         self.frame_size = args.osut5.data.hop_length
         self.sample_rate = args.osut5.data.sample_rate
         self.samples_per_sequence = self.frame_seq_len * self.frame_size
-        self.sequence_stride = int(self.samples_per_sequence * args.sequence_stride)
+        self.sequence_stride = int(self.samples_per_sequence * (1 - args.lookback - args.lookahead))
 
     def load(self, path: Path) -> npt.ArrayLike:
         """Load an audio file as audio frames. Convert stereo to mono, normalize.
