@@ -5,5 +5,5 @@ defaults:
   - _self_
 
 version: 'osuT5 V10.1 GD'        # Beatmap version
-lookback: 0.7             # Fraction of audio sequence to fill with tokens from previous inference window
-lookahead: 0.2            # Fraction of audio sequence to skip at the end of the audio window
+lookback: 0.5             # Fraction of audio sequence to fill with tokens from previous inference window
+lookahead: 0.4            # Fraction of audio sequence to skip at the end of the audio window
