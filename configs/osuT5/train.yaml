@@ -22,8 +22,8 @@ data:                  # Data settings
   per_track: false      # Loads all beatmaps in a track sequentially which optimizes audio data loading
   center_pad_decoder: false            # Center pad decoder input
   num_classes: 64821
-  num_diff_classes: 24
-  max_diff: 12
+  num_diff_classes: 24  # Number of difficulty classes
+  max_diff: 12          # Maximum difficulty of difficulty classes
   class_dropout_prob: 0.2
   diff_dropout_prob: 0.2
   special_token_len: 0
@@ -36,6 +36,9 @@ data:                  # Data settings
   max_pre_token_len: -1
   timing_random_offset: 0
   add_gd_context: false  # Prefix the decoder with tokens of another beatmap in the mapset
+  min_difficulty: 0     # Minimum difficulty to consider including in the dataset
+  rhythm_awkwardness: false  # Add rhythm awkwardness in dataloader
+
 
 dataloader:             # Dataloader settings
   num_workers: 8
