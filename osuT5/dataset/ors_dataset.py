@@ -234,11 +234,8 @@ class BeatmapDatasetIterable:
             frames: npt.NDArray,
             frame_times: npt.NDArray,
             events: list[Event],
-            beatmap_idx: int,
-            difficulty: float,
             other_events: Optional[list[Event]] = None,
-            other_beatmap_idx: Optional[int] = None,
-            other_difficulty: Optional[float] = None,
+            extra_data: Optional[dict] = None,
     ) -> list[dict[str, int | npt.NDArray | list[Event]]]:
         """Create frame and token sequences for training/testing.
 
@@ -292,9 +289,11 @@ class BeatmapDatasetIterable:
                 "time": frame_times[frame_start_idx],
                 "frames": frames[frame_start_idx:frame_end_idx],
                 "events": events[target_start_idx:target_end_idx],
-                "beatmap_idx": beatmap_idx,
-                "difficulty": difficulty,
             }
+
+            # Add extra data to the sequence
+            if extra_data is not None:
+                sequence |= extra_data
 
             if self.args.add_pre_tokens or self.args.add_pre_tokens_at_step >= 0:
                 sequence["pre_events"] = events[target_pre_idx:target_start_idx]
@@ -303,8 +302,6 @@ class BeatmapDatasetIterable:
                 other_target_start_idx = other_event_start_indices[frame_start_idx]
                 other_target_end_idx = other_event_end_indices[frame_end_idx - 1]
                 sequence["other_events"] = other_events[other_target_start_idx:other_target_end_idx]
-                sequence["other_beatmap_idx"] = other_beatmap_idx
-                sequence["other_difficulty"] = other_difficulty
 
             sequences.append(sequence)
 
@@ -470,7 +467,7 @@ class BeatmapDatasetIterable:
 
         # Randomize some input tokens
         def randomize_tokens(tokens):
-            offset = random.randint(-self.args.timing_random_offset, self.args.timing_random_offset)
+            offset = torch.randint(low=-self.args.timing_random_offset, high=self.args.timing_random_offset+1, size=tokens.shape)
             return torch.where((self.tokenizer.event_start[EventType.TIME_SHIFT] <= tokens) & (
                     tokens < self.tokenizer.event_end[EventType.TIME_SHIFT]),
                                        torch.clamp(tokens + offset,
@@ -567,6 +564,9 @@ class BeatmapDatasetIterable:
             if self.args.add_gd_context and len(metadata["Beatmaps"]) <= 1:
                 continue
 
+            if self.args.min_difficulty > 0 and self._get_difficulty(metadata, beatmap_path.stem) < self.args.min_difficulty:
+                continue
+
             audio_path = beatmap_path.parents[1] / list(beatmap_path.parents[1].glob('audio.*'))[0]
             audio_samples = load_audio_file(audio_path, self.args.sample_rate)
 
@@ -580,11 +580,18 @@ class BeatmapDatasetIterable:
             if self.args.add_gd_context and len(metadata["Beatmaps"]) <= 1:
                 continue
 
+            if self.args.min_difficulty > 0 and all(self._get_difficulty(metadata, beatmap_name)
+                                                    < self.args.min_difficulty for beatmap_name in metadata["Beatmaps"]):
+                continue
+
             audio_path = track_path / list(track_path.glob('audio.*'))[0]
             audio_samples = load_audio_file(audio_path, self.args.sample_rate)
 
             for beatmap_name in metadata["Beatmaps"]:
                 beatmap_path = (track_path / "beatmaps" / beatmap_name).with_suffix(".osu")
+
+                if self.args.min_difficulty > 0 and self._get_difficulty(metadata, beatmap_name) < self.args.min_difficulty:
+                    continue
 
                 for sample in self._get_next_beatmap(audio_samples, beatmap_path, metadata):
                     yield sample
@@ -593,6 +600,8 @@ class BeatmapDatasetIterable:
         beatmap_name = beatmap_path.stem
         frames, frame_times = self._get_frames(audio_samples)
 
+        extra_data = {}
+
         other_events, other_idx, other_difficulty = None, None, None
         if self.args.add_gd_context:
             other_beatmaps = [k for k in metadata["Beatmaps"] if k != beatmap_name]
@@ -600,23 +609,23 @@ class BeatmapDatasetIterable:
             other_beatmap_path = (beatmap_path.parent / other_name).with_suffix(".osu")
             other_beatmap = Beatmap.from_path(other_beatmap_path)
             other_events = self.parser.parse(other_beatmap)
-            other_idx = self._get_idx(metadata, other_name)
-            other_difficulty = self._get_difficulty(metadata, other_name)
+            extra_data["other_beatmap_idx"] = self._get_idx(metadata, other_name)
+            extra_data["other_difficulty"] = self._get_difficulty(metadata, other_name)
 
         osu_beatmap = Beatmap.from_path(beatmap_path)
         events = self.parser.parse(osu_beatmap)
-        current_idx = self._get_idx(metadata, beatmap_name)
-        difficulty = self._get_difficulty(metadata, beatmap_name)
+        extra_data["beatmap_idx"] = self._get_idx(metadata, beatmap_name)
+        extra_data["difficulty"] = self._get_difficulty(metadata, beatmap_name)
+
+        if self.args.rhythm_awkwardness:
+            extra_data["rhythm_awkwardness"] = osu_beatmap.rhythm_awkwardness()
 
         sequences = self._create_sequences(
             frames,
             frame_times,
             events,
-            current_idx,
-            difficulty,
             other_events,
-            other_idx,
-            other_difficulty
+            extra_data,
         )
 
         for sequence in sequences:

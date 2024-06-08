@@ -221,7 +221,10 @@ def acc_range(preds, labels, start_index, end_index):
     index = (start_index <= labels) & (labels < end_index)
     range_labels = labels[index]
     range_preds = preds[index]
-    return (range_preds == range_labels).detach().float().cpu().numpy()
+    accs = range_preds == range_labels
+    if isinstance(accs, torch.Tensor):
+        accs = accs.detach().float().cpu().numpy()
+    return accs
 
 
 def train(

@@ -209,26 +209,6 @@ class Pipeline(object):
     def _update_event_times(self, events: list[Event], event_times: list[float], frame_time: float):
         update_event_times(events, event_times, frame_time + self.miliseconds_per_sequence)
 
-    def _timeshift_tokens(self, tokens: torch.Tensor, time_offset: float) -> torch.Tensor:
-        """Changes the time offset of TIME_SHIFT tokens.
-
-        Args:
-            tokens: Long tensor of tokens shaped (batch size, sequence length).
-            time_offset: Time offset in miliseconds.
-
-        Returns:
-            tokens: List of tokens with updated time values.
-        """
-        for i in range(tokens.shape[0]):
-            for j in range(tokens.shape[1]):
-                token = tokens[i, j]
-                if self.tokenizer.event_start[EventType.TIME_SHIFT] <= token < self.tokenizer.event_end[
-                    EventType.TIME_SHIFT]:
-                    event = self.tokenizer.decode(token.item())
-                    event.value += int(time_offset / MILISECONDS_PER_STEP)
-                    tokens[i, j] = self.tokenizer.encode(event)
-        return tokens
-
     def _encode(self, events: list[Event], frame_time: float) -> torch.Tensor:
         tokens = torch.empty((1, len(events)), dtype=torch.long)
         for i, event in enumerate(events):
