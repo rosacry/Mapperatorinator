@@ -49,8 +49,7 @@ def maybe_save_checkpoint(accelerator: Accelerator, args: DictConfig, shared: Na
 
         output_dir = f"checkpoint-{shared.current_train_step}"
         accelerator.wait_for_everyone()
-        # Saving T5 has an issue that safe serialization removes shared tensors and then the model can't be loaded.
-        accelerator.save_state(output_dir=output_dir, safe_serialization=False)
+        accelerator.save_state(output_dir=output_dir, safe_serialization=True)
 
         wandb_tracker = accelerator.get_tracker("wandb")
         if wandb_tracker is not None:
