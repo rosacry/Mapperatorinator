@@ -9,7 +9,7 @@ from tqdm.auto import tqdm
 # dry_run = True
 dry_run = False
 api = wandb.Api()
-project = api.project("osuT5")
+project = api.project("osuT5", entity="mappingtools")
 
 for artifact_type in project.artifacts_types():
     if artifact_type.type != "model":
