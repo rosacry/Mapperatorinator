@@ -37,13 +37,15 @@ def calc_rhythm_complexity(beatmap: Beatmap, model: nn.Module, tokenizer: Tokeni
     logits = output.logits
     entropies = -torch.nn.functional.log_softmax(logits, dim=-1).cpu()
 
-    # total_loss = 0
-    # for i, label in enumerate(labels):
-    #     # noinspection PyTypeChecker
-    #     # Add a leniency to the prediction by allowing the model to be off by 3 tokens
-    #     # This accounts for slight misalignments in beatmaps with complex timing
-    #     total_loss += torch.min(-entropies[i, label - 3:label + 3]).item()
-    total_loss = torch.min(entropies, dim=-1).values.sum().item()
+    total_loss = 0
+    for i, label in enumerate(labels):
+        # noinspection PyTypeChecker
+        # Add a leniency to the prediction by allowing the model to be off by 3 tokens
+        # This accounts for slight misalignments in beatmaps with complex timing
+        # TODO: the probabilities (before log) in the leniency range should be summed instead of taking the max
+        # TODO: the leniency should be scaled by the OD of the beatmap
+        total_loss += torch.min(entropies[i, label - 1:label + 1]).item()
+    # total_loss = torch.min(entropies, dim=-1).values.sum().item()
 
     # Divide the total loss by the drain time to get entropy per second
     break_threshhold = timedelta(milliseconds=5000)
@@ -78,7 +80,7 @@ def main(args: DictConfig):
     # Get a list of all beatmap files in the dataset path in the track index range between start and end
     # beatmap_files = ["C:\\Users\\Olivier\\AppData\\Local\\osu!\\Songs\\219813 Apocalyptica - Hall of the Mountain King\\Apocalyptica - Hall of the Mountain King (pishifat) [Easy].osu"]
     beatmap_files = ["C:\\Users\\Olivier\\AppData\\Local\\osu!\\Songs\\1312076 II-L - SPUTNIK-3\\II-L - SPUTNIK-3 (DeviousPanda) [Beyond OWC].osu"]
-    beatmap_files = []
+    # beatmap_files = []
     track_names = ["Track" + str(i).zfill(5) for i in range(0, 1000)]
     for track_name in track_names:
         for beatmap_file in os.listdir(
