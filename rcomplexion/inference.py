@@ -6,6 +6,7 @@ import hydra
 import torch
 from omegaconf import DictConfig
 from slider import Beatmap, Slider
+from slider.mod import od_to_ms_300
 from torch import nn
 from tqdm import tqdm
 
@@ -16,6 +17,7 @@ from libs.utils import get_model
 
 
 def calc_rhythm_complexity(beatmap: Beatmap, model: nn.Module, tokenizer: Tokenizer, parser: OsuParser, device, args):
+    leniency = int(od_to_ms_300(beatmap.overall_difficulty) * args.data.time_resolution)
     events = parser.parse(beatmap)
     sequences = create_sequences(events, args.data.src_seq_len)
 
@@ -34,17 +36,19 @@ def calc_rhythm_complexity(beatmap: Beatmap, model: nn.Module, tokenizer: Tokeni
     labels = labels.to(device)
     output = model(input_ids)
 
-    logits = output.logits
-    entropies = -torch.nn.functional.log_softmax(logits, dim=-1).cpu()
+    logits = output.logits.cpu()
+    probs = torch.softmax(logits, dim=-1)
+    # entropies = -torch.nn.functional.log_softmax(logits, dim=-1)
 
     total_loss = 0
     for i, label in enumerate(labels):
         # noinspection PyTypeChecker
         # Add a leniency to the prediction by allowing the model to be off by 3 tokens
         # This accounts for slight misalignments in beatmaps with complex timing
-        # TODO: the probabilities (before log) in the leniency range should be summed instead of taking the max
-        # TODO: the leniency should be scaled by the OD of the beatmap
-        total_loss += torch.min(entropies[i, label - 1:label + 1]).item()
+        # The probabilities (before log) in the leniency range should be summed instead of taking the max
+        # The leniency should be scaled by the OD of the beatmap
+        aggregate_probs = probs[i, label - leniency:label + leniency].sum()
+        total_loss += -torch.log(torch.clip(aggregate_probs, 1e-4, 1)).item()
     # total_loss = torch.min(entropies, dim=-1).values.sum().item()
 
     # Divide the total loss by the drain time to get entropy per second
@@ -79,23 +83,25 @@ def main(args: DictConfig):
 
     # Get a list of all beatmap files in the dataset path in the track index range between start and end
     # beatmap_files = ["C:\\Users\\Olivier\\AppData\\Local\\osu!\\Songs\\219813 Apocalyptica - Hall of the Mountain King\\Apocalyptica - Hall of the Mountain King (pishifat) [Easy].osu"]
-    beatmap_files = ["C:\\Users\\Olivier\\AppData\\Local\\osu!\\Songs\\1312076 II-L - SPUTNIK-3\\II-L - SPUTNIK-3 (DeviousPanda) [Beyond OWC].osu"]
+    beatmap_files = ["C:\\Users\\Olivier\\AppData\\Local\\osu!\\Songs\\1312076 II-L - SPUTNIK-3\\II-L - SPUTNIK-3 (DeviousPanda) [Beyond OWC].osu",
+                     "C:\\Users\\Olivier\\AppData\\Local\\osu!\\Songs\\493830 supercell - My Dearest\\supercell - My Dearest (Yukiyo) [Last Love].osu",
+                    ]
     # beatmap_files = []
-    track_names = ["Track" + str(i).zfill(5) for i in range(0, 1000)]
-    for track_name in track_names:
-        for beatmap_file in os.listdir(
-                os.path.join(args.data.train_dataset_path, track_name, "beatmaps"),
-        ):
-            beatmap_files.append(
-                Path(
-                    os.path.join(
-                        args.data.train_dataset_path,
-                        track_name,
-                        "beatmaps",
-                        beatmap_file,
-                    )
-                ),
-            )
+    # track_names = ["Track" + str(i).zfill(5) for i in range(0, 1000)]
+    # for track_name in track_names:
+    #     for beatmap_file in os.listdir(
+    #             os.path.join(args.data.train_dataset_path, track_name, "beatmaps"),
+    #     ):
+    #         beatmap_files.append(
+    #             Path(
+    #                 os.path.join(
+    #                     args.data.train_dataset_path,
+    #                     track_name,
+    #                     "beatmaps",
+    #                     beatmap_file,
+    #                 )
+    #             ),
+    #         )
 
     # Calculate rhythm complexity for each beatmap
     rhythm_complexities = {}
