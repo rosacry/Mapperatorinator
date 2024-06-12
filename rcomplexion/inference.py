@@ -21,7 +21,7 @@ def calc_rhythm_complexity(beatmap: Beatmap, model: nn.Module, tokenizer: Tokeni
     leniency = int(od_to_ms_300(beatmap.overall_difficulty) * args.data.time_resolution)
     events = parser.parse(beatmap)
     tokens = tokenize_events(events, tokenizer)
-    sequences, labels = create_sequences(tokens, args.data.src_seq_len)
+    sequences, labels = create_sequences(tokens, args.data.src_seq_len, tokenizer)
 
     if len(sequences) == 0:
         return 0
