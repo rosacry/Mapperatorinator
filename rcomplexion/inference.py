@@ -12,29 +12,16 @@ from torch import nn
 from tqdm import tqdm
 
 from libs.dataset import OsuParser
-from libs.dataset.data_utils import create_sequences, tokenize_sequence
+from libs.dataset.data_utils import create_sequences, tokenize_events
 from libs.tokenizer import Tokenizer
 from libs.utils import get_model
-from libs.tokenizer import EventType, Event
 
 
 def calc_rhythm_complexity(beatmap: Beatmap, model: nn.Module, tokenizer: Tokenizer, parser: OsuParser, device, args):
     leniency = int(od_to_ms_300(beatmap.overall_difficulty) * args.data.time_resolution)
     events = parser.parse(beatmap)
-
-    tokens = torch.empty(len(events), dtype=torch.long)
-    for i, event in enumerate(events):
-        tokens[i] = tokenizer.encode(event)
-
-    sequences = []
-    labels = []
-    timed_events = [tokenizer.encode(Event(EventType.CIRCLE)), tokenizer.encode(Event(EventType.SLIDER_HEAD))]
-    for i in range(args.data.src_seq_len + 1, len(tokens)):
-        if tokens[i] not in timed_events:
-            continue
-
-        sequences.append(tokens[i - 1 - args.data.src_seq_len:i - 1])
-        labels.append(tokens[i - 1])
+    tokens = tokenize_events(events, tokenizer)
+    sequences, labels = create_sequences(tokens, args.data.src_seq_len)
 
     if len(sequences) == 0:
         return 0

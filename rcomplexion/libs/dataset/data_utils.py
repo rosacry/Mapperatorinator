@@ -1,65 +1,42 @@
-import numpy.typing as npt
 import torch
 
 from ..tokenizer import Event, EventType, Tokenizer
 
 
-def create_sequences(
-        events: list[Event],
-        seq_len: int,
-) -> list[dict[str, int | npt.NDArray | list[Event]]]:
-    """Create frame and token sequences for training/testing.
+def create_sequences(tokens: torch.Tensor, src_seq_len: int) -> tuple[list[torch.Tensor], list[torch.Tensor]]:
+    """Create sequences from the tokenized event sequence.
 
     Args:
-        events: Events and time shifts.
-        seq_len: The length of the sequence.
+        tokens: The tokenized event sequence.
+        src_seq_len: The source sequence length.
 
     Returns:
-        A list of source and target sequences.
+        The sequences and labels.
     """
-
     sequences = []
+    labels = []
     timed_events = [EventType.CIRCLE, EventType.SLIDER_HEAD]
-
-    for i in range(seq_len + 1, len(events)):
-        event = events[i]
-
-        if event.type not in timed_events:
+    for i in range(src_seq_len + 1, len(tokens)):
+        if tokens[i] not in timed_events:
             continue
 
-        # Create the sequence
-        sequence = {
-            "events": events[i - 1 - seq_len:i - 1],
-            "labels_event": events[i - 1],
-        }
+        sequences.append(tokens[i - 1 - src_seq_len:i - 1])
+        labels.append(tokens[i - 1])
 
-        sequences.append(sequence)
-
-    return sequences
+    return sequences, labels
 
 
-def tokenize_sequence(sequence: dict, tokenizer: Tokenizer) -> dict:
+def tokenize_events(events: list[Event], tokenizer: Tokenizer) -> torch.Tensor:
     """Tokenize the event sequence.
 
-    Begin token sequence with `[SOS]` token (start-of-sequence).
-    End token sequence with `[EOS]` token (end-of-sequence).
-
     Args:
-        sequence: The input sequence.
+        events: The input events.
         tokenizer: The tokenizer to use.
 
     Returns:
-        The same sequence with tokenized events.
+        The tokenized events.
     """
-    tokens = torch.empty(len(sequence["events"]), dtype=torch.long)
-    for i, event in enumerate(sequence["events"]):
+    tokens = torch.empty(len(events), dtype=torch.long)
+    for i, event in enumerate(events):
         tokens[i] = tokenizer.encode(event)
-    sequence["input_ids"] = tokens
-    del sequence["events"]
-
-    labels = torch.empty(1, dtype=torch.long)
-    labels[0] = tokenizer.encode(sequence["labels_event"])
-    sequence["labels"] = labels
-    del sequence["labels_event"]
-
-    return sequence
+    return tokens
