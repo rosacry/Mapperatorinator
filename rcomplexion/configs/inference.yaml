@@ -2,6 +2,6 @@ model_path: ''          # Path to trained model
 
 hydra:
   job:
-    chdir: True
+    chdir: False
   run:
     dir: ./logs/${now:%Y-%m-%d}/${now:%H-%M-%S}
