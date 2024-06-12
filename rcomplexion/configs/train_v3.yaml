@@ -1,0 +1,7 @@
+defaults:
+  - train
+  - _self_
+  - model: osu_r
+
+data:
+  sample_weights: '../../../rcomplexion/rhythm_complexities.csv'    # Path to sample weights
