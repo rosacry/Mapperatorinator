@@ -65,6 +65,9 @@ class OrsDataset(IterableDataset):
             # Load the sample weights csv to a dictionary
             with open(self.args.sample_weights, "r") as f:
                 self.sample_weights = {int(line.split(",")[0]): float(line.split(",")[1]) for line in f.readlines()}
+                # Normalize the weights so the mean is 1
+                mean = sum(self.sample_weights.values()) / len(self.sample_weights)
+                self.sample_weights = {k: v / mean for k, v in self.sample_weights.items()}
 
     def _get_beatmap_files(self) -> list[Path]:
         if self.beatmap_files is not None:
