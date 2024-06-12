@@ -15,26 +15,33 @@ from libs.dataset import OsuParser
 from libs.dataset.data_utils import create_sequences, tokenize_sequence
 from libs.tokenizer import Tokenizer
 from libs.utils import get_model
+from libs.tokenizer import EventType, Event
 
 
 def calc_rhythm_complexity(beatmap: Beatmap, model: nn.Module, tokenizer: Tokenizer, parser: OsuParser, device, args):
     leniency = int(od_to_ms_300(beatmap.overall_difficulty) * args.data.time_resolution)
     events = parser.parse(beatmap)
-    sequences = create_sequences(events, args.data.src_seq_len)
+
+    tokens = torch.empty(len(events), dtype=torch.long)
+    for i, event in enumerate(events):
+        tokens[i] = tokenizer.encode(event)
+
+    sequences = []
+    labels = []
+    timed_events = [tokenizer.encode(Event(EventType.CIRCLE)), tokenizer.encode(Event(EventType.SLIDER_HEAD))]
+    for i in range(args.data.src_seq_len + 1, len(tokens)):
+        if tokens[i] not in timed_events:
+            continue
+
+        sequences.append(tokens[i - 1 - args.data.src_seq_len:i - 1])
+        labels.append(tokens[i - 1])
 
     if len(sequences) == 0:
         return 0
 
-    input_ids = torch.empty((len(sequences), args.data.src_seq_len), dtype=torch.long)
-    labels = torch.empty((len(sequences)), dtype=torch.long)
+    input_ids = torch.stack(sequences, 0).to(device)
+    labels = torch.tensor(labels, dtype=torch.long, device=device)
 
-    for i, sequence in enumerate(sequences):
-        sequence = tokenize_sequence(sequence, tokenizer)
-        input_ids[i] = sequence["input_ids"]
-        labels[i] = sequence["labels"]
-
-    input_ids = input_ids.to(device)
-    labels = labels.to(device)
     output = model(input_ids)
 
     logits = output.logits.cpu()
@@ -87,12 +94,13 @@ def main(args: DictConfig):
 
     # Get a list of all beatmap files in the dataset path in the track index range between start and end
     # beatmap_files = ["C:\\Users\\Olivier\\AppData\\Local\\osu!\\Songs\\219813 Apocalyptica - Hall of the Mountain King\\Apocalyptica - Hall of the Mountain King (pishifat) [Easy].osu"]
-    beatmap_files = ["C:\\Users\\Olivier\\AppData\\Local\\osu!\\Songs\\1312076 II-L - SPUTNIK-3\\II-L - SPUTNIK-3 (DeviousPanda) [Beyond OWC].osu",
-                     "C:\\Users\\Olivier\\AppData\\Local\\osu!\\Songs\\493830 supercell - My Dearest\\supercell - My Dearest (Yukiyo) [Last Love].osu",
-                     "C:\\Users\\Olivier\\AppData\\Local\\osu!\\Songs\\886499 Nishigomi Kakumi - Garyou Tensei\\Nishigomi Kakumi - Garyou Tensei (Net0) [Oni].osu",
-                    ]
-    # beatmap_files = []
-    track_names = ["Track" + str(i).zfill(5) for i in range(0, 1000)]
+    # beatmap_files = ["C:\\Users\\Olivier\\AppData\\Local\\osu!\\Songs\\1312076 II-L - SPUTNIK-3\\II-L - SPUTNIK-3 (DeviousPanda) [Beyond OWC].osu",
+    #                  "C:\\Users\\Olivier\\AppData\\Local\\osu!\\Songs\\493830 supercell - My Dearest\\supercell - My Dearest (Yukiyo) [Last Love].osu",
+    #                  "C:\\Users\\Olivier\\AppData\\Local\\osu!\\Songs\\886499 Nishigomi Kakumi - Garyou Tensei\\Nishigomi Kakumi - Garyou Tensei (Net0) [Oni].osu",
+    #                 ]
+    beatmap_files = []
+    track_names = ["Track" + str(i).zfill(5) for i in range(0, 16291)]
+    # track_names = ["Track" + str(i).zfill(5) for i in range(0, 1000)]
     for track_name in track_names:
         for beatmap_file in os.listdir(
                 os.path.join(args.data.train_dataset_path, track_name, "beatmaps"),
