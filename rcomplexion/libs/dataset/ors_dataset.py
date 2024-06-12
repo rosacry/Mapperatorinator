@@ -206,7 +206,7 @@ class BeatmapDatasetIterable:
         osu_beatmap = Beatmap.from_path(beatmap_path)
         events = self.parser.parse(osu_beatmap)
         tokens = tokenize_events(events, self.tokenizer)
-        sequences, labels = create_sequences(tokens, self.args.src_seq_len)
+        sequences, labels = create_sequences(tokens, self.args.src_seq_len, self.tokenizer)
 
         for sequence, label in zip(sequences, labels):
             yield {
