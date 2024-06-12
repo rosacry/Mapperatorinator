@@ -12,7 +12,7 @@ from omegaconf import DictConfig
 from slider import Beatmap
 from torch.utils.data import IterableDataset
 
-from .data_utils import create_sequences, tokenize_sequence
+from .data_utils import create_sequences, tokenize_events
 from .osu_parser import OsuParser
 from ..tokenizer import Tokenizer
 
@@ -205,12 +205,11 @@ class BeatmapDatasetIterable:
     def _get_next_beatmap(self, beatmap_path: Path) -> dict:
         osu_beatmap = Beatmap.from_path(beatmap_path)
         events = self.parser.parse(osu_beatmap)
+        tokens = tokenize_events(events, self.tokenizer)
+        sequences, labels = create_sequences(tokens, self.args.src_seq_len)
 
-        sequences = create_sequences(
-            events,
-            self.args.src_seq_len,
-        )
-
-        for sequence in sequences:
-            sequence = tokenize_sequence(sequence, self.tokenizer)
-            yield sequence
+        for sequence, label in zip(sequences, labels):
+            yield {
+                "input_ids": sequence,
+                "labels": label,
+            }
