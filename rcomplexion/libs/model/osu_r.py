@@ -18,7 +18,7 @@ class OsuR(nn.Module):
         self.sequence_length = args.data.src_seq_len
         self.hidden_size = args.model.hidden_size
 
-        self.loss_fct = nn.CrossEntropyLoss()
+        self.loss_fct = nn.CrossEntropyLoss(reduction='none')
 
         # Simple sequence classification model
         self.model = nn.Sequential(
@@ -37,12 +37,14 @@ class OsuR(nn.Module):
             self,
             input_ids: torch.LongTensor,
             labels: Optional[torch.LongTensor] = None,
+            sample_weights: Optional[torch.FloatTensor] = None,
             **kwargs
     ) -> SequenceClassifierOutput:
         """
         Args:
             input_ids: (N, L) tensor of input token ids
             labels: (N) tensor of target token ids
+            sample_weights: (N) tensor of sample weights
         """
 
         # Embed the input tokens
@@ -52,6 +54,9 @@ class OsuR(nn.Module):
         loss = None
         if labels is not None:
             loss = self.loss_fct(logits.view(-1, self.num_labels), labels.view(-1))
+            if sample_weights is not None:
+                loss *= sample_weights
+            loss = loss.mean()
 
         return SequenceClassifierOutput(
             loss=loss,

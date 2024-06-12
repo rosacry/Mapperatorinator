@@ -28,6 +28,7 @@ class OrsDataset(IterableDataset):
         "beatmap_files",
         "test",
         "shared",
+        "sample_weights",
     )
 
     def __init__(
@@ -58,6 +59,12 @@ class OrsDataset(IterableDataset):
         self.beatmap_files = beatmap_files
         self.test = test
         self.shared = shared
+        self.sample_weights = None
+
+        if os.path.exists(self.args.sample_weights):
+            # Load the sample weights csv to a dictionary
+            with open(self.args.sample_weights, "r") as f:
+                self.sample_weights = {int(line.split(",")[0]): float(line.split(",")[1]) for line in f.readlines()}
 
     def _get_beatmap_files(self) -> list[Path]:
         if self.beatmap_files is not None:
@@ -106,6 +113,7 @@ class OrsDataset(IterableDataset):
             self.tokenizer,
             self.test,
             self.shared,
+            self.sample_weights,
         )
 
 
@@ -161,6 +169,7 @@ class BeatmapDatasetIterable:
         "diff_dropout_prob",
         "add_pre_tokens",
         "add_empty_sequences",
+        "sample_weights",
     )
 
     def __init__(
@@ -171,6 +180,7 @@ class BeatmapDatasetIterable:
             tokenizer: Tokenizer,
             test: bool,
             shared: Namespace,
+            sample_weights: dict[int, float] = None,
     ):
         self.beatmap_files = beatmap_files
         self.args = args
@@ -178,6 +188,7 @@ class BeatmapDatasetIterable:
         self.tokenizer = tokenizer
         self.test = test
         self.shared = shared
+        self.sample_weights = sample_weights
 
     def __iter__(self):
         return self._get_next_beatmaps()
@@ -208,8 +219,14 @@ class BeatmapDatasetIterable:
         tokens = tokenize_events(events, self.tokenizer)
         sequences, labels = create_sequences(tokens, self.args.src_seq_len, self.tokenizer)
 
+        weight = 1.0
+        if self.sample_weights is not None:
+            # Get the weight for the current beatmap
+            weight = max(self.sample_weights.get(osu_beatmap.beatmap_id, 1.0), 0.1)
+
         for sequence, label in zip(sequences, labels):
             yield {
                 "input_ids": sequence,
                 "labels": label,
+                "sample_weights": weight,
             }

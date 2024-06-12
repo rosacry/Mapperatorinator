@@ -17,6 +17,7 @@ data:                  # Data settings
   min_difficulty: 0     # Minimum difficulty to consider including in the dataset
   time_resolution: 0.1  # Steps per millisecond
   max_time: 1000        # Maximum time to represent as tokens
+  sample_weights: ''    # Path to sample weights
 
 dataloader:             # Dataloader settings
   num_workers: 8
@@ -38,7 +39,7 @@ eval:                   # Evaluation settings
   steps: 500
 
 checkpoint:             # Checkpoint settings
-  every_steps: 5000
+  every_steps: 10000
 
 logging:                # Logging settings
   log_with: 'wandb'     # Logging service (wandb/tensorboard)
