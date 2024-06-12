@@ -5,6 +5,7 @@ from pathlib import Path
 import hydra
 import torch
 from omegaconf import DictConfig
+from safetensors.torch import load_file
 from slider import Beatmap, Slider
 from slider.mod import od_to_ms_300
 from torch import nn
@@ -71,7 +72,10 @@ def main(args: DictConfig):
     torch.set_grad_enabled(False)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     ckpt_path = Path(args.model_path)
-    model_state = torch.load(ckpt_path / "pytorch_model.bin", map_location=device)
+    if (ckpt_path / "pytorch_model.bin").exists():
+        model_state = torch.load(ckpt_path / "pytorch_model.bin", map_location=device)
+    else:
+        model_state = load_file(ckpt_path / "model.safetensors")
 
     tokenizer = Tokenizer(args)
     parser = OsuParser(args.data)
@@ -85,23 +89,24 @@ def main(args: DictConfig):
     # beatmap_files = ["C:\\Users\\Olivier\\AppData\\Local\\osu!\\Songs\\219813 Apocalyptica - Hall of the Mountain King\\Apocalyptica - Hall of the Mountain King (pishifat) [Easy].osu"]
     beatmap_files = ["C:\\Users\\Olivier\\AppData\\Local\\osu!\\Songs\\1312076 II-L - SPUTNIK-3\\II-L - SPUTNIK-3 (DeviousPanda) [Beyond OWC].osu",
                      "C:\\Users\\Olivier\\AppData\\Local\\osu!\\Songs\\493830 supercell - My Dearest\\supercell - My Dearest (Yukiyo) [Last Love].osu",
+                     "C:\\Users\\Olivier\\AppData\\Local\\osu!\\Songs\\886499 Nishigomi Kakumi - Garyou Tensei\\Nishigomi Kakumi - Garyou Tensei (Net0) [Oni].osu",
                     ]
     # beatmap_files = []
-    # track_names = ["Track" + str(i).zfill(5) for i in range(0, 1000)]
-    # for track_name in track_names:
-    #     for beatmap_file in os.listdir(
-    #             os.path.join(args.data.train_dataset_path, track_name, "beatmaps"),
-    #     ):
-    #         beatmap_files.append(
-    #             Path(
-    #                 os.path.join(
-    #                     args.data.train_dataset_path,
-    #                     track_name,
-    #                     "beatmaps",
-    #                     beatmap_file,
-    #                 )
-    #             ),
-    #         )
+    track_names = ["Track" + str(i).zfill(5) for i in range(0, 1000)]
+    for track_name in track_names:
+        for beatmap_file in os.listdir(
+                os.path.join(args.data.train_dataset_path, track_name, "beatmaps"),
+        ):
+            beatmap_files.append(
+                Path(
+                    os.path.join(
+                        args.data.train_dataset_path,
+                        track_name,
+                        "beatmaps",
+                        beatmap_file,
+                    )
+                ),
+            )
 
     # Calculate rhythm complexity for each beatmap
     rhythm_complexities = {}
