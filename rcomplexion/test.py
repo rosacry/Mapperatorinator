@@ -25,10 +25,10 @@ def main(args: DictConfig):
     model.eval()
     model.to(device)
 
-    max_time = int(args.data.max_time * args.data.time_resolution)
-    results = np.empty((max_time + 1, tokenizer.vocab_size_out), dtype=np.float32)
+    max_timeshift = int((args.data.max_time - args.data.min_time) * args.data.time_resolution)
+    results = np.empty((max_timeshift + 1, tokenizer.vocab_size_out), dtype=np.float32)
 
-    for i in range(max_time + 1):
+    for i in range(max_timeshift + 1):
         input_ids = torch.tensor([[tokenizer.encode(Event(EventType.TIME_SHIFT, i)), tokenizer.encode(Event(EventType.CIRCLE))] * (args.data.src_seq_len // 2)], device=device)
         output = model(input_ids)
         probs = torch.softmax(output.logits, -1)[0].cpu().numpy()

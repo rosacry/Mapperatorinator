@@ -80,28 +80,31 @@ def main(args: DictConfig):
     model.to(device)
 
     # Get a list of all beatmap files in the dataset path in the track index range between start and end
-    # beatmap_files = ["C:\\Users\\Olivier\\AppData\\Local\\osu!\\Songs\\219813 Apocalyptica - Hall of the Mountain King\\Apocalyptica - Hall of the Mountain King (pishifat) [Easy].osu"]
-    # beatmap_files = ["C:\\Users\\Olivier\\AppData\\Local\\osu!\\Songs\\1312076 II-L - SPUTNIK-3\\II-L - SPUTNIK-3 (DeviousPanda) [Beyond OWC].osu",
-    #                  "C:\\Users\\Olivier\\AppData\\Local\\osu!\\Songs\\493830 supercell - My Dearest\\supercell - My Dearest (Yukiyo) [Last Love].osu",
-    #                  "C:\\Users\\Olivier\\AppData\\Local\\osu!\\Songs\\886499 Nishigomi Kakumi - Garyou Tensei\\Nishigomi Kakumi - Garyou Tensei (Net0) [Oni].osu",
-    #                 ]
-    beatmap_files = []
-    track_names = ["Track" + str(i).zfill(5) for i in range(0, 16291)]
+    beatmap_files = ["C:\\Users\\Olivier\\AppData\\Local\\osu!\\Songs\\219813 Apocalyptica - Hall of the Mountain King\\Apocalyptica - Hall of the Mountain King (pishifat) [Easy].osu"]
+    beatmap_files = ["C:\\Users\\Olivier\\AppData\\Local\\osu!\\Songs\\1312076 II-L - SPUTNIK-3\\II-L - SPUTNIK-3 (DeviousPanda) [Beyond OWC].osu",
+                     "C:\\Users\\Olivier\\AppData\\Local\\osu!\\Songs\\493830 supercell - My Dearest\\supercell - My Dearest (Yukiyo) [Last Love].osu",
+                     "C:\\Users\\Olivier\\AppData\\Local\\osu!\\Songs\\886499 Nishigomi Kakumi - Garyou Tensei\\Nishigomi Kakumi - Garyou Tensei (Net0) [Oni].osu",
+                     "C:\\Users\\Olivier\\AppData\\Local\\osu!\\Songs\\293048 HappyDragonite - Treasure Town no Theme\\HappyDragonite - Treasure Town no Theme (CrystilonZ) [Lost's Insane].osu",
+                     "C:\\Users\\Olivier\\AppData\\Local\\osu!\\Songs\\1691083 TAG underground - POSSESSION\\TAG underground - POSSESSION (pewdekz) [EXPERT].osu",
+                     "C:\\Users\\Olivier\\AppData\\Local\\osu!\\Songs\\1242304 Camellia feat Luschel - Night Fog\\Camellia feat. Luschel - Night Fog (Mir) [Heartbeat].osu",
+                    ]
+    # beatmap_files = []
+    # track_names = ["Track" + str(i).zfill(5) for i in range(0, 16291)]
     # track_names = ["Track" + str(i).zfill(5) for i in range(0, 1000)]
-    for track_name in track_names:
-        for beatmap_file in os.listdir(
-                os.path.join(args.data.train_dataset_path, track_name, "beatmaps"),
-        ):
-            beatmap_files.append(
-                Path(
-                    os.path.join(
-                        args.data.train_dataset_path,
-                        track_name,
-                        "beatmaps",
-                        beatmap_file,
-                    )
-                ),
-            )
+    # for track_name in track_names:
+    #     for beatmap_file in os.listdir(
+    #             os.path.join(args.data.train_dataset_path, track_name, "beatmaps"),
+    #     ):
+    #         beatmap_files.append(
+    #             Path(
+    #                 os.path.join(
+    #                     args.data.train_dataset_path,
+    #                     track_name,
+    #                     "beatmaps",
+    #                     beatmap_file,
+    #                 )
+    #             ),
+    #         )
 
     # Calculate rhythm complexity for each beatmap
     rhythm_complexities = {}

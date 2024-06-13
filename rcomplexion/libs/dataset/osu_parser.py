@@ -12,7 +12,8 @@ from ..tokenizer import Event, EventType
 class OsuParser:
     def __init__(self, args: DictConfig) -> None:
         self.time_resolution = args.time_resolution
-        self.max_timeshift = int(args.max_time * self.time_resolution)
+        self.min_time = args.min_time
+        self.max_timeshift = int((args.max_time - args.min_time) * self.time_resolution)
 
     def parse(self, beatmap: Beatmap) -> list[Event]:
         # noinspection PyUnresolvedReferences
@@ -90,7 +91,7 @@ class OsuParser:
     def _clip_time(self, time: timedelta, last_time: timedelta, beatmap: Beatmap) -> int:
         """Clip time to valid range."""
         ms_delta = time.total_seconds() * 1000 - last_time.total_seconds() * 1000
-        return np.clip(int(round(ms_delta * self.time_resolution)), 0, self.max_timeshift)
+        return np.clip(int(round((ms_delta - self.min_time) * self.time_resolution)), 0, self.max_timeshift)
 
     def _parse_circle(self, circle: Circle, events: list[Event], last_time: timedelta, beatmap: Beatmap) -> timedelta:
         """Parse a circle hit object.

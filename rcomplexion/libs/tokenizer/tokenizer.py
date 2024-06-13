@@ -20,7 +20,7 @@ class Tokenizer:
         self._offset = 1
 
         self.event_ranges: list[EventRange] = [
-            EventRange(EventType.TIME_SHIFT, 0, int(args.data.max_time * args.data.time_resolution)),
+            EventRange(EventType.TIME_SHIFT, 0, int((args.data.max_time - args.data.min_time) * args.data.time_resolution)),
         ]
 
         self.input_event_ranges: list[EventRange] = [
