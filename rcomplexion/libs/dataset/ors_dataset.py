@@ -222,14 +222,19 @@ class BeatmapDatasetIterable:
         tokens = tokenize_events(events, self.tokenizer)
         sequences, labels = create_sequences(tokens, self.args.src_seq_len, self.tokenizer)
 
-        weight = 1.0
         if self.sample_weights is not None:
             # Get the weight for the current beatmap
             weight = max(self.sample_weights.get(osu_beatmap.beatmap_id, 1.0), 0.1)
 
-        for sequence, label in zip(sequences, labels):
-            yield {
-                "input_ids": sequence,
-                "labels": label,
-                "sample_weights": weight,
-            }
+            for sequence, label in zip(sequences, labels):
+                yield {
+                    "input_ids": sequence,
+                    "labels": label,
+                    "sample_weights": weight,
+                }
+        else:
+            for sequence, label in zip(sequences, labels):
+                yield {
+                    "input_ids": sequence,
+                    "labels": label,
+                }

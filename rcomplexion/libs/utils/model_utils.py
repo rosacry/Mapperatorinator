@@ -30,12 +30,15 @@ def get_shared_training_state() -> Namespace:
     return shared
 
 
-def get_model(args: DictConfig, tokenizer: Tokenizer) -> BertForSequenceClassification:
+def get_model(args: DictConfig, tokenizer: Tokenizer) -> torch.nn.Module:
+    config_args = {
+        "vocab_size": tokenizer.vocab_size_in,
+        "num_labels": tokenizer.vocab_size_out,
+    }
+    if hasattr(args.model, 'overwrite'):
+        config_args |= dict(args.model.overwrite)
+
     if args.model.name == 'bert':
-        config_args = {
-            "vocab_size": tokenizer.vocab_size_in,
-            "num_labels": tokenizer.vocab_size_out,
-        } | dict(args.model.overwrite)
         config = BertConfig(**config_args)
         model = BertForSequenceClassification(config)
     elif args.model.name == 'osu_r':

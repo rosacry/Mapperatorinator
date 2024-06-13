@@ -16,6 +16,7 @@ data:                  # Data settings
   cycle_length: 32
   min_difficulty: 0     # Minimum difficulty to consider including in the dataset
   time_resolution: 0.1  # Steps per millisecond
+  min_time: 0           # Minimum time to represent as tokens
   max_time: 1000        # Maximum time to represent as tokens
   sample_weights: ''    # Path to sample weights
 
