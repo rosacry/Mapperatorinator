@@ -60,7 +60,7 @@ class OsuParser:
         return events
 
     @staticmethod
-    def msb_at(time: timedelta, beatmap: Beatmap) -> float:
+    def beats_between(time: timedelta, last_time: timedelta, beatmap: Beatmap) -> float:
         """Get the milliseconds per beat at the given time.
 
         Parameters
@@ -75,11 +75,17 @@ class OsuParser:
         float
             The msb at the given time.
         """
+        current_time = time
+        beats = 0
         for tp in reversed(beatmap.timing_points):
-            if tp.offset <= time and tp.ms_per_beat > 0:
-                return tp.ms_per_beat
+            if tp.offset < current_time and tp.ms_per_beat > 0:
+                if tp.offset <= last_time:
+                    beats += (current_time - last_time).total_seconds() * 1000 / tp.ms_per_beat
+                    break
+                beats += (current_time - tp.offset).total_seconds() * 1000 / tp.ms_per_beat
+                current_time = tp.offset
 
-        return beatmap.timing_points[0].ms_per_beat
+        return beats
 
     def _clip_time(self, time: timedelta, last_time: timedelta, beatmap: Beatmap) -> int:
         """Clip time to valid range."""
