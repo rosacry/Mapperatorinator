@@ -12,8 +12,8 @@ from torch.optim import Optimizer
 from torch.optim.lr_scheduler import LRScheduler
 from torch.utils.data import DataLoader
 
-from osuT5.tokenizer import Tokenizer, EventType
-from osuT5.model import OsuT
+from ..tokenizer import Tokenizer, EventType
+from ..model import OsuT
 from .log_utils import Averager
 
 logger = get_logger(__name__)

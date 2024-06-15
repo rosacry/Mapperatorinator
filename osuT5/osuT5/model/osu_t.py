@@ -8,8 +8,8 @@ from omegaconf import DictConfig
 from transformers import T5Config, T5ForConditionalGeneration, WhisperForConditionalGeneration, WhisperConfig
 from transformers.modeling_outputs import Seq2SeqLMOutput
 
-from osuT5.model.spectrogram import MelSpectrogram
-from osuT5.tokenizer import Tokenizer
+from ..model.spectrogram import MelSpectrogram
+from ..tokenizer import Tokenizer
 
 
 def get_backbone_model(args, tokenizer: Tokenizer):

@@ -7,7 +7,7 @@ import numpy.typing as npt
 from slider import Beatmap, Circle, Slider, Spinner
 from slider.curve import Linear, Catmull, Perfect, MultiBezier
 
-from osuT5.tokenizer import Event, EventType, Tokenizer
+from ..tokenizer import Event, EventType, Tokenizer
 
 
 class OsuParser:

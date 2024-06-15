@@ -9,8 +9,8 @@ from string import Template
 import numpy as np
 from omegaconf import DictConfig
 
-from osuT5.inference.slider_path import SliderPath
-from osuT5.tokenizer import Event, EventType
+from .slider_path import SliderPath
+from ..tokenizer import Event, EventType
 
 OSU_FILE_EXTENSION = ".osu"
 OSU_TEMPLATE_PATH = os.path.join(os.path.dirname(__file__), "template.osu")

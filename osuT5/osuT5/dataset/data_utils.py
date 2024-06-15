@@ -6,7 +6,7 @@ from pydub import AudioSegment
 
 import numpy.typing as npt
 
-from osuT5.tokenizer import Event, EventType
+from ..tokenizer import Event, EventType
 
 MILISECONDS_PER_SECOND = 1000
 

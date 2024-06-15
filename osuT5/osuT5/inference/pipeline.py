@@ -9,10 +9,10 @@ from tqdm import tqdm
 
 from omegaconf import DictConfig
 
-from osuT5.dataset import OsuParser
-from osuT5.dataset.data_utils import update_event_times
-from osuT5.tokenizer import Event, EventType, Tokenizer
-from osuT5.model import OsuT
+from ..dataset import OsuParser
+from ..dataset.data_utils import update_event_times
+from ..tokenizer import Event, EventType, Tokenizer
+from ..model import OsuT
 
 MILISECONDS_PER_SECOND = 1000
 MILISECONDS_PER_STEP = 10

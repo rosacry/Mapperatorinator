@@ -9,8 +9,8 @@ from osu_diffusion import timestep_embedding
 from osu_diffusion import repeat_type
 from osu_diffusion import create_diffusion
 from osu_diffusion import DiT
-from osuT5.dataset.data_utils import update_event_times
-from osuT5.tokenizer import Event, EventType
+from osuT5.osuT5.dataset import update_event_times
+from osuT5.osuT5.tokenizer import Event, EventType
 
 
 def get_beatmap_idx(path) -> dict[int, int]:

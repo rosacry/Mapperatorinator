@@ -11,13 +11,12 @@ import numpy as np
 import numpy.typing as npt
 import torch
 from omegaconf import DictConfig
-from pydub import AudioSegment
 from slider import Beatmap
 from torch.utils.data import IterableDataset
 
 from .data_utils import load_audio_file
 from .osu_parser import OsuParser
-from osuT5.tokenizer import Event, EventType, Tokenizer
+from ..tokenizer import Event, EventType, Tokenizer
 
 OSZ_FILE_EXTENSION = ".osz"
 AUDIO_FILE_NAME = "audio.mp3"
