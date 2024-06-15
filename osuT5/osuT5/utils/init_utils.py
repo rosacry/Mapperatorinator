@@ -3,7 +3,6 @@ import os
 
 from accelerate.utils import set_seed
 from omegaconf import open_dict, DictConfig
-from hydra.utils import to_absolute_path
 
 
 def check_args_and_env(args: DictConfig) -> None:

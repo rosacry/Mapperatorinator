@@ -1,9 +1,9 @@
 import time
 from pathlib import Path
+from typing import Optional
 
 import hydra
 import numpy as np
-import matplotlib.pyplot as plt
 import torch
 import wandb
 from accelerate import Accelerator
@@ -17,8 +17,7 @@ from osuT5.tokenizer import EventType, Tokenizer
 from osuT5.utils import (
     setup_args,
     get_model,
-    get_tokenizer,
-    get_dataloaders, Averager, add_prefix, get_optimizer, get_scheduler, acc_range,
+    get_dataloaders, Averager, add_prefix, acc_range,
     get_shared_training_state,
 )
 
@@ -54,13 +53,13 @@ def test(args: DictConfig, accelerator: Accelerator, model, tokenizer, prefix: s
             if batch_id == args.eval.steps * args.optim.grad_acc:
                 break
 
-            awkwardnesses = None
+            awkwardnesses: Optional[np.ndarray] = None
             if "rhythm_awkwardness" in batch:
                 awkwardnesses = batch["rhythm_awkwardness"].cpu().numpy()
+                del batch["rhythm_awkwardness"]
                 if awkwardnesses.max() > max_awkwardness:
                     logger.warning(f"Max awkwardness {awkwardnesses.max()} is greater than {max_awkwardness}")
                 continue
-                del batch["rhythm_awkwardness"]
 
             # We can't use the beatmap idx of the test set because these are not known by the model
             del batch["beatmap_idx"]
@@ -141,7 +140,7 @@ def test(args: DictConfig, accelerator: Accelerator, model, tokenizer, prefix: s
         logger.info(averaged_stats)
 
 
-@hydra.main(config_path="configs/osuT5", config_name="train_v1", version_base="1.1")
+@hydra.main(config_path="../configs/osuT5", config_name="train_v1", version_base="1.1")
 def main(args: DictConfig):
     accelerator = Accelerator(
         cpu=args.device == "cpu",

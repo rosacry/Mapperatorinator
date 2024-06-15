@@ -7,7 +7,7 @@ import numpy as np
 import numpy.typing as npt
 from omegaconf import DictConfig
 
-from osuT5.dataset.data_utils import load_audio_file
+from ..dataset.data_utils import load_audio_file
 
 
 class Preprocessor(object):

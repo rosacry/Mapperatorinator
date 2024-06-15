@@ -3,7 +3,7 @@ import logging
 import numpy as np
 from numpy.linalg import norm
 
-import osuT5.inference.path_approximator as path_approximator
+from .path_approximator import approximate_bezier, approximate_circular_arc, approximate_catmull, approximate_linear
 
 
 def binary_search(array, target):
@@ -96,23 +96,23 @@ class SliderPath:
         self.calculate_path()
         self.calculate_cumulative_length()
 
-    def calculate_subpath(self, sub_control_points) -> list:
+    def calculate_subpath(self, sub_control_points) -> list[np.ndarray] | np.ndarray:
         if self.path_type == "Linear":
-            return path_approximator.approximate_linear(sub_control_points)
+            return approximate_linear(sub_control_points)
         elif self.path_type == "PerfectCurve":
             if len(self.get_control_points()) != 3 or len(sub_control_points) != 3:
-                return path_approximator.approximate_bezier(sub_control_points)
+                return approximate_bezier(sub_control_points)
 
-            subpath = path_approximator.approximate_circular_arc(sub_control_points)
+            subpath = approximate_circular_arc(sub_control_points)
 
             if len(subpath) == 0:
-                return path_approximator.approximate_bezier(sub_control_points)
+                return approximate_bezier(sub_control_points)
 
             return subpath
         elif self.path_type == "Catmull":
-            return path_approximator.approximate_catmull(sub_control_points)
+            return approximate_catmull(sub_control_points)
         else:
-            return path_approximator.approximate_bezier(sub_control_points)
+            return approximate_bezier(sub_control_points)
 
     def calculate_path(self) -> None:
         self.calculated_path.clear()

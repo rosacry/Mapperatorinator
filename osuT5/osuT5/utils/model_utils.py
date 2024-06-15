@@ -14,9 +14,9 @@ from torch.optim.lr_scheduler import (
     CosineAnnealingLR,
 )
 
-from osuT5.dataset import OrsDataset, OsuParser
-from osuT5.model.osu_t import OsuT
-from osuT5.tokenizer import Tokenizer
+from ..dataset import OrsDataset, OsuParser
+from ..model.osu_t import OsuT
+from ..tokenizer import Tokenizer
 
 
 def get_shared_training_state() -> Namespace:
