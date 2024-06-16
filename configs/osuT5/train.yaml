@@ -37,7 +37,7 @@ data:                  # Data settings
   timing_random_offset: 0
   add_gd_context: false  # Prefix the decoder with tokens of another beatmap in the mapset
   min_difficulty: 0     # Minimum difficulty to consider including in the dataset
-  rhythm_awkwardness: false  # Add rhythm awkwardness in dataloader
+  sample_weights_path: ''    # Path to sample weights
 
 
 dataloader:             # Dataloader settings

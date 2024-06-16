@@ -44,22 +44,20 @@ def test(args: DictConfig, accelerator: Accelerator, model, tokenizer, prefix: s
         bins = np.linspace(0, max_time, n_bins + 1)[1:]
         bin_totals = np.zeros(n_bins)
         bin_counts = np.zeros(n_bins)
-        max_awkwardness = 3
-        awkwardness_bins = np.linspace(0, max_awkwardness, n_bins + 1)[1:]
-        awkwardness_bin_totals = np.zeros(n_bins)
-        awkwardness_bin_counts = np.zeros(n_bins)
+        max_rhythm_complexity = 4
+        rhythm_complexity_n_bins = 20
+        rhythm_complexity_bins = np.linspace(0, max_rhythm_complexity, rhythm_complexity_n_bins + 1)[1:]
+        rhythm_complexity_bin_totals = np.zeros(rhythm_complexity_n_bins)
+        rhythm_complexity_bin_counts = np.zeros(rhythm_complexity_n_bins)
 
         for batch_id, batch in enumerate(tqdm(test_dataloader), start=1):
             if batch_id == args.eval.steps * args.optim.grad_acc:
                 break
 
-            awkwardnesses: Optional[np.ndarray] = None
-            if "rhythm_awkwardness" in batch:
-                awkwardnesses = batch["rhythm_awkwardness"].cpu().numpy()
-                del batch["rhythm_awkwardness"]
-                if awkwardnesses.max() > max_awkwardness:
-                    logger.warning(f"Max awkwardness {awkwardnesses.max()} is greater than {max_awkwardness}")
-                continue
+            rhythm_complexity: Optional[np.ndarray] = None
+            if "sample_weights" in batch:
+                rhythm_complexity = batch["sample_weights"].cpu().numpy()
+                del batch["sample_weights"]
 
             # We can't use the beatmap idx of the test set because these are not known by the model
             del batch["beatmap_idx"]
@@ -100,28 +98,28 @@ def test(args: DictConfig, accelerator: Accelerator, model, tokenizer, prefix: s
                 bin_totals[i] += np.sum(bin_preds == bin_labels)
                 bin_counts[i] += len(bin_preds)
 
-            # Bin timing accuracy by rhythm awkwardness
-            if awkwardnesses is not None:
-                binned_awkwardnesses = np.digitize(awkwardnesses, awkwardness_bins)
-                for i in range(len(awkwardnesses)):
-                    sample_bin = np.clip(binned_awkwardnesses[i], 0, n_bins - 1)
+            # Bin timing accuracy by rhythm complexity
+            if rhythm_complexity is not None:
+                binned_rhythm_complexity = np.digitize(rhythm_complexity, rhythm_complexity_bins)
+                for i in range(len(rhythm_complexity)):
+                    sample_bin = np.clip(binned_rhythm_complexity[i], 0, n_bins - 1)
                     sample = acc_range(preds[i], labels[i], tokenizer.event_start[EventType.TIME_SHIFT],
                                        tokenizer.event_end[EventType.TIME_SHIFT])
-                    awkwardness_bin_totals[sample_bin] += np.sum(sample)
-                    awkwardness_bin_counts[sample_bin] += len(sample)
+                    rhythm_complexity_bin_totals[sample_bin] += np.sum(sample)
+                    rhythm_complexity_bin_counts[sample_bin] += len(sample)
 
             averager.update(stats)
 
-        # Plot timing over rhythm awkwardness
-        if awkwardness_bin_counts.sum() > 0:
-            bin_accs = awkwardness_bin_totals / awkwardness_bin_counts
-            timing_acc_over_awkwardness = prefix + "/timing_acc_over_awkwardness"
-            wandb.define_metric(timing_acc_over_awkwardness, step_metric="awkwardness")
+        # Plot timing over rhythm complexity
+        if rhythm_complexity_bin_counts.sum() > 0:
+            bin_accs = rhythm_complexity_bin_totals / rhythm_complexity_bin_counts
+            timing_acc_over_rhythm_complexity = prefix + "/timing_acc_over_rhythm_complexity"
+            wandb.define_metric(timing_acc_over_rhythm_complexity, step_metric="rhythm_complexity")
 
             # Log the plot
-            for i, (awkwardness, bin_acc) in enumerate(zip(awkwardness_bins, bin_accs)):
+            for i, (rhythm_complexity, bin_acc) in enumerate(zip(rhythm_complexity_bins, bin_accs)):
                 if not np.isnan(bin_acc):
-                    wandb.log({timing_acc_over_awkwardness: bin_acc, "awkwardness": awkwardness})
+                    wandb.log({timing_acc_over_rhythm_complexity: bin_acc, "rhythm_complexity": rhythm_complexity})
 
         # Plot bin accuracies
         bin_accs = bin_totals / bin_counts
@@ -175,7 +173,7 @@ def main(args: DictConfig):
     # noinspection PyTypeChecker
     model = accelerator.prepare(model)
 
-    args.data.rhythm_awkwardness = True
+    args.data.sample_weights_path = "../../../rcomplexion/rhythm_complexities.csv"
     args.data.timing_random_offset = 0
     test(args, accelerator, model, tokenizer, "test")
 

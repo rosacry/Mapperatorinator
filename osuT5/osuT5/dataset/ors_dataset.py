@@ -36,6 +36,7 @@ class OrsDataset(IterableDataset):
         "beatmap_files",
         "test",
         "shared",
+        "sample_weights",
     )
 
     def __init__(
@@ -66,6 +67,20 @@ class OrsDataset(IterableDataset):
         self.beatmap_files = beatmap_files
         self.test = test
         self.shared = shared
+        self.sample_weights = self._get_sample_weights(args.sample_weights_path)
+
+    def _get_sample_weights(selfs, sample_weights_path):
+        if not os.path.exists(sample_weights_path):
+            return None
+
+        # Load the sample weights csv to a dictionary
+        with open(sample_weights_path, "r") as f:
+            sample_weights = {int(line.split(",")[0]): np.clip(float(line.split(",")[1]), 0.1, 10) for line in f.readlines()}
+            # Normalize the weights so the mean is 1
+            mean = sum(sample_weights.values()) / len(sample_weights)
+            sample_weights = {k: v / mean for k, v in sample_weights.items()}
+
+        return sample_weights
 
     def _get_beatmap_files(self) -> list[Path]:
         if self.beatmap_files is not None:
@@ -121,6 +136,7 @@ class OrsDataset(IterableDataset):
             self.tokenizer,
             self.test,
             self.shared,
+            self.sample_weights,
         )
 
 
@@ -176,6 +192,7 @@ class BeatmapDatasetIterable:
         "diff_dropout_prob",
         "add_pre_tokens",
         "add_empty_sequences",
+        "sample_weights",
     )
 
     def __init__(
@@ -186,6 +203,7 @@ class BeatmapDatasetIterable:
             tokenizer: Tokenizer,
             test: bool,
             shared: Namespace,
+            sample_weights: dict[int, float] = None,
     ):
         self.beatmap_files = beatmap_files
         self.args = args
@@ -193,6 +211,7 @@ class BeatmapDatasetIterable:
         self.tokenizer = tokenizer
         self.test = test
         self.shared = shared
+        self.sample_weights = sample_weights
         # let N = |src_seq_len|
         # N-1 frames creates N mel-spectrogram frames
         self.frame_seq_len = args.src_seq_len - 1
@@ -616,8 +635,9 @@ class BeatmapDatasetIterable:
         extra_data["beatmap_idx"] = self._get_idx(metadata, beatmap_name)
         extra_data["difficulty"] = self._get_difficulty(metadata, beatmap_name)
 
-        if self.args.rhythm_awkwardness:
-            extra_data["rhythm_awkwardness"] = osu_beatmap.rhythm_awkwardness()
+        if self.sample_weights is not None:
+            # Get the weight for the current beatmap
+            extra_data["sample_weights"] = self.sample_weights.get(osu_beatmap.beatmap_id, 1.0)
 
         sequences = self._create_sequences(
             frames,
