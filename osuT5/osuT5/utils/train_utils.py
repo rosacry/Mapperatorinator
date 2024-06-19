@@ -227,6 +227,16 @@ def acc_range(preds, labels, start_index, end_index):
     return accs
 
 
+def fuzzy_acc_range(preds, labels, start_index, end_index, fuzzyness=0):
+    index = (start_index <= labels) & (labels < end_index)
+    range_labels = labels[index]
+    range_preds = preds[index]
+    accs = (range_preds - fuzzyness <= range_labels) & (range_labels <= range_preds + fuzzyness)
+    if isinstance(accs, torch.Tensor):
+        accs = accs.detach().float().cpu().numpy()
+    return accs
+
+
 def train(
         model: OsuT,
         train_dataloader: DataLoader,
