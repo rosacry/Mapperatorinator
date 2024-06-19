@@ -17,7 +17,7 @@ from osuT5.tokenizer import EventType, Tokenizer
 from osuT5.utils import (
     setup_args,
     get_model,
-    get_dataloaders, Averager, add_prefix, acc_range,
+    get_dataloaders, Averager, add_prefix, acc_range, fuzzy_acc_range,
     get_shared_training_state,
 )
 
@@ -49,6 +49,7 @@ def test(args: DictConfig, accelerator: Accelerator, model, tokenizer, prefix: s
         rhythm_complexity_bins = np.linspace(0, max_rhythm_complexity, rhythm_complexity_n_bins + 1)[1:]
         rhythm_complexity_bin_totals = np.zeros(rhythm_complexity_n_bins)
         rhythm_complexity_bin_counts = np.zeros(rhythm_complexity_n_bins)
+        fuzzy_rhythm_complexity_bin_totals = np.zeros(rhythm_complexity_n_bins)
 
         for batch_id, batch in enumerate(tqdm(test_dataloader), start=1):
             if batch_id == args.eval.steps * args.optim.grad_acc:
@@ -75,6 +76,8 @@ def test(args: DictConfig, accelerator: Accelerator, model, tokenizer, prefix: s
                                              tokenizer.event_end[EventType.DISTANCE])
             stats["other_acc"] = acc_range(preds, batch["labels"], tokenizer.event_end[EventType.DISTANCE],
                                            tokenizer.event_end[EventType.DISTANCE] + tokenizer.vocab_size_out)
+            stats["fuzzy_timing_acc"] = fuzzy_acc_range(preds, batch["labels"], tokenizer.event_start[EventType.TIME_SHIFT],
+                                                        tokenizer.event_end[EventType.TIME_SHIFT], 2)
 
             # Bin labels by time and calculate accuracy
             preds = preds.detach().cpu().numpy()
@@ -105,31 +108,32 @@ def test(args: DictConfig, accelerator: Accelerator, model, tokenizer, prefix: s
                     sample_bin = np.clip(binned_rhythm_complexity[i], 0, n_bins - 1)
                     sample = acc_range(preds[i], labels[i], tokenizer.event_start[EventType.TIME_SHIFT],
                                        tokenizer.event_end[EventType.TIME_SHIFT])
+                    fuzzy_sample = fuzzy_acc_range(preds[i], labels[i], tokenizer.event_start[EventType.TIME_SHIFT],
+                                                   tokenizer.event_end[EventType.TIME_SHIFT], 2)
                     rhythm_complexity_bin_totals[sample_bin] += np.sum(sample)
                     rhythm_complexity_bin_counts[sample_bin] += len(sample)
+                    fuzzy_rhythm_complexity_bin_totals[sample_bin] += np.sum(fuzzy_sample)
 
             averager.update(stats)
 
-        # Plot timing over rhythm complexity
-        if rhythm_complexity_bin_counts.sum() > 0:
-            bin_accs = rhythm_complexity_bin_totals / rhythm_complexity_bin_counts
-            timing_acc_over_rhythm_complexity = prefix + "/timing_acc_over_rhythm_complexity"
-            wandb.define_metric(timing_acc_over_rhythm_complexity, step_metric="rhythm_complexity")
+        def plot_bins(bin_totals, bin_counts, bins, y_name, x_name):
+            bin_accs = bin_totals / bin_counts
+            wandb.define_metric(y_name, step_metric=x_name)
 
             # Log the plot
-            for i, (rhythm_complexity, bin_acc) in enumerate(zip(rhythm_complexity_bins, bin_accs)):
+            for (bin_x, bin_acc) in zip(bins, bin_accs):
                 if not np.isnan(bin_acc):
-                    wandb.log({timing_acc_over_rhythm_complexity: bin_acc, "rhythm_complexity": rhythm_complexity})
+                    wandb.log({y_name: bin_acc, x_name: bin_x})
+
+        # Plot timing over rhythm complexity
+        if rhythm_complexity_bin_counts.sum() > 0:
+            plot_bins(rhythm_complexity_bin_totals, rhythm_complexity_bin_counts, rhythm_complexity_bins,
+                      prefix + "/timing_acc_over_rhythm_complexity", "rhythm_complexity")
+            plot_bins(fuzzy_rhythm_complexity_bin_totals, rhythm_complexity_bin_counts, rhythm_complexity_bins,
+                      prefix + "/fuzzy_timing_acc_over_rhythm_complexity", "rhythm_complexity")
 
         # Plot bin accuracies
-        bin_accs = bin_totals / bin_counts
-        acc_over_time = prefix + "/acc_over_time"
-        wandb.define_metric(acc_over_time, step_metric="bin_time")
-
-        # Log the plot
-        for i, (bin_t, bin_acc) in enumerate(zip(bins, bin_accs)):
-            if not np.isnan(bin_acc):
-                wandb.log({acc_over_time: bin_acc, "bin_time": bin_t})
+        plot_bins(bin_totals, bin_counts, bins, prefix + "/acc_over_time", "bin_time")
 
         averager.update({"time": time.time() - start_time})
         averaged_stats = averager.average()
