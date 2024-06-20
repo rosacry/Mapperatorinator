@@ -50,6 +50,10 @@ def test(args: DictConfig, accelerator: Accelerator, model, tokenizer, prefix: s
         rhythm_complexity_bin_totals = np.zeros(rhythm_complexity_n_bins)
         rhythm_complexity_bin_counts = np.zeros(rhythm_complexity_n_bins)
         fuzzy_rhythm_complexity_bin_totals = np.zeros(rhythm_complexity_n_bins)
+        precision_bin_range = 3
+        precision_bins = np.arange(-precision_bin_range, precision_bin_range + 1)
+        precision_bin_totals = np.zeros(2 * precision_bin_range + 1)
+        precision_bin_counts = np.zeros(2 * precision_bin_range + 1)
 
         for batch_id, batch in enumerate(tqdm(test_dataloader), start=1):
             if batch_id == args.eval.steps * args.optim.grad_acc:
@@ -70,14 +74,23 @@ def test(args: DictConfig, accelerator: Accelerator, model, tokenizer, prefix: s
 
             # Calculate accuracy metrics
             preds = torch.argmax(outputs.logits, dim=-1)
-            stats["timing_acc"] = acc_range(preds, batch["labels"], tokenizer.event_start[EventType.TIME_SHIFT],
+            labels = batch["labels"]
+            stats["timing_acc"] = acc_range(preds, labels, tokenizer.event_start[EventType.TIME_SHIFT],
                                             tokenizer.event_end[EventType.TIME_SHIFT])
-            stats["spacing_acc"] = acc_range(preds, batch["labels"], tokenizer.event_start[EventType.DISTANCE],
+            stats["spacing_acc"] = acc_range(preds, labels, tokenizer.event_start[EventType.DISTANCE],
                                              tokenizer.event_end[EventType.DISTANCE])
-            stats["other_acc"] = acc_range(preds, batch["labels"], tokenizer.event_end[EventType.DISTANCE],
+            stats["other_acc"] = acc_range(preds, labels, tokenizer.event_end[EventType.DISTANCE],
                                            tokenizer.event_end[EventType.DISTANCE] + tokenizer.vocab_size_out)
-            stats["fuzzy_timing_acc"] = fuzzy_acc_range(preds, batch["labels"], tokenizer.event_start[EventType.TIME_SHIFT],
-                                                        tokenizer.event_end[EventType.TIME_SHIFT], 2)
+
+            # Calculate timing precision histogram
+            index = (tokenizer.event_start[EventType.TIME_SHIFT] <= labels) & (labels < tokenizer.event_end[EventType.TIME_SHIFT])
+            range_labels = labels[index]
+            range_preds = preds[index]
+            timing_diffs = (range_preds - range_labels).detach().cpu().numpy()
+            for i, n in enumerate(precision_bins):
+                accs = timing_diffs == n
+                precision_bin_totals[i] += np.sum(accs)
+                precision_bin_counts[i] += len(accs)
 
             # Bin labels by time and calculate accuracy
             preds = preds.detach().cpu().numpy()
@@ -131,6 +144,9 @@ def test(args: DictConfig, accelerator: Accelerator, model, tokenizer, prefix: s
                       prefix + "/timing_acc_over_rhythm_complexity", "rhythm_complexity")
             plot_bins(fuzzy_rhythm_complexity_bin_totals, rhythm_complexity_bin_counts, rhythm_complexity_bins,
                       prefix + "/fuzzy_timing_acc_over_rhythm_complexity", "rhythm_complexity")
+
+        # Plot timing precision
+        plot_bins(precision_bin_totals, precision_bin_counts, precision_bins, prefix + "/timing_precision", "offset")
 
         # Plot bin accuracies
         plot_bins(bin_totals, bin_counts, bins, prefix + "/acc_over_time", "bin_time")
