@@ -5,11 +5,12 @@ import torch
 from omegaconf import DictConfig
 from slider import Beatmap
 
+import routed_pickle
 from diffusion_pipeline import DiffisionPipeline
-from osu_diffusion import DiT_models
 from osuT5.osuT5.inference import Preprocessor, Pipeline, Postprocessor
 from osuT5.osuT5.tokenizer import Tokenizer
 from osuT5.osuT5.utils import get_model
+from osu_diffusion import DiT_models
 
 
 def get_args_from_beatmap(args: DictConfig):
@@ -63,7 +64,7 @@ def main(args: DictConfig):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     ckpt_path = Path(args.model_path)
     model_state = torch.load(ckpt_path / "pytorch_model.bin", map_location=device)
-    tokenizer_state = torch.load(ckpt_path / "custom_checkpoint_0.pkl")
+    tokenizer_state = torch.load(ckpt_path / "custom_checkpoint_0.pkl", pickle_module=routed_pickle)
 
     tokenizer = Tokenizer()
     tokenizer.load_state_dict(tokenizer_state)
