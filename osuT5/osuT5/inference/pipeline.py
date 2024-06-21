@@ -167,6 +167,11 @@ class Pipeline(object):
             events += result
             self._update_event_times(events, event_times, frame_time)
 
+            # Trim events which are in the lookahead window
+            if sequence_index != len(sequences) - 1:
+                lookahead_time = frame_time + self.lookahead_max_time
+                self._trim_events_after_time(events, event_times, lookahead_time)
+
         return events
 
     def _prepare_events(self, events: list[Event]) -> tuple[list[Event], list[float]]:
@@ -205,6 +210,14 @@ class Pipeline(object):
                 e = i + 1
                 break
         return events[s:e]
+
+    def _trim_events_after_time(self, events, event_times, lookahead_time):
+        for i in range(len(event_times) - 1, -1, -1):
+            if event_times[i] > lookahead_time:
+                del events[i]
+                del event_times[i]
+            else:
+                break
 
     def _update_event_times(self, events: list[Event], event_times: list[float], frame_time: float):
         update_event_times(events, event_times, frame_time + self.miliseconds_per_sequence)
