@@ -118,6 +118,7 @@ class Postprocessor(object):
         new_combo = 0
         ho_info = []
         anchor_info = []
+        last_sv = 1
 
         timing_point_strings = [
             f"{self.offset},{self.beat_length},4,2,0,100,1,0"
@@ -192,7 +193,6 @@ class Postprocessor(object):
                     continue
 
                 slides = max(int(round(total_duration / span_duration)), 1)
-                control_points = "|".join(f"{int(round(cp[1]))}:{int(round(cp[2]))}" for cp in anchor_info)
                 slider_path = SliderPath(self.curve_type_shorthand[curve_type], np.array([(ho_info[0], ho_info[1])] + [(cp[1], cp[2]) for cp in anchor_info], dtype=float))
                 length = slider_path.get_distance()
 
@@ -204,13 +204,22 @@ class Postprocessor(object):
                 if req_length < 1e-4:
                     continue
 
-                hit_object_strings.append(
-                    f"{int(round(ho_info[0]))},{int(round(ho_info[1]))},{int(round(ho_info[2]))},{2 | ho_info[3]},0,{curve_type}|{control_points},{slides},{req_length}"
-                )
+                sv, adjusted_length = self.get_human_sv_and_length(req_length, length, span_duration, last_sv)
 
-                sv = span_duration / req_length / self.beat_length * self.slider_multiplier * -10000
-                timing_point_strings.append(
-                    f"{int(round(ho_info[2]))},{sv},4,2,0,100,0,0"
+                # If the adjusted length is too long, scale the control points to fit the length
+                if adjusted_length > length + 1e-4:
+                    scale = adjusted_length / length
+                    anchor_info = [(cp[0], (cp[1] - ho_info[0]) * scale + ho_info[0], (cp[2] - ho_info[1]) * scale + ho_info[1]) for cp in anchor_info]
+
+                if sv != last_sv:
+                    timing_point_strings.append(
+                        f"{int(round(ho_info[2]))},{(-100 / sv)},4,2,0,100,0,0"
+                    )
+                    last_sv = sv
+
+                control_points = "|".join(f"{int(round(cp[1]))}:{int(round(cp[2]))}" for cp in anchor_info)
+                hit_object_strings.append(
+                    f"{int(round(ho_info[0]))},{int(round(ho_info[1]))},{int(round(ho_info[2]))},{2 | ho_info[3]},0,{curve_type}|{control_points},{slides},{adjusted_length}"
                 )
 
             new_combo = 0
@@ -227,3 +236,17 @@ class Postprocessor(object):
             osu_path = os.path.join(self.output_path, f"beatmap{str(uuid.uuid4().hex)}{OSU_FILE_EXTENSION}")
             with open(osu_path, "w") as osu_file:
                 osu_file.write(result)
+
+    def get_human_sv_and_length(self, req_length, length, span_duration, last_sv):
+        # Only change sv if the difference is more than 10%
+        sv = req_length / 100 / span_duration * self.beat_length / self.slider_multiplier
+        if abs(sv - last_sv) / sv <= 0.1:
+            sv = last_sv
+        else:
+            # Quantize the sv to multiples of 1/20 to 'humanize' the beatmap
+            sv = round(sv * 20) / 20
+
+        # Recalculate the required length to align with the actual sv
+        adjusted_length = sv * span_duration * 100 / self.beat_length * self.slider_multiplier
+
+        return sv, adjusted_length
