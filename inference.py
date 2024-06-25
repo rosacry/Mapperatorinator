@@ -89,6 +89,7 @@ def main(args: DictConfig):
         events = diffusion_pipeline.generate(model, events, refine_model)
 
     # TODO: Generate snapping info, generate timing, and resnap timing events
+    # TODO: Generate hitsound info
     postprocessor.generate(events)
 
 
