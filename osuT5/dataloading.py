@@ -99,18 +99,24 @@ def main(args: DictConfig):
                 # plot the timing of events as vertical lines
                 timings = b["decoder_input_ids"][i]
                 start_index = ((timings == tokenizer.sos_id).nonzero(as_tuple=True)[0]).item()
-                context = timings[:start_index]
-                labels = timings[start_index:]
-                for t in context:
+                pre = timings[:start_index]
+                post = timings[start_index:]
+                for t in pre:
                     if tokenizer.event_start[EventType.TIME_SHIFT] <= t < tokenizer.event_end[EventType.TIME_SHIFT]:
                         time_event = tokenizer.decode(t.item())
                         x = time_event.value / STEPS_PER_MILLISECOND / 1000 * args.model.spectrogram.sample_rate / args.model.spectrogram.hop_length
-                        plt.vlines(x=x, ymin=0, ymax=mels[i].shape[0], color='r')
+                        plt.vlines(x=x, ymin=0, ymax=mels[i].shape[1], color='g')
+                for t in post:
+                    if tokenizer.event_start[EventType.TIME_SHIFT] <= t < tokenizer.event_end[EventType.TIME_SHIFT]:
+                        time_event = tokenizer.decode(t.item())
+                        x = time_event.value / STEPS_PER_MILLISECOND / 1000 * args.model.spectrogram.sample_rate / args.model.spectrogram.hop_length
+                        plt.vlines(x=x, ymin=0, ymax=mels[i].shape[1] / 2, color='b')
+                labels = b["labels"][i]
                 for t in labels:
                     if tokenizer.event_start[EventType.TIME_SHIFT] <= t < tokenizer.event_end[EventType.TIME_SHIFT]:
                         time_event = tokenizer.decode(t.item())
                         x = time_event.value / STEPS_PER_MILLISECOND / 1000 * args.model.spectrogram.sample_rate / args.model.spectrogram.hop_length
-                        plt.vlines(x=x, ymin=0, ymax=mels[i].shape[0] / 2, color='b')
+                        plt.vlines(x=x, ymin=0, ymax=mels[i].shape[1], color='r')
 
                 plt.show()
             break
