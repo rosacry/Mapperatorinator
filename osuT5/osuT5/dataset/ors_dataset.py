@@ -496,7 +496,7 @@ class BeatmapDatasetIterable:
         if m > 0:
             input_tokens[start_index + stl:start_index + m + stl] = pre_tokens[-m:]
         input_tokens[start_index + m + stl:start_index + m + stl + n] = tokens[:n]
-        label_tokens[start_index + m + stl + labels_offset:start_index + m + stl + n] = tokens[1 + labels_offset:1 + n + labels_offset]
+        label_tokens[start_index + m + stl + labels_offset:start_index + m + stl + n] = tokens[1 + labels_offset:1 + n]
 
         # Randomize some input tokens
         def randomize_tokens(tokens):
