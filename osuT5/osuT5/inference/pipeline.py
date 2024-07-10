@@ -32,6 +32,7 @@ class Pipeline(object):
         self.miliseconds_per_sequence = self.samples_per_sequence * MILISECONDS_PER_SECOND / self.sample_rate
         self.miliseconds_per_stride = self.sequence_stride * MILISECONDS_PER_SECOND / self.sample_rate
         self.lookahead_max_time = (1 - args.lookahead) * self.miliseconds_per_sequence
+        self.eos_time = (1 - args.osut5.data.lookahead) * self.miliseconds_per_sequence
         self.center_pad_decoder = args.osut5.data.center_pad_decoder
         self.special_token_len = args.osut5.data.special_token_len
         self.diff_token_index = args.osut5.data.diff_token_index
@@ -165,7 +166,7 @@ class Pipeline(object):
             predicted_tokens = tokens[:, prefix_length + 1 + post_token_length:-1]
             result = self._decode(predicted_tokens[0], frame_time)
             events += result
-            self._update_event_times(events, event_times, frame_time)
+            self._update_event_times(events, event_times, frame_time + self.eos_time)
 
             # Trim events which are in the lookahead window
             if sequence_index != len(sequences) - 1:
@@ -219,8 +220,8 @@ class Pipeline(object):
             else:
                 break
 
-    def _update_event_times(self, events: list[Event], event_times: list[float], frame_time: float):
-        update_event_times(events, event_times, frame_time + self.miliseconds_per_sequence)
+    def _update_event_times(self, events: list[Event], event_times: list[float], end_time: float):
+        update_event_times(events, event_times, end_time)
 
     def _encode(self, events: list[Event], frame_time: float) -> torch.Tensor:
         tokens = torch.empty((1, len(events)), dtype=torch.long)
