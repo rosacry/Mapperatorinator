@@ -12,6 +12,9 @@ from ..model.spectrogram import MelSpectrogram
 from ..tokenizer import Tokenizer, EventType
 
 
+LABEL_IGNORE_ID = -100
+
+
 def get_backbone_model(args, tokenizer: Tokenizer):
     if args.model.name.startswith("google/t5"):
         config = T5Config.from_pretrained(args.model.name)
@@ -79,7 +82,7 @@ class OsuT(nn.Module):
         self.vocab_size_out = tokenizer.vocab_size_out
         class_weights = torch.ones(self.vocab_size_out)
         class_weights[tokenizer.event_start[EventType.TIME_SHIFT]:tokenizer.event_end[EventType.TIME_SHIFT]] = args.data.rhythm_weight
-        self.loss_fn = nn.CrossEntropyLoss(weight=class_weights, reduction="none")
+        self.loss_fn = nn.CrossEntropyLoss(weight=class_weights, reduction="none", ignore_index=LABEL_IGNORE_ID)
 
     def forward(
             self,
@@ -122,14 +125,14 @@ class OsuT(nn.Module):
                                               encoder_outputs=encoder_outputs, **kwargs)
         else:
             output = self.transformer.forward(inputs_embeds=inputs_embeds, decoder_inputs_embeds=decoder_inputs_embeds,
-                                              encoder_outputs=encoder_outputs, **kwargs)
+                                              encoder_outputs=encoder_outputs, labels=labels, **kwargs)
         # output = self.transformer.forward(inputs_embeds=inputs_embeds, decoder_input_ids=decoder_input_ids,encoder_outputs=encoder_outputs, **kwargs)
 
         if labels is not None:
             unreduced_loss = self.loss_fn(torch.swapaxes(output.logits, 1, -1), labels)
             if sample_weights is not None:
                 unreduced_loss *= sample_weights.unsqueeze(1)
-            output.loss = unreduced_loss.mean()
+            output.loss = unreduced_loss.sum() / (labels != LABEL_IGNORE_ID).sum()
 
         return output
 
