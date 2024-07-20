@@ -38,6 +38,7 @@ data:                  # Data settings
   add_gd_context: false  # Prefix the decoder with tokens of another beatmap in the mapset
   min_difficulty: 0     # Minimum difficulty to consider including in the dataset
   sample_weights_path: ''    # Path to sample weights
+  rhythm_weight: 1.0    # Weight of rhythm tokens in the loss calculation
   lookback: 0             # Fraction of audio sequence to fill with tokens from previous inference window
   lookahead: 0            # Fraction of audio sequence to skip at the end of the audio window
 

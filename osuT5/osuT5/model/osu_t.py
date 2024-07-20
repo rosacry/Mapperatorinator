@@ -9,7 +9,7 @@ from transformers import T5Config, T5ForConditionalGeneration, WhisperForConditi
 from transformers.modeling_outputs import Seq2SeqLMOutput
 
 from ..model.spectrogram import MelSpectrogram
-from ..tokenizer import Tokenizer
+from ..tokenizer import Tokenizer, EventType
 
 
 def get_backbone_model(args, tokenizer: Tokenizer):
@@ -76,12 +76,19 @@ class OsuT(nn.Module):
         else:
             self.encoder_embedder = nn.Linear(args.model.spectrogram.n_mels, d_model)
 
+        self.vocab_size_out = tokenizer.vocab_size_out
+        class_weights = torch.ones(self.vocab_size_out)
+        class_weights[tokenizer.event_start[EventType.TIME_SHIFT]:tokenizer.event_end[EventType.TIME_SHIFT]] = args.data.rhythm_weight
+        self.loss_fn = nn.CrossEntropyLoss(weight=class_weights, reduction="none")
+
     def forward(
             self,
             frames: Optional[torch.FloatTensor] = None,
             decoder_input_ids: Optional[torch.Tensor] = None,
             beatmap_idx: Optional[torch.Tensor] = None,
             encoder_outputs: Optional[torch.FloatTensor] = None,
+            labels: Optional[torch.LongTensor] = None,
+            sample_weights: Optional[torch.FloatTensor] = None,
             **kwargs
     ) -> Seq2SeqLMOutput:
         """
@@ -99,7 +106,6 @@ class OsuT(nn.Module):
         inputs_embeds = None
         if encoder_outputs is None:
             frames = self.spectrogram(frames)  # (N, L, M)
-            # frames.mul_(0.25)  # Normalize values a little bit
             if self.do_style_embed:
                 style_embeds = self.style_embedder(beatmap_idx)  # (N, D)
                 frames_concat = torch.concatenate((frames, style_embeds.unsqueeze(1).expand((-1, frames.shape[1], -1))), -1)
@@ -111,12 +117,19 @@ class OsuT(nn.Module):
         if self.input_features:
             input_features = torch.swapaxes(inputs_embeds, 1, 2)
             # noinspection PyTypeChecker
-            output = self.transformer.forward(input_features=input_features, decoder_inputs_embeds=decoder_inputs_embeds,
+            output = self.transformer.forward(input_features=input_features,
+                                              decoder_inputs_embeds=decoder_inputs_embeds,
                                               encoder_outputs=encoder_outputs, **kwargs)
         else:
             output = self.transformer.forward(inputs_embeds=inputs_embeds, decoder_inputs_embeds=decoder_inputs_embeds,
                                               encoder_outputs=encoder_outputs, **kwargs)
         # output = self.transformer.forward(inputs_embeds=inputs_embeds, decoder_input_ids=decoder_input_ids,encoder_outputs=encoder_outputs, **kwargs)
+
+        if labels is not None:
+            unreduced_loss = self.loss_fn(torch.swapaxes(output.logits, 1, -1), labels)
+            if sample_weights is not None:
+                unreduced_loss *= sample_weights.unsqueeze(1)
+            output.loss = unreduced_loss.mean()
 
         return output
 
