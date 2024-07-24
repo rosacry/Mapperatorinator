@@ -140,10 +140,15 @@ class OsuParser:
             return
 
         tp = self.hitsound_point_at(time, beatmap)
-        tp_sample_set = tp.sample_type if tp.sample_type != 0 else 2  # Default to soft sample set
+        tp_sample_set = tp.sample_type if tp.sample_type != 0 else 2  # Inherit to soft sample set
         addition_split = addition.split(":")
         sample_set = int(addition_split[0]) if addition_split[0] != "0" else tp_sample_set
         addition_set = int(addition_split[1]) if addition_split[1] != "0" else sample_set
+
+        sample_set = sample_set if 0 < sample_set < 4 else 1  # Overflow default to normal sample set
+        addition_set = addition_set if 0 < addition_set < 4 else 1  # Overflow default to normal sample set
+        hitsound = hitsound & 14  # Only take the bits for normal, whistle, and finish
+
         hitsound_idx = hitsound // 2 + 8 * (sample_set - 1) + 24 * (addition_set - 1)
 
         events.append(Event(EventType.HITSOUND, hitsound_idx))
