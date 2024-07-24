@@ -12,7 +12,7 @@ from torch.optim import Optimizer
 from torch.optim.lr_scheduler import LRScheduler
 from torch.utils.data import DataLoader
 
-from ..tokenizer import Tokenizer, EventType
+from ..tokenizer import Tokenizer, EventType, ContextType
 from ..model import OsuT
 from .log_utils import Averager
 
@@ -193,24 +193,34 @@ def eval_model(
         loss = accelerator.reduce(loss, reduction="mean")
 
         # Gether labels and predictions over all processes and drop duplicates
-        preds = torch.argmax(outputs.logits, dim=-1)
+        logits = outputs.logits
+        preds = torch.argmax(logits, dim=-1)
         labels = batch["labels"]
-        accelerator.gather_for_metrics((preds, labels))
+        accelerator.gather_for_metrics((logits, preds, labels))
 
         # Calculate accuracy metrics
-        stats = {"loss": loss.detach(),
-                 "timing_acc": acc_range(preds, labels, tokenizer.event_start[EventType.TIME_SHIFT],
-                                         tokenizer.event_end[EventType.TIME_SHIFT]),
-                 "spacing_acc": acc_range(preds, labels, tokenizer.event_start[EventType.DISTANCE],
-                                          tokenizer.event_end[EventType.DISTANCE]),
-                 "hitsound_acc": acc_range(preds, labels, tokenizer.event_start[EventType.HITSOUND],
-                                           tokenizer.event_end[EventType.HITSOUND]),
-                 "volume_acc": acc_range(preds, labels, tokenizer.event_start[EventType.VOLUME],
-                                         tokenizer.event_end[EventType.VOLUME]),
-                 "other_acc": acc_range(preds, labels, tokenizer.event_end[EventType.VOLUME],
-                                        tokenizer.event_end[EventType.VOLUME] + tokenizer.vocab_size_out)}
+        if len(args.data.context_types) > 0:
+            for cts in args.data.context_types:
+                ct = ContextType(cts)
+                ct_index = batch['decoder_input_ids'][:, 0] == tokenizer.context_sos[ct]
 
-        averager.update(stats)
+                if not ct_index.any():
+                    continue
+
+                ct_logits = outputs.logits[ct_index]
+                ct_preds = preds[ct_index]
+                ct_labels = labels[ct_index]
+                ct_weights = batch["sample_weights"][ct_index]
+                ct_loss = model.calc_loss(ct_logits, ct_labels, ct_weights)
+                stats = get_stats(ct_loss, ct_preds, ct_labels, tokenizer)
+
+                if ct != ContextType.NONE:
+                    stats = add_prefix(cts, stats)
+
+                averager.update(stats)
+        else:
+            stats = get_stats(loss, preds, labels, tokenizer)
+            averager.update(stats)
 
     averager.update({"time": time.time() - shared.last_log})
     averaged_stats = averager.average()
@@ -219,6 +229,21 @@ def eval_model(
     logger.info(averaged_stats)
 
     shared.current_loss = averaged_stats["test/loss"]
+
+
+def get_stats(loss, preds, labels, tokenizer):
+    stats = {"loss": loss.detach(),
+             "timing_acc": acc_range(preds, labels, tokenizer.event_start[EventType.TIME_SHIFT],
+                                     tokenizer.event_end[EventType.TIME_SHIFT]),
+             "spacing_acc": acc_range(preds, labels, tokenizer.event_start[EventType.DISTANCE],
+                                      tokenizer.event_end[EventType.DISTANCE]),
+             "hitsound_acc": acc_range(preds, labels, tokenizer.event_start[EventType.HITSOUND],
+                                       tokenizer.event_end[EventType.HITSOUND]),
+             "volume_acc": acc_range(preds, labels, tokenizer.event_start[EventType.VOLUME],
+                                     tokenizer.event_end[EventType.VOLUME]),
+             "other_acc": acc_range(preds, labels, tokenizer.event_end[EventType.VOLUME],
+                                    tokenizer.event_end[EventType.VOLUME] + tokenizer.vocab_size_out)}
+    return stats
 
 
 def acc_range(preds, labels, start_index, end_index):
