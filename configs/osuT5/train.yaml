@@ -26,9 +26,13 @@ data:                  # Data settings
   max_diff: 12          # Maximum difficulty of difficulty classes
   class_dropout_prob: 0.2
   diff_dropout_prob: 0.2
+  mapper_dropout_prob: 0.2
+  descriptor_dropout_prob: 0.2
   special_token_len: 0
   diff_token_index: -1
   style_token_index: -1
+  mapper_token_index: -1
+  add_descriptors: false
   add_empty_sequences: true
   add_empty_sequences_at_step: -1
   add_pre_tokens: true
@@ -41,6 +45,12 @@ data:                  # Data settings
   rhythm_weight: 1.0    # Weight of rhythm tokens in the loss calculation
   lookback: 0             # Fraction of audio sequence to fill with tokens from previous inference window
   lookahead: 0            # Fraction of audio sequence to skip at the end of the audio window
+  context_types: []      # List of context types to include in the dataset
+  context_weights: []    # List of weights for each context type. Determines how often each context type is sampled
+  descriptors_path: ''   # Path to file with all beatmap descriptors
+  mappers_path: ''       # Path to file with all beatmap mappers
+  add_timing: false      # Model beatmap timing
+  add_hitsounds: false   # Model beatmap hitsounds
 
 
 dataloader:             # Dataloader settings

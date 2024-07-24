@@ -6,8 +6,11 @@ from enum import Enum
 
 class EventType(Enum):
     TIME_SHIFT = "t"
+    SNAPPING = "snap"
     DISTANCE = "dist"
     NEW_COMBO = "new_combo"
+    HITSOUND = "hitsound"
+    VOLUME = "volume"
     CIRCLE = "circle"
     SPINNER = "spinner"
     SPINNER_END = "spinner_end"
@@ -18,10 +21,21 @@ class EventType(Enum):
     RED_ANCHOR = "red_anchor"
     LAST_ANCHOR = "last_anchor"
     SLIDER_END = "slider_end"
+    BEAT = "beat"
+    MEASURE = "measure"
     STYLE = "style"
     DIFFICULTY = "difficulty"
+    MAPPER = "mapper"
+    DESCRIPTOR = "descriptor"
     POS_X = "pos_x"
     POS_Y = "pos_y"
+
+
+class ContextType(Enum):
+    NONE = "none"
+    TIMING = "timing"
+    NO_HS = "no_hs"
+    GD = "gd"
 
 
 @dataclasses.dataclass

@@ -40,6 +40,7 @@ class Pipeline(object):
         self.max_pre_token_len = args.osut5.data.max_pre_token_len
         self.add_pre_tokens = args.osut5.data.add_pre_tokens
         self.add_gd_context = args.osut5.data.add_gd_context
+        self.parser = OsuParser(args.osuT5, self.tokenizer)
 
     def generate(self, model: OsuT, sequences: torch.Tensor, beatmap_id: int = -1, difficulty: float = -1, other_beatmap_path: str = '') -> list[Event]:
         """Generate a list of Event object lists and their timestamps given source sequences.
@@ -83,8 +84,7 @@ class Pipeline(object):
             other_beatmap = Beatmap.from_path(other_beatmap_path)
             other_beatmap_id = other_beatmap.beatmap_id
             other_difficulty = float(other_beatmap.stars())
-            parser = OsuParser(self.tokenizer)
-            other_events = parser.parse(other_beatmap)
+            other_events = self.parser.parse(other_beatmap)
             other_events, other_event_times = self._prepare_events(other_events)
 
             if other_beatmap_id in idx_dict:

@@ -97,3 +97,50 @@ def update_event_times(events: list[Event], event_times: list[float], end_time: 
         # Interpolate the time
         ct = (ct - t) / (count + 1) * count + t
         event_times[i] = ct
+
+
+def merge_events(events1: list[Event], events2: list[Event]) -> list[Event]:
+    """Merge two lists of events in a time sorted manner. Assumes both lists are sorted by time.
+
+    Args:
+        events1: List of events.
+        events2: List of events.
+
+    Returns:
+        merged_events: Merged list of events.
+    """
+    merged_events = []
+    i = 0
+    j = 0
+    t1 = 0
+    t2 = 0
+
+    while i < len(events1) and j < len(events2):
+        if events1[i].type == EventType.TIME_SHIFT:
+            t1 = events1[i].value
+        if events2[j].type == EventType.TIME_SHIFT:
+            t2 = events2[j].value
+
+        if t1 <= t2:
+            merged_events.append(events1[i])
+            i += 1
+        else:
+            merged_events.append(events2[j])
+            j += 1
+
+    merged_events.extend(events1[i:])
+    merged_events.extend(events2[j:])
+    return merged_events
+
+
+def remove_events_of_type(events: list[Event], event_types: list[EventType]) -> list[Event]:
+    """Remove all events of a specific type from a list of events.
+
+    Args:
+        events: List of events.
+        event_types: Types of event to remove.
+
+    Returns:
+        filtered_events: Filtered list of events.
+    """
+    return [event for event in events if event.type not in event_types]
