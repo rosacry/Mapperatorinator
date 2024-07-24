@@ -213,7 +213,7 @@ class Postprocessor(object):
                 redline = tp if tp.parent is None else tp.parent
                 last_sv = 1 if tp.parent is None else -100 / tp.ms_per_beat
 
-                sv, adjusted_length = self.get_human_sv_and_length(req_length, length, span_duration, last_sv, redline)
+                sv, adjusted_length = self.get_human_sv_and_length(req_length, length, span_duration, last_sv, redline, ho_info[3] == 4)
 
                 # If the adjusted length is too long, scale the control points to fit the length
                 if adjusted_length > length + 1e-4:
@@ -245,10 +245,12 @@ class Postprocessor(object):
             with open(osu_path, "w") as osu_file:
                 osu_file.write(result)
 
-    def get_human_sv_and_length(self, req_length, length, span_duration, last_sv, redline):
+    def get_human_sv_and_length(self, req_length, length, span_duration, last_sv, redline, new_combo):
         # Only change sv if the difference is more than 10%
         sv = req_length / 100 / span_duration * redline.ms_per_beat / self.slider_multiplier
-        if abs(sv - last_sv) / sv <= 0.1:
+        leniency = 0.05 if new_combo else 0.15
+
+        if abs(sv - last_sv) / last_sv <= leniency:
             sv = last_sv
         else:
             # Quantize the sv to multiples of 1/20 to 'humanize' the beatmap
