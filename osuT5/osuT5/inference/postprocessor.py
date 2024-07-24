@@ -4,10 +4,12 @@ import dataclasses
 import os
 import pathlib
 import uuid
+from datetime import timedelta
 from string import Template
 
 import numpy as np
 from omegaconf import DictConfig
+from slider import TimingPoint
 
 from .slider_path import SliderPath
 from ..tokenizer import Event, EventType
@@ -98,12 +100,14 @@ class Postprocessor(object):
         self.offset = args.offset
         self.beat_length = 60000 / args.bpm
         self.slider_multiplier = self.beatmap_config.slider_multiplier
+        self.timing_leniency = args.timing_leniency
 
-    def generate(self, events: list[Event]):
+    def generate(self, events: list[Event], timing: list[TimingPoint] = None):
         """Generate a beatmap file.
 
         Args:
             events: List of Event objects.
+            timing: List of TimingPoint objects.
 
         Returns:
             None. An .osu file will be generated.
@@ -118,11 +122,11 @@ class Postprocessor(object):
         new_combo = 0
         ho_info = []
         anchor_info = []
-        last_sv = 1
 
-        timing_point_strings = [
-            f"{self.offset},{self.beat_length},4,2,0,100,1,0"
-        ]
+        if timing is None:
+            timing = [TimingPoint(
+                timedelta(milliseconds=self.offset), self.beat_length, 4, 2, 0, 100, None, False
+            )]
 
         # Convert to .osu format
         for event in events:
@@ -185,6 +189,7 @@ class Postprocessor(object):
                 anchor_info.append(('B', x, y))
 
             elif hit_type == EventType.SLIDER_END and len(ho_info) == 5 and len(anchor_info) > 0:
+                slider_start_time = int(round(ho_info[2]))
                 curve_type = anchor_info[0][0]
                 span_duration = ho_info[4] - ho_info[2]
                 total_duration = time - ho_info[2]
@@ -204,7 +209,11 @@ class Postprocessor(object):
                 if req_length < 1e-4:
                     continue
 
-                sv, adjusted_length = self.get_human_sv_and_length(req_length, length, span_duration, last_sv)
+                tp = self.timing_point_at(timedelta(milliseconds=slider_start_time), timing)
+                redline = tp if tp.parent is None else tp.parent
+                last_sv = 1 if tp.parent is None else -100 / tp.ms_per_beat
+
+                sv, adjusted_length = self.get_human_sv_and_length(req_length, length, span_duration, last_sv, redline)
 
                 # If the adjusted length is too long, scale the control points to fit the length
                 if adjusted_length > length + 1e-4:
@@ -212,10 +221,9 @@ class Postprocessor(object):
                     anchor_info = [(cp[0], (cp[1] - ho_info[0]) * scale + ho_info[0], (cp[2] - ho_info[1]) * scale + ho_info[1]) for cp in anchor_info]
 
                 if sv != last_sv:
-                    timing_point_strings.append(
-                        f"{int(round(ho_info[2]))},{(-100 / sv)},4,2,0,100,0,0"
-                    )
-                    last_sv = sv
+                    timing.insert(timing.index(tp) + 1, TimingPoint(
+                        timedelta(milliseconds=slider_start_time), -100 / sv, 4, 2, 0, 100, None, False
+                    ))
 
                 control_points = "|".join(f"{int(round(cp[1]))}:{int(round(cp[2]))}" for cp in anchor_info)
                 hit_object_strings.append(
@@ -228,7 +236,7 @@ class Postprocessor(object):
         with open(OSU_TEMPLATE_PATH, "r") as tf:
             template = Template(tf.read())
             hit_objects = {"hit_objects": "\n".join(hit_object_strings)}
-            timing_points = {"timing_points": "\n".join(timing_point_strings)}
+            timing_points = {"timing_points": "\n".join(tp.pack() for tp in timing)}
             beatmap_config = dataclasses.asdict(self.beatmap_config)
             result = template.safe_substitute({**beatmap_config, **hit_objects, **timing_points})
 
@@ -237,9 +245,9 @@ class Postprocessor(object):
             with open(osu_path, "w") as osu_file:
                 osu_file.write(result)
 
-    def get_human_sv_and_length(self, req_length, length, span_duration, last_sv):
+    def get_human_sv_and_length(self, req_length, length, span_duration, last_sv, redline):
         # Only change sv if the difference is more than 10%
-        sv = req_length / 100 / span_duration * self.beat_length / self.slider_multiplier
+        sv = req_length / 100 / span_duration * redline.ms_per_beat / self.slider_multiplier
         if abs(sv - last_sv) / sv <= 0.1:
             sv = last_sv
         else:
@@ -247,6 +255,222 @@ class Postprocessor(object):
             sv = round(sv * 20) / 20
 
         # Recalculate the required length to align with the actual sv
-        adjusted_length = sv * span_duration * 100 / self.beat_length * self.slider_multiplier
+        adjusted_length = sv * span_duration * 100 / redline.ms_per_beat * self.slider_multiplier
 
         return sv, adjusted_length
+
+    def resnap_events(self, events: list[Event], timing: list[TimingPoint]) -> list[Event]:
+        """Resnap events to the designated beat snap divisors."""
+        resnapped_events = []
+        for i, event in enumerate(events):
+            if event.type != EventType.TIME_SHIFT:
+                resnapped_events.append(event)
+                continue
+
+            time = event.value
+            snap_divisor = 0
+
+            if i + 1 < len(events) and events[i + 1].type == EventType.SNAPPING:
+                snap_divisor = events[i + 1].value
+
+            if snap_divisor > 0:
+                tp = self.timing_point_at(timedelta(milliseconds=time), timing)
+                time = int(self.resnap(time, tp, snap_divisor))
+
+            resnapped_events.append(Event(EventType.TIME_SHIFT, time))
+
+        return resnapped_events
+
+    @dataclasses.dataclass
+    class Marker:
+        time: float
+        is_measure: bool
+        beats_from_last_marker: int = 1
+
+    @staticmethod
+    def timing_point_at(time: timedelta, timing_points: list[TimingPoint]) -> TimingPoint:
+        for tp in reversed(timing_points):
+            if tp.offset <= time:
+                return tp
+
+        return timing_points[0]
+
+    def generate_timing(self, events: list[Event]) -> list[TimingPoint]:
+        """Generate timing points from a list of Event objects."""
+
+        markers: list[Postprocessor.Marker] = []
+        time = 0
+        for event in events:
+            if event.type == EventType.TIME_SHIFT:
+                time = event.value
+            elif event.type == EventType.BEAT:
+                markers.append(self.Marker(time, False))
+            elif event.type == EventType.MEASURE:
+                markers.append(self.Marker(time, True))
+
+        if len(markers) == 0:
+            return []
+
+        markers.sort(key=lambda x: x.time)
+
+        timing: list[TimingPoint] = [
+            TimingPoint(timedelta(milliseconds=markers[0].time), 1000, 4, 2, 0, 100, None, False)
+        ]
+
+        counter = 0
+        last_measure_time = markers[0].time
+
+        for marker in markers:
+            time = marker.time
+            redline = timing[-1]
+            redline_offset = redline.offset.total_seconds() * 1000
+
+            if redline_offset == time:
+                continue
+
+            counter += 1
+
+            if not marker.is_measure:
+                continue
+
+            if redline.meter != counter:
+                if last_measure_time <= redline_offset:
+                    # We can edit the meter of the redline
+                    redline.meter = counter
+                else:
+                    # We need to create a new redline
+                    timing.append(TimingPoint(
+                        timedelta(milliseconds=last_measure_time),
+                        redline.ms_per_beat,
+                        counter,
+                        redline.sample_type,
+                        redline.sample_set,
+                        redline.volume,
+                        None,
+                        redline.kiai_mode,
+                    ))
+
+            counter = 0
+            last_measure_time = time
+
+        for marker in markers:
+            time = marker.time
+            redline = self.timing_point_at(timedelta(milliseconds=time - 1), timing)
+            redline_offset = redline.offset.total_seconds() * 1000
+            beats_from_last_marker = marker.beats_from_last_marker
+
+            if beats_from_last_marker == 0 or redline_offset == time:
+                continue
+
+            markers_before = [o for o in markers if time > o.time > redline_offset] + [marker]
+
+            mpb = 0
+            beats_from_redline = 0
+            for marker_b in markers_before:
+                beats_from_redline += marker_b.beats_from_last_marker
+                mpb += self.get_ms_per_beat(marker_b.time - redline_offset, beats_from_redline, 0)
+            mpb /= len(markers_before)
+
+            can_change_redline = self.check_ms_per_beat(mpb, markers_before, redline)
+
+            if can_change_redline:
+                mpb = self.human_round_ms_per_beat(mpb, markers_before, redline)
+                redline.ms_per_beat = mpb
+            elif len(markers_before) > 1:
+                last_time = markers_before[-2].time
+                timing.insert(timing.index(redline) + 1, TimingPoint(
+                    timedelta(milliseconds=last_time),
+                    self.get_ms_per_beat(time - last_time, beats_from_last_marker, self.timing_leniency),
+                    redline.meter,
+                    redline.sample_type,
+                    redline.sample_set,
+                    redline.volume,
+                    None,
+                    redline.kiai_mode,
+                ))
+
+        return timing
+
+    @staticmethod
+    def resnap(time: float, tp: TimingPoint, snap_divisor: int) -> float:
+        """Resnap a time to the nearest beat divisor."""
+        d = tp.ms_per_beat / snap_divisor
+        remainder = time - tp.offset.total_seconds() * 1000 % d
+
+        if remainder < d / 2:
+            return time - remainder
+
+        return time + d - remainder
+
+    def check_ms_per_beat(self, mpb_new: float, markers: list[Postprocessor.Marker], redline: TimingPoint):
+        mpb_old = redline.ms_per_beat
+        redline_offset = redline.offset.total_seconds() * 1000
+        beats_from_redline = 0
+        can_change_redline = True
+        for marker_b in markers:
+            time_b = marker_b.time
+            beats_from_redline += marker_b.beats_from_last_marker
+            redline.ms_per_beat = mpb_new
+            resnapped_time_ba = redline_offset + redline.ms_per_beat * beats_from_redline
+            beats_from_redline_ba = (resnapped_time_ba - redline_offset) / redline.ms_per_beat
+            redline.ms_per_beat = mpb_old
+
+            if (abs(beats_from_redline_ba - beats_from_redline) < 0.1 and
+                    self.is_snapped(time_b, resnapped_time_ba, self.timing_leniency)):
+                continue
+            can_change_redline = False
+        return can_change_redline
+
+    def human_round_ms_per_beat(self, mpb: float, markers: list[Postprocessor.Marker], redline: TimingPoint):
+        bpm = 60000 / mpb
+        mpb_integer = 60000 / round(bpm)
+        if self.check_ms_per_beat(mpb_integer, markers, redline):
+            return mpb_integer
+
+        mpb_halves = 60000 / (round(bpm * 2) / 2)
+        if self.check_ms_per_beat(mpb_halves, markers, redline):
+            return mpb_halves
+
+        mpb_tenths = 60000 / (round(bpm * 10) / 10)
+        if self.check_ms_per_beat(mpb_tenths, markers, redline):
+            return mpb_tenths
+
+        mpb_hundredths = 60000 / (round(bpm * 100) / 100)
+        if self.check_ms_per_beat(mpb_hundredths, markers, redline):
+            return mpb_hundredths
+
+        mpb_thousandths = 60000 / (round(bpm * 1000) / 1000)
+        if self.check_ms_per_beat(mpb_thousandths, markers, redline):
+            return mpb_thousandths
+
+        return mpb
+
+    def get_ms_per_beat(self, time_from_redline: float, beats_from_redline: float, leniency: float):
+        mpb = time_from_redline / beats_from_redline
+        bpm = 60000 / mpb
+
+        mpb_integer = 60000 / round(bpm)
+        if self.is_snapped(time_from_redline, mpb_integer * beats_from_redline, leniency):
+            return mpb_integer
+
+        mpb_halves = 60000 / (round(bpm * 2) / 2)
+        if self.is_snapped(time_from_redline, mpb_halves * beats_from_redline, leniency):
+            return mpb_halves
+
+        mpb_tenths = 60000 / (round(bpm * 10) / 10)
+        if self.is_snapped(time_from_redline, mpb_tenths * beats_from_redline, leniency):
+            return mpb_tenths
+
+        mpb_hundredths = 60000 / (round(bpm * 100) / 100)
+        if self.is_snapped(time_from_redline, mpb_hundredths * beats_from_redline, leniency):
+            return mpb_hundredths
+
+        mpb_thousandths = 60000 / (round(bpm * 1000) / 1000)
+        if self.is_snapped(time_from_redline, mpb_thousandths * beats_from_redline, leniency):
+            return mpb_thousandths
+
+        return mpb
+
+    @staticmethod
+    def is_snapped(time: float, resnapped_time: float, leniency: float):
+        return abs(time - resnapped_time) <= leniency
