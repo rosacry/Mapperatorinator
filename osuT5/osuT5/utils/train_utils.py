@@ -203,8 +203,12 @@ def eval_model(
                                          tokenizer.event_end[EventType.TIME_SHIFT]),
                  "spacing_acc": acc_range(preds, labels, tokenizer.event_start[EventType.DISTANCE],
                                           tokenizer.event_end[EventType.DISTANCE]),
-                 "other_acc": acc_range(preds, labels, tokenizer.event_end[EventType.DISTANCE],
-                                        tokenizer.event_end[EventType.DISTANCE] + tokenizer.vocab_size_out)}
+                 "hitsound_acc": acc_range(preds, labels, tokenizer.event_start[EventType.HITSOUND],
+                                           tokenizer.event_end[EventType.HITSOUND]),
+                 "volume_acc": acc_range(preds, labels, tokenizer.event_start[EventType.VOLUME],
+                                         tokenizer.event_end[EventType.VOLUME]),
+                 "other_acc": acc_range(preds, labels, tokenizer.event_end[EventType.VOLUME],
+                                        tokenizer.event_end[EventType.VOLUME] + tokenizer.vocab_size_out)}
 
         averager.update(stats)
 
