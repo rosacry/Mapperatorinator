@@ -184,6 +184,7 @@ def eval_model(
     class_weights = torch.ones(tokenizer.vocab_size_out)
     class_weights[tokenizer.event_start[EventType.TIME_SHIFT]:tokenizer.event_end[EventType.TIME_SHIFT]] = args.data.rhythm_weight
     loss_fn = nn.CrossEntropyLoss(weight=class_weights, reduction="none", ignore_index=LABEL_IGNORE_ID)
+    loss_fn = loss_fn.to(accelerator.device)
 
     for batch_id, batch in enumerate(dataloader, start=1):
         if batch_id == args.eval.steps * args.optim.grad_acc:
@@ -234,7 +235,8 @@ def eval_model(
     accelerator.log(averaged_stats, step=shared.current_train_step)
     logger.info(averaged_stats)
 
-    shared.current_loss = averaged_stats["test/loss"]
+    if "test/loss" in averaged_stats:
+        shared.current_loss = averaged_stats["test/loss"]
 
 
 def calc_loss(loss_fn, logits, labels, sample_weights):
