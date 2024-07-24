@@ -129,15 +129,12 @@ class OsuT(nn.Module):
         # output = self.transformer.forward(inputs_embeds=inputs_embeds, decoder_input_ids=decoder_input_ids,encoder_outputs=encoder_outputs, **kwargs)
 
         if labels is not None:
-            output.loss = self.calc_loss(output.logits, labels, sample_weights)
+            unreduced_loss = self.loss_fn(torch.swapaxes(output.logits, 1, -1), labels)
+            if sample_weights is not None:
+                unreduced_loss *= sample_weights.unsqueeze(1)
+            output.loss = unreduced_loss.sum() / (labels != LABEL_IGNORE_ID).sum()
 
         return output
-
-    def calc_loss(self, logits, labels, sample_weights):
-        unreduced_loss = self.loss_fn(torch.swapaxes(logits, 1, -1), labels)
-        if sample_weights is not None:
-            unreduced_loss *= sample_weights.unsqueeze(1)
-        return unreduced_loss.sum() / (labels != LABEL_IGNORE_ID).sum()
 
 
 class LabelEmbedder(nn.Module):

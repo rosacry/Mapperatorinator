@@ -8,10 +8,12 @@ import wandb
 from accelerate import Accelerator
 from accelerate.logging import get_logger
 from omegaconf import DictConfig
+from torch import nn
 from torch.optim import Optimizer
 from torch.optim.lr_scheduler import LRScheduler
 from torch.utils.data import DataLoader
 
+from ..dataset.ors_dataset import LABEL_IGNORE_ID
 from ..tokenizer import Tokenizer, EventType, ContextType
 from ..model import OsuT
 from .log_utils import Averager
@@ -179,6 +181,10 @@ def eval_model(
     shared.last_log = time.time()
     averager = Averager()
 
+    class_weights = torch.ones(tokenizer.vocab_size_out)
+    class_weights[tokenizer.event_start[EventType.TIME_SHIFT]:tokenizer.event_end[EventType.TIME_SHIFT]] = args.data.rhythm_weight
+    loss_fn = nn.CrossEntropyLoss(weight=class_weights, reduction="none", ignore_index=LABEL_IGNORE_ID)
+
     for batch_id, batch in enumerate(dataloader, start=1):
         if batch_id == args.eval.steps * args.optim.grad_acc:
             break
@@ -211,7 +217,7 @@ def eval_model(
                 ct_preds = preds[ct_index]
                 ct_labels = labels[ct_index]
                 ct_weights = batch["sample_weights"][ct_index]
-                ct_loss = model.calc_loss(ct_logits, ct_labels, ct_weights)
+                ct_loss = calc_loss(loss_fn, ct_logits, ct_labels, ct_weights)
                 stats = get_stats(ct_loss, ct_preds, ct_labels, tokenizer)
 
                 if ct != ContextType.NONE:
@@ -229,6 +235,13 @@ def eval_model(
     logger.info(averaged_stats)
 
     shared.current_loss = averaged_stats["test/loss"]
+
+
+def calc_loss(loss_fn, logits, labels, sample_weights):
+    unreduced_loss = loss_fn(torch.swapaxes(logits, 1, -1), labels)
+    if sample_weights is not None:
+        unreduced_loss *= sample_weights.unsqueeze(1)
+    return unreduced_loss.sum() / (labels != LABEL_IGNORE_ID).sum()
 
 
 def get_stats(loss, preds, labels, tokenizer):
