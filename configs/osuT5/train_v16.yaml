@@ -28,5 +28,5 @@ dataloader:             # Dataloader settings
 
 optim:                  # Optimizer settings
   base_lr: 1e-2         # Should be scaled with the number of devices present
-  batch_size: 128
-  grad_acc: 4
+  batch_size: 126
+  grad_acc: 6
