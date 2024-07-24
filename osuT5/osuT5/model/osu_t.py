@@ -101,7 +101,7 @@ class OsuT(nn.Module):
         beatmap_id: B, int64
         encoder_outputs: B x L_encoder x D, float32
         """
-        if beatmap_idx is None:
+        if beatmap_idx is None and self.do_style_embed:
             batch_size = frames.shape[0] if frames is not None else decoder_input_ids.shape[0]
             device = frames.device if frames is not None else decoder_input_ids.device
             beatmap_idx = torch.full([batch_size], self.num_classes, dtype=torch.long, device=device)

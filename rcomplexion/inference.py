@@ -114,7 +114,7 @@ def main(args: DictConfig):
         rhythm_complexities[beatmap.beatmap_id] = rhythm_complexity
 
     # Save rhythm complexities to a spreadsheet
-    with open("rhythm_complexities.csv", "w") as f:
+    with open("../datasets/rhythm_complexities.csv", "w") as f:
         for beatmap_id, rhythm_complexity in rhythm_complexities.items():
             f.write(f"{beatmap_id},{rhythm_complexity}\n")
 

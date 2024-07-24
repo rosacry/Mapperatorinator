@@ -25,7 +25,7 @@ def main(args: DictConfig):
     shared = mgr.Namespace()
     shared.current_train_step = 1
     tokenizer = get_tokenizer(args)
-    parser = OsuParser(tokenizer)
+    parser = OsuParser(args, tokenizer)
     dataset = OrsDataset(
         args.data,
         parser,
@@ -53,16 +53,10 @@ def main(args: DictConfig):
     if args.mode == 'benchmark':
         # Make histogram of the lengths of the sequences
         lengths = []
-        diff_unks = 0
-        style_unks = 0
         for b in tqdm.tqdm(dataloader, smoothing=0.01):
             for i in range(len(b["frames"])):  # batch size
                 length = b['decoder_attention_mask'][i].sum().item()
                 lengths.append(length)
-                if b['decoder_input_ids'][i][0] == tokenizer.diff_unk:
-                    diff_unks += 1
-                if b['decoder_input_ids'][i][1] == tokenizer.style_unk:
-                    style_unks += 1
             shared.current_train_step += 1
             if len(lengths) > 10000:
                 break
@@ -85,9 +79,6 @@ def main(args: DictConfig):
         print(f"Total number of sequences: {len(lengths)}")
         print(f"Total number of tokens: {sum(lengths)}")
         print(f"Total number of sequences with length 0: {lengths.count(2)}")
-
-        print(f"Total number of diff unks: {diff_unks}")
-        print(f"Total number of style unks: {style_unks}")
 
     if args.mode == 'plot':
         for b in tqdm.tqdm(dataloader, smoothing=0.01):
