@@ -82,15 +82,20 @@ def main(args: DictConfig):
     sequences = preprocessor.segment(audio)
     events = pipeline.generate(model, sequences, args.beatmap_id, args.difficulty, args.other_beatmap_path)
 
+    # Generate timing and resnap timing events
+    timing = None
+    if args.osuT5.add_timing:
+        timing = postprocessor.generate_timing(events)
+        events = postprocessor.resnap_events(events, timing)
+
     if args.generate_positions:
         model = find_model(args.diff_ckpt, args, device)
         refine_model = find_model(args.diff_refine_ckpt, args, device) if len(args.diff_refine_ckpt) > 0 else None
         diffusion_pipeline = DiffisionPipeline(args)
         events = diffusion_pipeline.generate(model, events, refine_model)
 
-    # TODO: Generate snapping info, generate timing, and resnap timing events
     # TODO: Generate hitsound info
-    postprocessor.generate(events)
+    postprocessor.generate(events, timing)
 
 
 if __name__ == "__main__":
