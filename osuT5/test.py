@@ -171,7 +171,7 @@ def test(args: DictConfig, accelerator: Accelerator, model, tokenizer, preprefix
                 if prefix == '':
                     continue
 
-                x_name = f"{prefix}/{x_name}"
+                y_name = f"{prefix}/{y_name}"
 
             bin_accs = bin_totals / bin_counts
             wandb.define_metric(y_name, step_metric=x_name)
