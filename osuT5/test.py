@@ -237,7 +237,7 @@ def main(args: DictConfig):
     # noinspection PyTypeChecker
     model = accelerator.prepare(model)
 
-    args.data.sample_weights_path = "../../../rcomplexion/rhythm_complexities.csv"
+    args.data.sample_weights_path = "../../../datasets/rhythm_complexities.csv"
     args.data.timing_random_offset = 0
     test(args, accelerator, model, tokenizer, "test")
 
