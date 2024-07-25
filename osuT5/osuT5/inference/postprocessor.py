@@ -167,13 +167,13 @@ class Postprocessor(object):
                 volume = event.value
 
                 # Populate slider hitsounds if a slider is being created
-                if len(ho_info) == 8:
-                    if ho_info[7] is None:
+                if len(ho_info) == 9:
+                    if ho_info[8] is None:
                         # First hitsounds after the head should be the slider body hitsounds
-                        ho_info[4] = hitsounds
-                        ho_info[5] = sampleset
-                        ho_info[6] = addition
-                        ho_info[7] = volume
+                        ho_info[5] = hitsounds
+                        ho_info[6] = sampleset
+                        ho_info[7] = addition
+                        ho_info[8] = volume
                     else:
                         # Subsequent hitsounds should be the slider node samples
                         node_samples.append((hitsounds, sampleset, addition, volume))
@@ -195,7 +195,7 @@ class Postprocessor(object):
                 ho_info = []
 
             elif hit_type == EventType.SLIDER_HEAD:
-                ho_info = [x, y, time, new_combo, None, None, None, None]
+                ho_info = [x, y, time, new_combo, None, None, None, None, None]
                 anchor_info = []
                 node_samples = [(hitsounds, sampleset, addition, volume)]
 
@@ -212,11 +212,11 @@ class Postprocessor(object):
                 anchor_info.append(('B', x, y))
                 anchor_info.append(('B', x, y))
 
-            elif hit_type == EventType.LAST_ANCHOR:
-                ho_info.append(time)
+            elif hit_type == EventType.LAST_ANCHOR and len(ho_info) == 9:
+                ho_info[4] = time
                 anchor_info.append(('B', x, y))
 
-            elif hit_type == EventType.SLIDER_END and len(ho_info) == 5 and len(anchor_info) > 0:
+            elif hit_type == EventType.SLIDER_END and len(ho_info) == 9 and ho_info[4] is not None and len(anchor_info) > 0:
                 slider_start_time = int(round(ho_info[2]))
                 curve_type = anchor_info[0][0]
                 span_duration = ho_info[4] - ho_info[2]
@@ -258,7 +258,7 @@ class Postprocessor(object):
                 node_sampleset = "|".join(f"{ns[1]}:{ns[2]}" for ns in node_samples)
 
                 hit_object_strings.append(
-                    f"{int(round(ho_info[0]))},{int(round(ho_info[1]))},{slider_start_time},{2 | ho_info[3]},{ho_info[4]},{curve_type}|{control_points},{slides},{adjusted_length},{node_hitsounds},{node_sampleset},{ho_info[5]}:{ho_info[6]}:0:0:"
+                    f"{int(round(ho_info[0]))},{int(round(ho_info[1]))},{slider_start_time},{2 | ho_info[3]},{ho_info[5]},{curve_type}|{control_points},{slides},{adjusted_length},{node_hitsounds},{node_sampleset},{ho_info[6]}:{ho_info[7]}:0:0:"
                 )
 
                 # Set volume for each node sample
@@ -267,9 +267,9 @@ class Postprocessor(object):
                     node_volume = node_samples[i][3]
                     self.set_volume(timedelta(milliseconds=t), node_volume, timing)
 
-                    if ho_info[7] != node_volume and i < slides and span_duration > 6:
+                    if ho_info[8] != node_volume and i < slides and span_duration > 6:
                         # Add a volume change after each node sample to make sure the body volume is maintained
-                        self.set_volume(timedelta(milliseconds=t + 6), ho_info[7], timing)
+                        self.set_volume(timedelta(milliseconds=t + 6), ho_info[8], timing)
 
                 ho_info = []
                 anchor_info = []
@@ -457,7 +457,7 @@ class Postprocessor(object):
     def resnap(time: float, tp: TimingPoint, snap_divisor: int) -> float:
         """Resnap a time to the nearest beat divisor."""
         d = tp.ms_per_beat / snap_divisor
-        remainder = time - tp.offset.total_seconds() * 1000 % d
+        remainder = (time - tp.offset.total_seconds() * 1000) % d
 
         if remainder < d / 2:
             return time - remainder

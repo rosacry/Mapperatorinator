@@ -109,7 +109,7 @@ def main(args: DictConfig):
         other_beatmap_path = Path(args.other_beatmap_path)
         timing = Beatmap.from_path(other_beatmap_path).timing_points
         events = postprocessor.resnap_events(events, timing)
-    elif args.osuT5.add_timing:
+    elif args.osut5.data.add_timing:
         timing = postprocessor.generate_timing(events)
         events = postprocessor.resnap_events(events, timing)
 
