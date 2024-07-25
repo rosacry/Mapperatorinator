@@ -72,9 +72,8 @@ class Pipeline(object):
             events: List of Event object lists.
             event_times: Corresponding event times of Event object lists in miliseconds.
         """
-
-        if descriptors is None or not self.add_descriptors:
-            descriptors = []
+        if descriptors is None:
+            descriptors = ["unknown"] if self.add_descriptors else []
 
         events = []
         event_times = []
@@ -167,13 +166,13 @@ class Pipeline(object):
             post_tokens = self._encode(post_events, frame_time)
             post_token_length = post_tokens.shape[1]
 
-            other_events = self._get_events_time_range(
+            context_events = self._get_events_time_range(
                 other_events, other_event_times, frame_time,
-                frame_time + self.miliseconds_per_sequence) if self.add_gd_context else []
-            other_tokens = self._encode(other_events, frame_time)
+                frame_time + self.miliseconds_per_sequence)
+            context_tokens = self._encode(context_events, frame_time)
 
             # Get prefix tokens
-            prefix = torch.concatenate([context_sos, other_special_tokens, other_tokens, context_eos, special_tokens, prev_tokens], dim=-1)
+            prefix = torch.concatenate([context_sos, other_special_tokens, context_tokens, context_eos, special_tokens, prev_tokens], dim=-1)
             if self.center_pad_decoder:
                 prefix = F.pad(prefix, (self.tgt_seq_len // 2 - prefix.shape[1], 0), value=self.tokenizer.pad_id)
             prefix_length = prefix.shape[1]

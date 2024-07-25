@@ -9,7 +9,7 @@ beatmap_id: -1          # Beatmap ID to use as style
 difficulty: -1          # Difficulty star rating to map
 mapper_id: -1           # Mapper ID to use as style
 descriptors: []         # List of descriptors to use for style
-timing_leniency: 10     # Number of milliseconds of error to allow for timing generation
+timing_leniency: 20     # Number of milliseconds of error to allow for timing generation
 context_type: ''        # Context type of other beatmap
 
 bpm: 120                # Beats per minute of input audio
