@@ -14,9 +14,9 @@ from osu_diffusion import DiT_models
 
 
 def prepare_args(args: DictConfig):
-    if args.context_type is not str:
+    if not isinstance(args.context_type, str):
         return
-    args.context_type = ContextType[args.context_type] if args.context_type != "" else None
+    args.context_type = ContextType(args.context_type) if args.context_type != "" else None
 
 
 def get_args_from_beatmap(args: DictConfig, tokenizer: Tokenizer):

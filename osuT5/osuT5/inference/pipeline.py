@@ -42,7 +42,7 @@ class Pipeline(object):
         self.max_pre_token_len = args.osut5.data.max_pre_token_len
         self.add_pre_tokens = args.osut5.data.add_pre_tokens
         self.add_gd_context = args.osut5.data.add_gd_context
-        self.parser = OsuParser(args.osuT5, self.tokenizer)
+        self.parser = OsuParser(args.osut5, self.tokenizer)
         self.need_beatmap_idx = args.osut5.model.do_style_embed
 
     def generate(
