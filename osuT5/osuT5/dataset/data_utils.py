@@ -45,6 +45,8 @@ def update_event_times(events: list[Event], event_times: list[float], end_time: 
         EventType.SLIDER_HEAD,
         EventType.LAST_ANCHOR,
         EventType.SLIDER_END,
+        EventType.BEAT,
+        EventType.MEASURE,
     ]
 
     start_index = len(event_times)
