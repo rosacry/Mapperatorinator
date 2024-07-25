@@ -7,3 +7,4 @@ defaults:
 version: 'osuT5 V16'        # Beatmap version
 lookback: 0.5             # Fraction of audio sequence to fill with tokens from previous inference window
 lookahead: 0.4            # Fraction of audio sequence to skip at the end of the audio window
+context_type: none        # Context type of other beatmap

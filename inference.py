@@ -8,12 +8,16 @@ from slider import Beatmap
 import routed_pickle
 from diffusion_pipeline import DiffisionPipeline
 from osuT5.osuT5.inference import Preprocessor, Pipeline, Postprocessor
-from osuT5.osuT5.tokenizer import Tokenizer
+from osuT5.osuT5.tokenizer import Tokenizer, ContextType
 from osuT5.osuT5.utils import get_model
 from osu_diffusion import DiT_models
 
 
-def get_args_from_beatmap(args: DictConfig):
+def prepare_args(args: DictConfig):
+    args.context_type = ContextType[args.context_type] if args.context_type != "" else None
+
+
+def get_args_from_beatmap(args: DictConfig, tokenizer: Tokenizer):
     if args.beatmap_path is None or args.beatmap_path == "":
         return
 
@@ -33,6 +37,9 @@ def get_args_from_beatmap(args: DictConfig):
     args.beatmap_id = beatmap.beatmap_id if args.beatmap_id == -1 else args.beatmap_id
     args.style_id = beatmap.beatmap_id if args.style_id == -1 else args.style_id
     args.difficulty = float(beatmap.stars()) if args.difficulty == -1 else args.difficulty
+    args.mapper_id = tokenizer.mapper_idx.get(beatmap.beatmap_id, -1) if args.mapper_id == -1 else args.mapper_id
+    args.descriptors = tokenizer.beatmap_descriptors.get(beatmap.beatmap_id, []) if len(args.descriptors) == 0 else args.descriptors
+    args.other_beatmap_path = args.beatmap_path
 
 
 def find_model(ckpt_path, args: DictConfig, device):
@@ -57,8 +64,8 @@ def main(args: DictConfig):
     # args.beatmap_path = "C:\\Users\\Olivier\\AppData\\Local\\osu!\\Songs\\989342 Denkishiki Karen Ongaku Shuudan - Aoki Kotou no Anguis\\Denkishiki Karen Ongaku Shuudan - Aoki Kotou no Anguis (OliBomby) [Ardens Spes].osu"
     # args.beatmap_path = "C:\\Users\\Olivier\\AppData\\Local\\osu!\\Songs\\qyoh for upload\\Camellia - Qyoh (Nine Stars) (OliBomby) [Yoalteuctin (Rabbit Hole Collab)].osu"
     # args.beatmap_path = "C:\\Users\\Olivier\\AppData\\Local\\osu!\\Songs\\1903968 Kisumi Reika - Sekai wa Futari no Tame ni\\Kisumi Reika - Sekai wa Futari no Tame ni (Ayesha Altugle) [Normal].osu"
-    # args.other_beatmap_path = args.beatmap_path
-    get_args_from_beatmap(args)
+
+    prepare_args(args)
 
     torch.set_grad_enabled(False)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -68,6 +75,8 @@ def main(args: DictConfig):
 
     tokenizer = Tokenizer()
     tokenizer.load_state_dict(tokenizer_state)
+
+    get_args_from_beatmap(args, tokenizer)
 
     model = get_model(args.osut5, tokenizer)
     model.load_state_dict(model_state)
@@ -80,11 +89,25 @@ def main(args: DictConfig):
 
     audio = preprocessor.load(args.audio_path)
     sequences = preprocessor.segment(audio)
-    events = pipeline.generate(model, sequences, args.beatmap_id, args.difficulty, args.other_beatmap_path)
+    events = pipeline.generate(
+        model=model,
+        sequences=sequences,
+        beatmap_id=args.beatmap_id,
+        difficulty=args.difficulty,
+        mapper_id=args.mapper_id,
+        descriptors=args.descriptors,
+        other_beatmap_path=args.other_beatmap_path,
+        context_type=args.context_type,
+    )
 
     # Generate timing and resnap timing events
     timing = None
-    if args.osuT5.add_timing:
+    if args.context_type == ContextType.TIMING or args.context_type == ContextType.NO_HS or args.context_type == ContextType.GD:
+        # Exact timing is provided in the other beatmap, so we don't need to generate it
+        other_beatmap_path = Path(args.other_beatmap_path)
+        timing = Beatmap.from_path(other_beatmap_path).timing_points
+        events = postprocessor.resnap_events(events, timing)
+    elif args.osuT5.add_timing:
         timing = postprocessor.generate_timing(events)
         events = postprocessor.resnap_events(events, timing)
 
