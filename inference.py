@@ -94,7 +94,6 @@ def main(args: DictConfig):
         diffusion_pipeline = DiffisionPipeline(args)
         events = diffusion_pipeline.generate(model, events, refine_model)
 
-    # TODO: Generate hitsound info
     postprocessor.generate(events, timing)
 
 
