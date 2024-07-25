@@ -336,6 +336,7 @@ class Postprocessor(object):
 
             if snap_divisor > 0:
                 tp = self.timing_point_at(timedelta(milliseconds=time), timing)
+                tp = tp if tp.parent is None else tp.parent
                 time = int(self.resnap(time, tp, snap_divisor))
 
             resnapped_events.append(Event(EventType.TIME_SHIFT, time))
