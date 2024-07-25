@@ -69,7 +69,7 @@ def test(args: DictConfig, accelerator: Accelerator, model, tokenizer, preprefix
 
             rhythm_complexity: Optional[np.ndarray] = None
             if "sample_weights" in batch:
-                rhythm_complexity = batch["sample_weights"].cpu().numpy()
+                rhythm_complexity = batch["sample_weights"]
 
             # We can't use the beatmap idx of the test set because these are not known by the model
             del batch["beatmap_idx"]
@@ -78,8 +78,8 @@ def test(args: DictConfig, accelerator: Accelerator, model, tokenizer, preprefix
             loss = outputs.loss
             preds = torch.argmax(outputs.logits, dim=-1)
             labels = batch["labels"]
-            
-            def gather_metrics(loss, preds, labels, prefix=''):
+
+            def gather_metrics(loss, preds, labels, rhythm_complexity=None, prefix=''):
                 # Calculate accuracy metrics
                 stats = get_stats(loss, preds, labels, tokenizer)
 
@@ -110,7 +110,7 @@ def test(args: DictConfig, accelerator: Accelerator, model, tokenizer, preprefix
 
                 # Bin labels by time and calculate accuracy
                 preds = preds.detach().cpu().numpy()
-                labels = batch["labels"].detach().cpu().numpy()
+                labels = labels.detach().cpu().numpy()
                 label_times = np.empty(labels.shape, dtype=np.float32)
                 for j in range(len(labels)):
                     t = 0
@@ -132,6 +132,7 @@ def test(args: DictConfig, accelerator: Accelerator, model, tokenizer, preprefix
 
                 # Bin timing accuracy by rhythm complexity
                 if rhythm_complexity is not None:
+                    rhythm_complexity = rhythm_complexity.cpu().numpy()
                     binned_rhythm_complexity = np.digitize(rhythm_complexity, rhythm_complexity_bins)
                     for i in range(len(rhythm_complexity)):
                         sample_bin = np.clip(binned_rhythm_complexity[i], 0, n_bins - 1)
@@ -155,14 +156,15 @@ def test(args: DictConfig, accelerator: Accelerator, model, tokenizer, preprefix
                     ct_preds = preds[ct_index]
                     ct_labels = labels[ct_index]
                     ct_weights = batch["sample_weights"][ct_index]
+                    ct_rhythm_complexity = rhythm_complexity[ct_index] if rhythm_complexity is not None else None
                     ct_loss = calc_loss(loss_fn, ct_logits, ct_labels, ct_weights)
 
                     if ct == ContextType.NONE:
                         cts = ''
 
-                    gather_metrics(ct_loss, ct_preds, ct_labels, prefix=cts)
+                    gather_metrics(ct_loss, ct_preds, ct_labels, ct_rhythm_complexity, prefix=cts)
             else:
-                gather_metrics(loss, preds, labels)
+                gather_metrics(loss, preds, labels, rhythm_complexity)
 
         def plot_bins(bin_totals, bin_counts, bins, y_name, x_name, prefixes):
             for prefix in reversed(prefixes):
