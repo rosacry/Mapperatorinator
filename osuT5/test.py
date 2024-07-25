@@ -78,28 +78,7 @@ def test(args: DictConfig, accelerator: Accelerator, model, tokenizer, preprefix
             loss = outputs.loss
             preds = torch.argmax(outputs.logits, dim=-1)
             labels = batch["labels"]
-
-            if len(args.data.context_types) > 0:
-                for cts in args.data.context_types:
-                    ct = ContextType(cts)
-                    ct_index = batch['decoder_input_ids'][:, 0] == tokenizer.context_sos[ct]
-
-                    if not ct_index.any():
-                        continue
-
-                    ct_logits = outputs.logits[ct_index]
-                    ct_preds = preds[ct_index]
-                    ct_labels = labels[ct_index]
-                    ct_weights = batch["sample_weights"][ct_index]
-                    ct_loss = calc_loss(loss_fn, ct_logits, ct_labels, ct_weights)
-
-                    if ct == ContextType.NONE:
-                        cts = ''
-
-                    gather_metrics(ct_loss, ct_preds, ct_labels, prefix=cts)
-            else:
-                gather_metrics(loss, preds, labels)
-
+            
             def gather_metrics(loss, preds, labels, prefix=''):
                 # Calculate accuracy metrics
                 stats = get_stats(loss, preds, labels, tokenizer)
@@ -163,6 +142,27 @@ def test(args: DictConfig, accelerator: Accelerator, model, tokenizer, preprefix
                         rhythm_complexity_bin_totals[prefix][sample_bin] += np.sum(sample)
                         rhythm_complexity_bin_counts[prefix][sample_bin] += len(sample)
                         fuzzy_rhythm_complexity_bin_totals[prefix][sample_bin] += np.sum(fuzzy_sample)
+
+            if len(args.data.context_types) > 0:
+                for cts in args.data.context_types:
+                    ct = ContextType(cts)
+                    ct_index = batch['decoder_input_ids'][:, 0] == tokenizer.context_sos[ct]
+
+                    if not ct_index.any():
+                        continue
+
+                    ct_logits = outputs.logits[ct_index]
+                    ct_preds = preds[ct_index]
+                    ct_labels = labels[ct_index]
+                    ct_weights = batch["sample_weights"][ct_index]
+                    ct_loss = calc_loss(loss_fn, ct_logits, ct_labels, ct_weights)
+
+                    if ct == ContextType.NONE:
+                        cts = ''
+
+                    gather_metrics(ct_loss, ct_preds, ct_labels, prefix=cts)
+            else:
+                gather_metrics(loss, preds, labels)
 
         def plot_bins(bin_totals, bin_counts, bins, y_name, x_name, prefixes):
             for prefix in reversed(prefixes):
