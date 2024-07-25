@@ -120,8 +120,13 @@ class Postprocessor(object):
         y = 192
         has_pos = False
         new_combo = 0
+        hitsounds = 0
+        sampleset = 0
+        addition = 0
+        volume = 100
         ho_info = []
         anchor_info = []
+        node_samples = []
 
         if timing is None:
             timing = [TimingPoint(
@@ -153,9 +158,30 @@ class Postprocessor(object):
             elif hit_type == EventType.NEW_COMBO:
                 new_combo = 4
                 continue
+            elif hit_type == EventType.HITSOUND:
+                hitsounds = (event.value % 8) * 2
+                sampleset = ((event.value // 8) % 3) + 1
+                addition = ((event.value // 24) % 3) + 1
+                continue
+            elif hit_type == EventType.VOLUME:
+                volume = event.value
+
+                # Populate slider hitsounds if a slider is being created
+                if len(ho_info) == 8:
+                    if ho_info[7] is None:
+                        # First hitsounds after the head should be the slider body hitsounds
+                        ho_info[4] = hitsounds
+                        ho_info[5] = sampleset
+                        ho_info[6] = addition
+                        ho_info[7] = volume
+                    else:
+                        # Subsequent hitsounds should be the slider node samples
+                        node_samples.append((hitsounds, sampleset, addition, volume))
+                continue
 
             if hit_type == EventType.CIRCLE:
-                hit_object_strings.append(f"{int(round(x))},{int(round(y))},{int(round(time))},{1 | new_combo},0")
+                hit_object_strings.append(f"{int(round(x))},{int(round(y))},{int(round(time))},{1 | new_combo},{hitsounds},{sampleset}:{addition}:0:0:")
+                self.set_volume(timedelta(milliseconds=int(round(time))), volume, timing)
                 ho_info = []
 
             elif hit_type == EventType.SPINNER:
@@ -163,13 +189,15 @@ class Postprocessor(object):
 
             elif hit_type == EventType.SPINNER_END and len(ho_info) == 2:
                 hit_object_strings.append(
-                    f"{256},{192},{int(round(ho_info[0]))},{8 | ho_info[1]},0,{int(round(time))}"
+                    f"{256},{192},{int(round(ho_info[0]))},{8 | ho_info[1]},{hitsounds},{int(round(time))},{sampleset}:{addition}:0:0:"
                 )
+                self.set_volume(timedelta(milliseconds=int(round(time))), volume, timing)
                 ho_info = []
 
             elif hit_type == EventType.SLIDER_HEAD:
-                ho_info = [x, y, time, new_combo]
+                ho_info = [x, y, time, new_combo, None, None, None, None]
                 anchor_info = []
+                node_samples = [(hitsounds, sampleset, addition, volume)]
 
             elif hit_type == EventType.BEZIER_ANCHOR:
                 anchor_info.append(('B', x, y))
@@ -222,13 +250,30 @@ class Postprocessor(object):
 
                 if sv != last_sv:
                     timing.insert(timing.index(tp) + 1, TimingPoint(
-                        timedelta(milliseconds=slider_start_time), -100 / sv, 4, 2, 0, 100, None, False
+                        timedelta(milliseconds=slider_start_time), -100 / sv, tp.meter, tp.sample_type, tp.sample_set, tp.volume, redline, tp.kiai_mode
                     ))
 
                 control_points = "|".join(f"{int(round(cp[1]))}:{int(round(cp[2]))}" for cp in anchor_info)
+                node_hitsounds = "|".join(str(ns[0]) for ns in node_samples)
+                node_sampleset = "|".join(f"{ns[1]}:{ns[2]}" for ns in node_samples)
+
                 hit_object_strings.append(
-                    f"{int(round(ho_info[0]))},{int(round(ho_info[1]))},{int(round(ho_info[2]))},{2 | ho_info[3]},0,{curve_type}|{control_points},{slides},{adjusted_length}"
+                    f"{int(round(ho_info[0]))},{int(round(ho_info[1]))},{slider_start_time},{2 | ho_info[3]},{ho_info[4]},{curve_type}|{control_points},{slides},{adjusted_length},{node_hitsounds},{node_sampleset},{ho_info[5]}:{ho_info[6]}:0:0:"
                 )
+
+                # Set volume for each node sample
+                for i in range(min(slides + 1, len(node_samples))):
+                    t = int(round(ho_info[2] + span_duration * i))
+                    node_volume = node_samples[i][3]
+                    self.set_volume(timedelta(milliseconds=t), node_volume, timing)
+
+                    if ho_info[7] != node_volume and i < slides and span_duration > 6:
+                        # Add a volume change after each node sample to make sure the body volume is maintained
+                        self.set_volume(timedelta(milliseconds=t + 6), ho_info[7], timing)
+
+                ho_info = []
+                anchor_info = []
+                node_samples = []
 
             new_combo = 0
 
@@ -244,6 +289,20 @@ class Postprocessor(object):
             osu_path = os.path.join(self.output_path, f"beatmap{str(uuid.uuid4().hex)}{OSU_FILE_EXTENSION}")
             with open(osu_path, "w") as osu_file:
                 osu_file.write(result)
+
+    def set_volume(self, time: timedelta, volume: int, timing: list[TimingPoint]):
+        """Set the volume of the hitsounds at a specific time."""
+        tp = self.timing_point_at(time, timing)
+
+        if tp.volume == volume:
+            return
+
+        if tp.offset == time:
+            tp.volume = volume
+        else:
+            timing.insert(timing.index(tp) + 1, TimingPoint(
+                time, tp.ms_per_beat, tp.meter, tp.sample_type, tp.sample_set, volume, tp.parent, tp.kiai_mode
+            ))
 
     def get_human_sv_and_length(self, req_length, length, span_duration, last_sv, redline, new_combo):
         # Only change sv if the difference is more than 10%
