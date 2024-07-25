@@ -7,7 +7,10 @@ lookback: 0             # Fraction of audio sequence to fill with tokens from pr
 lookahead: 0            # Fraction of audio sequence to skip at the end of the audio window
 beatmap_id: -1          # Beatmap ID to use as style
 difficulty: -1          # Difficulty star rating to map
+mapper_id: -1           # Mapper ID to use as style
+descriptors: []         # List of descriptors to use for style
 timing_leniency: 10     # Number of milliseconds of error to allow for timing generation
+context_type: None      # Context type of other beatmap
 
 bpm: 120                # Beats per minute of input audio
 offset: 0               # Start of beat, in miliseconds, from the beginning of input audio

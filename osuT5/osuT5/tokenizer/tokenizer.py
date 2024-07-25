@@ -233,6 +233,11 @@ class Tokenizer:
         """Converts beatmap id into token id."""
         return self.encode(self.encode_mapper_event(beatmap_id))
 
+    def encode_mapper_id(self, user_id: int) -> int:
+        """Converts user id into token id."""
+        mapper_idx = self.mapper_idx.get(user_id, self.num_mapper_classes)
+        return self.encode(Event(type=EventType.MAPPER, value=mapper_idx))
+
     @property
     def mapper_unk(self) -> int:
         """Gets the unknown mapper value token id."""
@@ -245,6 +250,11 @@ class Tokenizer:
     def encode_descriptor(self, beatmap_id: int) -> list[int]:
         """Converts beatmap id into token ids."""
         return [self.encode(event) for event in self.encode_descriptor_events(beatmap_id)]
+
+    def encode_descriptor_name(self, descriptor: str) -> int:
+        """Converts descriptor into token id."""
+        descriptor_idx = self.descriptor_idx.get(descriptor, self.num_descriptor_classes)
+        return self.encode(Event(type=EventType.DESCRIPTOR, value=descriptor_idx))
 
     @property
     def descriptor_unk(self) -> int:

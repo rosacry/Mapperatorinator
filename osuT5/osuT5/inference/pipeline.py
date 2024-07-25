@@ -10,8 +10,8 @@ from tqdm import tqdm
 from omegaconf import DictConfig
 
 from ..dataset import OsuParser
-from ..dataset.data_utils import update_event_times
-from ..tokenizer import Event, EventType, Tokenizer
+from ..dataset.data_utils import update_event_times, remove_events_of_type
+from ..tokenizer import Event, EventType, Tokenizer, ContextType
 from ..model import OsuT
 
 MILISECONDS_PER_SECOND = 1000
@@ -37,12 +37,25 @@ class Pipeline(object):
         self.special_token_len = args.osut5.data.special_token_len
         self.diff_token_index = args.osut5.data.diff_token_index
         self.style_token_index = args.osut5.data.style_token_index
+        self.mapper_token_index = args.osut5.data.mapper_token_index
+        self.add_descriptors = args.osut5.data.add_descriptors
         self.max_pre_token_len = args.osut5.data.max_pre_token_len
         self.add_pre_tokens = args.osut5.data.add_pre_tokens
         self.add_gd_context = args.osut5.data.add_gd_context
         self.parser = OsuParser(args.osuT5, self.tokenizer)
+        self.need_beatmap_idx = args.osut5.model.do_style_embed
 
-    def generate(self, model: OsuT, sequences: torch.Tensor, beatmap_id: int = -1, difficulty: float = -1, other_beatmap_path: str = '') -> list[Event]:
+    def generate(
+            self,
+            model: OsuT,
+            sequences: torch.Tensor,
+            beatmap_id: int = -1,
+            difficulty: float = -1,
+            mapper_id: int = -1,
+            descriptors=None,
+            other_beatmap_path: str = '',
+            context_type: ContextType = None,
+    ) -> list[Event]:
         """Generate a list of Event object lists and their timestamps given source sequences.
 
         Args:
@@ -50,62 +63,101 @@ class Pipeline(object):
             sequences: A list of batched source sequences.
             beatmap_id: Beatmap ID of the desired style.
             difficulty: The desired difficulty in star rating.
+            mapper_id: Mapper ID for the style of beatmap.
+            descriptors: List of descriptors for the style of beatmap.
             other_beatmap_path: Path to the beatmap file to use as context.
+            context_type: Type of context to use for inference.
 
         Returns:
             events: List of Event object lists.
             event_times: Corresponding event times of Event object lists in miliseconds.
         """
 
+        if descriptors is None or not self.add_descriptors:
+            descriptors = []
+
         events = []
         event_times = []
 
         idx_dict = self.tokenizer.beatmap_idx
-        if beatmap_id in idx_dict:
-            beatmap_idx = torch.tensor([idx_dict[beatmap_id]], dtype=torch.long, device=self.device)
-            style_token = self.tokenizer.encode_style(beatmap_id)
-        else:
-            print(f"Beatmap ID {beatmap_id} not found in dataset, using default style.")
-            beatmap_idx = torch.tensor([self.tokenizer.num_classes], dtype=torch.long, device=self.device)
-            style_token = self.tokenizer.style_unk
+        beatmap_idx = torch.tensor([self.tokenizer.num_classes], dtype=torch.long, device=self.device)
+        if self.need_beatmap_idx:
+            if beatmap_id in idx_dict:
+                beatmap_idx = torch.tensor([idx_dict[beatmap_id]], dtype=torch.long, device=self.device)
+            else:
+                print(f"Beatmap ID {beatmap_id} not found in dataset, using default style.")
 
-        diff_token = self.tokenizer.encode_diff(difficulty) if difficulty != -1 else self.tokenizer.diff_unk
+        # Prepare special tokens
+        special_tokens = torch.empty((1, self.special_token_len + len(descriptors)), dtype=torch.long, device=self.device)
 
-        special_tokens = torch.empty((1, self.special_token_len), dtype=torch.long, device=self.device)
-        special_tokens[:, self.diff_token_index] = diff_token
-        special_tokens[:, self.style_token_index] = style_token
+        if self.style_token_index >= 0:
+            style_token = self.tokenizer.encode_style(beatmap_id) if beatmap_id != -1 else self.tokenizer.style_unk
+            special_tokens[:, self.style_token_index] = style_token
+        if self.diff_token_index >= 0:
+            diff_token = self.tokenizer.encode_diff(difficulty) if difficulty != -1 else self.tokenizer.diff_unk
+            special_tokens[:, self.diff_token_index] = diff_token
+        if self.mapper_token_index >= 0:
+            mapper_token = self.tokenizer.encode_mapper_id(mapper_id) if mapper_id != -1 else self.tokenizer.mapper_unk
+            special_tokens[:, self.mapper_token_index] = mapper_token
+        for i, descriptor in enumerate(descriptors):
+            special_tokens[:, self.special_token_len + i] = self.tokenizer.encode_descriptor_name(descriptor)
 
-        if self.add_gd_context:
+        # Prepare other beatmap context
+        other_events, other_event_times = [], []
+        other_special_tokens = torch.empty((1, 0), dtype=torch.long, device=self.device)
+        if self.add_gd_context or context_type == ContextType.GD or context_type == ContextType.TIMING or context_type == ContextType.NO_HS:
             other_beatmap_path = Path(other_beatmap_path)
 
             if not other_beatmap_path.is_file():
                 raise FileNotFoundError(f"Beatmap file {other_beatmap_path} not found.")
 
             other_beatmap = Beatmap.from_path(other_beatmap_path)
-            other_beatmap_id = other_beatmap.beatmap_id
-            other_difficulty = float(other_beatmap.stars())
-            other_events = self.parser.parse(other_beatmap)
-            other_events, other_event_times = self._prepare_events(other_events)
 
-            if other_beatmap_id in idx_dict:
-                other_style_token = self.tokenizer.encode_style(other_beatmap_id)
-            else:
-                print(f"Other beatmap ID {other_beatmap_id} not found in dataset, using default style.")
-                other_style_token = self.tokenizer.style_unk
+            if self.add_gd_context or context_type == ContextType.GD:
+                other_events = self.parser.parse(other_beatmap)
+                other_beatmap_id = other_beatmap.beatmap_id
+                other_difficulty = float(other_beatmap.stars())
 
-            other_special_tokens = torch.empty((1, self.special_token_len), dtype=torch.long, device=self.device)
-            other_special_tokens[:, self.diff_token_index] = self.tokenizer.encode_diff(other_difficulty)
-            other_special_tokens[:, self.style_token_index] = other_style_token
-        else:
-            other_events, other_event_times = [], []
-            other_special_tokens = torch.empty((1, 0), dtype=torch.long, device=self.device)
+                if self.add_descriptors:
+                    other_descriptor_tokens = self.tokenizer.encode_descriptor(other_beatmap_id)
+                else:
+                    other_descriptor_tokens = []
 
+                other_special_tokens = torch.empty((1, self.special_token_len + len(other_descriptor_tokens)), dtype=torch.long, device=self.device)
+
+                if self.style_token_index >= 0:
+                    other_style_token = self.tokenizer.encode_style(other_beatmap_id)
+                    other_special_tokens[:, self.style_token_index] = other_style_token
+                if self.diff_token_index >= 0:
+                    other_diff_token = self.tokenizer.encode_diff(other_difficulty)
+                    other_special_tokens[:, self.diff_token_index] = other_diff_token
+                if self.mapper_token_index >= 0:
+                    other_mapper_token = self.tokenizer.encode_mapper(other_beatmap_id)
+                    other_special_tokens[:, self.mapper_token_index] = other_mapper_token
+                for i, descriptor_token in enumerate(other_descriptor_tokens):
+                    other_special_tokens[:, self.special_token_len + i] = descriptor_token
+            elif context_type == ContextType.NO_HS:
+                other_events = self.parser.parse(other_beatmap)
+                other_events = remove_events_of_type(other_events, [EventType.HITSOUND, EventType.VOLUME])
+            elif context_type == ContextType.TIMING:
+                other_events = self.parser.parse_timing(other_beatmap)
+
+        other_events, other_event_times = self._prepare_events(other_events)
+
+        # Prepare context type indicator tokens
+        context_sos = torch.tensor([[self.tokenizer.context_sos[context_type]]], dtype=torch.long, device=self.device)\
+            if context_type is not None else torch.empty((1, 0), dtype=torch.long, device=self.device)
+        context_eos = torch.tensor([[self.tokenizer.context_eos[context_type]]], dtype=torch.long, device=self.device)\
+            if context_type is not None else torch.empty((1, 0), dtype=torch.long, device=self.device)
+
+        # Start generation
         for sequence_index, frames in enumerate(tqdm(sequences)):
             # Get tokens of previous frame
             frame_time = sequence_index * self.miliseconds_per_stride
 
             prev_events = self._get_events_time_range(
-                events, event_times, frame_time - self.miliseconds_per_sequence, frame_time) if self.add_pre_tokens else []
+                events, event_times, frame_time - self.miliseconds_per_sequence, frame_time) \
+                if self.add_pre_tokens else []
             prev_tokens = self._encode(prev_events, frame_time)
             if 0 <= self.max_pre_token_len < prev_tokens.shape[1]:
                 prev_tokens = prev_tokens[:, -self.max_pre_token_len:]
@@ -116,11 +168,12 @@ class Pipeline(object):
             post_token_length = post_tokens.shape[1]
 
             other_events = self._get_events_time_range(
-                other_events, other_event_times, frame_time, frame_time + self.miliseconds_per_sequence) if self.add_gd_context else []
+                other_events, other_event_times, frame_time,
+                frame_time + self.miliseconds_per_sequence) if self.add_gd_context else []
             other_tokens = self._encode(other_events, frame_time)
 
             # Get prefix tokens
-            prefix = torch.concatenate([other_special_tokens, other_tokens, special_tokens, prev_tokens], dim=-1)
+            prefix = torch.concatenate([context_sos, other_special_tokens, other_tokens, context_eos, special_tokens, prev_tokens], dim=-1)
             if self.center_pad_decoder:
                 prefix = F.pad(prefix, (self.tgt_seq_len // 2 - prefix.shape[1], 0), value=self.tokenizer.pad_id)
             prefix_length = prefix.shape[1]
