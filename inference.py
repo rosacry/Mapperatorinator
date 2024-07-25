@@ -14,6 +14,8 @@ from osu_diffusion import DiT_models
 
 
 def prepare_args(args: DictConfig):
+    if args.context_type is not str:
+        return
     args.context_type = ContextType[args.context_type] if args.context_type != "" else None
 
 
