@@ -12,6 +12,7 @@ from omegaconf import DictConfig
 from slider import TimingPoint
 
 from .slider_path import SliderPath
+from .timing_points_change import TimingPointsChange
 from ..tokenizer import Event, EventType
 
 OSU_FILE_EXTENSION = ".osu"
@@ -181,7 +182,7 @@ class Postprocessor(object):
 
             if hit_type == EventType.CIRCLE:
                 hit_object_strings.append(f"{int(round(x))},{int(round(y))},{int(round(time))},{1 | new_combo},{hitsounds},{sampleset}:{addition}:0:0:")
-                self.set_volume(timedelta(milliseconds=int(round(time))), volume, timing)
+                timing = self.set_volume(timedelta(milliseconds=int(round(time))), volume, timing)
                 ho_info = []
 
             elif hit_type == EventType.SPINNER:
@@ -191,7 +192,7 @@ class Postprocessor(object):
                 hit_object_strings.append(
                     f"{256},{192},{int(round(ho_info[0]))},{8 | ho_info[1]},{hitsounds},{int(round(time))},{sampleset}:{addition}:0:0:"
                 )
-                self.set_volume(timedelta(milliseconds=int(round(time))), volume, timing)
+                timing = self.set_volume(timedelta(milliseconds=int(round(time))), volume, timing)
                 ho_info = []
 
             elif hit_type == EventType.SLIDER_HEAD:
@@ -249,9 +250,7 @@ class Postprocessor(object):
                     anchor_info = [(cp[0], (cp[1] - ho_info[0]) * scale + ho_info[0], (cp[2] - ho_info[1]) * scale + ho_info[1]) for cp in anchor_info]
 
                 if sv != last_sv:
-                    timing.insert(timing.index(tp) + 1, TimingPoint(
-                        timedelta(milliseconds=slider_start_time), -100 / sv, tp.meter, tp.sample_type, tp.sample_set, tp.volume, redline, tp.kiai_mode
-                    ))
+                    timing = self.set_sv(timedelta(milliseconds=slider_start_time), sv, timing)
 
                 control_points = "|".join(f"{int(round(cp[1]))}:{int(round(cp[2]))}" for cp in anchor_info)
                 node_hitsounds = "|".join(str(ns[0]) for ns in node_samples)
@@ -265,11 +264,11 @@ class Postprocessor(object):
                 for i in range(min(slides + 1, len(node_samples))):
                     t = int(round(ho_info[2] + span_duration * i))
                     node_volume = node_samples[i][3]
-                    self.set_volume(timedelta(milliseconds=t), node_volume, timing)
+                    timing = self.set_volume(timedelta(milliseconds=t), node_volume, timing)
 
                     if ho_info[8] != node_volume and i < slides and span_duration > 6:
                         # Add a volume change after each node sample to make sure the body volume is maintained
-                        self.set_volume(timedelta(milliseconds=t + 6), ho_info[8], timing)
+                        timing = self.set_volume(timedelta(milliseconds=t + 6), ho_info[8], timing)
 
                 ho_info = []
                 anchor_info = []
@@ -290,19 +289,19 @@ class Postprocessor(object):
             with open(osu_path, "w") as osu_file:
                 osu_file.write(result)
 
-    def set_volume(self, time: timedelta, volume: int, timing: list[TimingPoint]):
+    @staticmethod
+    def set_volume(time: timedelta, volume: int, timing: list[TimingPoint]) -> list[TimingPoint]:
         """Set the volume of the hitsounds at a specific time."""
-        tp = self.timing_point_at(time, timing)
+        tp = TimingPoint(time, -100, 4, 2, 0, volume, None, False)
+        tp_change = TimingPointsChange(tp, volume=True)
+        return tp_change.add_change(timing, True)
 
-        if tp.volume == volume:
-            return
-
-        if tp.offset == time:
-            tp.volume = volume
-        else:
-            timing.insert(timing.index(tp) + 1, TimingPoint(
-                time, tp.ms_per_beat, tp.meter, tp.sample_type, tp.sample_set, volume, tp.parent, tp.kiai_mode
-            ))
+    @staticmethod
+    def set_sv(time: timedelta, sv: float, timing: list[TimingPoint]) -> list[TimingPoint]:
+        """Set the slider velocity at a specific time."""
+        tp = TimingPoint(time, -100 / sv, 4, 2, 0, 100, None, False)
+        tp_change = TimingPointsChange(tp, mpb=True)
+        return tp_change.add_change(timing, True)
 
     def get_human_sv_and_length(self, req_length, length, span_duration, last_sv, redline, new_combo):
         # Only change sv if the difference is more than 10%
