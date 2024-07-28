@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import dataclasses
+import math
 import os
 import pathlib
 import uuid
 from datetime import timedelta
 from string import Template
+from typing import Optional
 
 import numpy as np
 from omegaconf import DictConfig
@@ -335,9 +337,7 @@ class Postprocessor(object):
                 snap_divisor = events[i + 1].value
 
             if snap_divisor > 0:
-                tp = self.timing_point_at(timedelta(milliseconds=time), timing)
-                tp = tp if tp.parent is None else tp.parent
-                time = int(self.resnap(time, tp, snap_divisor))
+                time = int(self.resnap(time, timing, snap_divisor))
 
             resnapped_events.append(Event(EventType.TIME_SHIFT, time))
 
@@ -356,6 +356,14 @@ class Postprocessor(object):
                 return tp
 
         return timing_points[0]
+
+    @staticmethod
+    def uninherited_timing_point_after(time: timedelta, timing_points: list[TimingPoint]) -> Optional[TimingPoint]:
+        for tp in timing_points:
+            if tp.offset > time and tp.parent is None:
+                return tp
+
+        return None
 
     def generate_timing(self, events: list[Event]) -> list[TimingPoint]:
         """Generate timing points from a list of Event objects."""
@@ -444,16 +452,26 @@ class Postprocessor(object):
 
         return timing
 
-    @staticmethod
-    def resnap(time: float, tp: TimingPoint, snap_divisor: int) -> float:
+    def resnap(self, time: float, timing: list[TimingPoint], snap_divisor: int, floor: bool=True) -> float:
         """Resnap a time to the nearest beat divisor."""
-        d = tp.ms_per_beat / snap_divisor
-        remainder = (time - tp.offset.total_seconds() * 1000) % d
+        before_tp = self.timing_point_at(timedelta(milliseconds=time), timing)
+        before_tp = before_tp if before_tp.parent is None else before_tp.parent
+        before_time = before_tp.offset.total_seconds() * 1000
+        after_tp = self.uninherited_timing_point_after(timedelta(milliseconds=time), timing)
+        after_time = after_tp.offset.total_seconds() * 1000 if after_tp is not None else None
+
+        d = before_tp.ms_per_beat / snap_divisor
+        remainder = (time - before_tp.offset.total_seconds() * 1000) % d
 
         if remainder < d / 2:
-            return time - remainder
+            new_time = time - remainder
+        else:
+            new_time = time + d - remainder
 
-        return time + d - remainder
+        if after_time is not None and new_time > before_time + 10 and new_time >= after_time - 10:
+            new_time = after_time
+
+        return math.floor(new_time) if floor else new_time
 
     def check_ms_per_beat(self, mpb_new: float, markers: list[Postprocessor.Marker], redline: TimingPoint):
         mpb_old = redline.ms_per_beat
