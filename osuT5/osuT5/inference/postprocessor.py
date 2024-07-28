@@ -12,7 +12,7 @@ from omegaconf import DictConfig
 from slider import TimingPoint
 
 from .slider_path import SliderPath
-from .timing_points_change import TimingPointsChange
+from .timing_points_change import TimingPointsChange, sort_timing_points
 from ..tokenizer import Event, EventType
 
 OSU_FILE_EXTENSION = ".osu"
@@ -321,6 +321,7 @@ class Postprocessor(object):
 
     def resnap_events(self, events: list[Event], timing: list[TimingPoint]) -> list[Event]:
         """Resnap events to the designated beat snap divisors."""
+        timing = sort_timing_points(timing)
         resnapped_events = []
         for i, event in enumerate(events):
             if event.type != EventType.TIME_SHIFT:
@@ -383,7 +384,8 @@ class Postprocessor(object):
 
         for marker in markers:
             time = marker.time
-            redline = timing[-1]
+            redline = self.timing_point_at(timedelta(milliseconds=time - 1), timing)
+            redline = redline if redline.parent is None else redline.parent
             redline_offset = redline.offset.total_seconds() * 1000
 
             if redline_offset == time:
@@ -400,16 +402,9 @@ class Postprocessor(object):
                     redline.meter = counter
                 else:
                     # We need to create a new redline
-                    timing.append(TimingPoint(
-                        timedelta(milliseconds=last_measure_time),
-                        redline.ms_per_beat,
-                        counter,
-                        redline.sample_type,
-                        redline.sample_set,
-                        redline.volume,
-                        None,
-                        redline.kiai_mode,
-                    ))
+                    tp = TimingPoint(timedelta(milliseconds=last_measure_time), 100, counter, 2, 0, 100, None, False)
+                    tp_change = TimingPointsChange(tp, meter=True)
+                    timing = tp_change.add_change(timing, True)
 
             counter = 0
             last_measure_time = time
@@ -417,6 +412,7 @@ class Postprocessor(object):
         for marker in markers:
             time = marker.time
             redline = self.timing_point_at(timedelta(milliseconds=time - 1), timing)
+            redline = redline if redline.parent is None else redline.parent
             redline_offset = redline.offset.total_seconds() * 1000
             beats_from_last_marker = marker.beats_from_last_marker
 
@@ -439,16 +435,12 @@ class Postprocessor(object):
                 redline.ms_per_beat = mpb
             elif len(markers_before) > 1:
                 last_time = markers_before[-2].time
-                timing.insert(timing.index(redline) + 1, TimingPoint(
+                tp = TimingPoint(
                     timedelta(milliseconds=last_time),
                     self.get_ms_per_beat(time - last_time, beats_from_last_marker, self.timing_leniency),
-                    redline.meter,
-                    redline.sample_type,
-                    redline.sample_set,
-                    redline.volume,
-                    None,
-                    redline.kiai_mode,
-                ))
+                    4, 2, 0, 100, None, False)
+                tp_change = TimingPointsChange(tp, mpb=True, uninherited=True)
+                timing = tp_change.add_change(timing, True)
 
         return timing
 
