@@ -118,7 +118,7 @@ class OsuT(nn.Module):
 
         decoder_inputs_embeds = self.decoder_embedder(decoder_input_ids)
         if self.input_features:
-            input_features = torch.swapaxes(inputs_embeds, 1, 2)
+            input_features = torch.swapaxes(inputs_embeds, 1, 2) if inputs_embeds is not None else None
             # noinspection PyTypeChecker
             output = self.transformer.forward(input_features=input_features,
                                               decoder_inputs_embeds=decoder_inputs_embeds,
