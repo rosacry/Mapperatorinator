@@ -4,3 +4,4 @@ defaults:
 
 name: 'openai/whisper-base'
 input_features: true
+do_style_embed: false
