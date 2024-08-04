@@ -22,6 +22,7 @@ version: 'osuT5'        # Beatmap version
 
 # Diffusion settings
 generate_positions: false      # Use diffusion to generate object positions
+compile: true          # PyTorch 2.0 optimization
 diff_ckpt: ''                  # Path to checkpoint for diffusion model
 diff_refine_ckpt: ''           # Path to checkpoint for refining diffusion model
 beatmap_idx: 'osu_diffusion/beatmap_idx.pickle'  # Path to beatmap index

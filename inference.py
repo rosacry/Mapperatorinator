@@ -72,8 +72,8 @@ def main(args: DictConfig):
     torch.set_grad_enabled(False)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     ckpt_path = Path(args.model_path)
-    model_state = torch.load(ckpt_path / "pytorch_model.bin", map_location=device)
-    tokenizer_state = torch.load(ckpt_path / "custom_checkpoint_0.pkl", pickle_module=routed_pickle)
+    model_state = torch.load(ckpt_path / "pytorch_model.bin", map_location=device, weights_only=True)
+    tokenizer_state = torch.load(ckpt_path / "custom_checkpoint_0.pkl", pickle_module=routed_pickle, weights_only=False)
 
     tokenizer = Tokenizer()
     tokenizer.load_state_dict(tokenizer_state)
@@ -115,6 +115,10 @@ def main(args: DictConfig):
 
     if args.generate_positions:
         model = find_model(args.diff_ckpt, args, device)
+
+        if args.compile:
+            model.forward = torch.compile(model.forward, mode="reduce-overhead", fullgraph=True)
+
         refine_model = find_model(args.diff_refine_ckpt, args, device) if len(args.diff_refine_ckpt) > 0 else None
         diffusion_pipeline = DiffisionPipeline(args)
         events = diffusion_pipeline.generate(model, events, refine_model)
