@@ -13,6 +13,7 @@ services:
                               - gpu
         volumes:
         - .:/workspace/Mapperatorinator
+        - ../datasets:/workspace/dataset
         network_mode: host
         container_name: mapperatorinator_space
         shm_size: 8gb

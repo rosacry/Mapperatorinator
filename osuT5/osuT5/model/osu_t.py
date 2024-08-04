@@ -122,7 +122,7 @@ class OsuT(nn.Module):
             # noinspection PyTypeChecker
             output = self.transformer.forward(input_features=input_features,
                                               decoder_inputs_embeds=decoder_inputs_embeds,
-                                              encoder_outputs=encoder_outputs, **kwargs)
+                                              encoder_outputs=encoder_outputs, labels=labels, **kwargs)
         else:
             output = self.transformer.forward(inputs_embeds=inputs_embeds, decoder_inputs_embeds=decoder_inputs_embeds,
                                               encoder_outputs=encoder_outputs, labels=labels, **kwargs)
