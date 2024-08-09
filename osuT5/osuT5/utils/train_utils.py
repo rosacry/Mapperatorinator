@@ -219,14 +219,14 @@ def eval_model(
                 ct_labels = labels[ct_index]
                 ct_weights = batch["sample_weights"][ct_index]
                 ct_loss = calc_loss(loss_fn, ct_logits, ct_labels, ct_weights)
-                stats = get_stats(ct_loss, ct_preds, ct_labels, tokenizer)
+                stats = get_stats(ct_loss, ct_preds, ct_labels, tokenizer, args)
 
                 if ct != ContextType.NONE:
                     stats = add_prefix(cts, stats)
 
                 averager.update(stats)
         else:
-            stats = get_stats(loss, preds, labels, tokenizer)
+            stats = get_stats(loss, preds, labels, tokenizer, args)
             averager.update(stats)
 
     averager.update({"time": time.time() - shared.last_log})
@@ -246,18 +246,22 @@ def calc_loss(loss_fn, logits, labels, sample_weights):
     return unreduced_loss.sum() / (labels != LABEL_IGNORE_ID).sum()
 
 
-def get_stats(loss, preds, labels, tokenizer):
+def get_stats(loss, preds, labels, tokenizer, args: DictConfig):
     stats = {"loss": loss.detach(),
              "timing_acc": acc_range(preds, labels, tokenizer.event_start[EventType.TIME_SHIFT],
                                      tokenizer.event_end[EventType.TIME_SHIFT]),
-             "spacing_acc": acc_range(preds, labels, tokenizer.event_start[EventType.DISTANCE],
-                                      tokenizer.event_end[EventType.DISTANCE]),
              "hitsound_acc": acc_range(preds, labels, tokenizer.event_start[EventType.HITSOUND],
                                        tokenizer.event_end[EventType.HITSOUND]),
              "volume_acc": acc_range(preds, labels, tokenizer.event_start[EventType.VOLUME],
                                      tokenizer.event_end[EventType.VOLUME]),
              "other_acc": acc_range(preds, labels, tokenizer.event_end[EventType.VOLUME],
                                     tokenizer.event_end[EventType.VOLUME] + tokenizer.vocab_size_out)}
+    if args.data.add_positions:
+        stats["position_acc"] = acc_range(preds, labels, tokenizer.event_start[EventType.POS_X],
+                                          tokenizer.event_end[EventType.POS_Y])
+    else:
+        stats["spacing_acc"] = acc_range(preds, labels, tokenizer.event_start[EventType.DISTANCE],
+                                         tokenizer.event_end[EventType.DISTANCE]),
     return stats
 
 

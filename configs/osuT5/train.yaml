@@ -51,6 +51,7 @@ data:                  # Data settings
   mappers_path: ''       # Path to file with all beatmap mappers
   add_timing: false      # Model beatmap timing
   add_hitsounds: false   # Model beatmap hitsounds
+  add_positions: false   # Model hit object coordinates instead of spacing
 
 
 dataloader:             # Dataloader settings

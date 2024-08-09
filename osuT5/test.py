@@ -81,7 +81,7 @@ def test(args: DictConfig, accelerator: Accelerator, model, tokenizer, preprefix
 
             def gather_metrics(loss, preds, labels, rhythm_complexity=None, prefix=''):
                 # Calculate accuracy metrics
-                stats = get_stats(loss, preds, labels, tokenizer)
+                stats = get_stats(loss, preds, labels, tokenizer, args)
 
                 if prefix != '':
                     stats = add_prefix(cts, stats)
