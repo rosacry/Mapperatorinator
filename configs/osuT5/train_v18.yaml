@@ -14,7 +14,8 @@ data:                  # Data settings
   mapper_token_index: 1
   add_descriptors: true
   timing_random_offset: 2
-  tgt_seq_len: 768
+  src_seq_len: 1024
+  tgt_seq_len: 1536
   rhythm_weight: 3.0    # Weight of rhythm tokens in the loss calculation
   sample_weights_path: "../../../datasets/rhythm_complexities.csv"    # Path to sample weights
   context_types: ["none", "timing", "no_hs", "gd"]      # List of context types to include in the dataset
@@ -27,7 +28,7 @@ data:                  # Data settings
   per_track: true
 
 dataloader:             # Dataloader settings
-  num_workers: 4
+  num_workers: 8
 
 optim:                  # Optimizer settings
   base_lr: 1e-2         # Should be scaled with the number of devices present
