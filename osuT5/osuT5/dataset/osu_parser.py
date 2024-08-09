@@ -14,11 +14,20 @@ from .data_utils import merge_events
 
 class OsuParser:
     def __init__(self, args: DictConfig, tokenizer: Tokenizer) -> None:
-        dist_range = tokenizer.event_range[EventType.DISTANCE]
-        self.dist_min = dist_range.min_value
-        self.dist_max = dist_range.max_value
         self.add_timing = args.data.add_timing
         self.add_hitsounds = args.data.add_hitsounds
+        self.add_positions = args.data.add_positions
+        if self.add_positions:
+            x_range = tokenizer.event_range[EventType.POS_X]
+            y_range = tokenizer.event_range[EventType.POS_Y]
+            self.x_min = x_range.min_value
+            self.x_max = x_range.max_value
+            self.y_min = y_range.min_value
+            self.y_max = y_range.max_value
+        else:
+            dist_range = tokenizer.event_range[EventType.DISTANCE]
+            self.dist_min = dist_range.min_value
+            self.dist_max = dist_range.max_value
 
     def parse(self, beatmap: Beatmap) -> list[Event]:
         # noinspection PyUnresolvedReferences
@@ -154,6 +163,16 @@ class OsuParser:
         events.append(Event(EventType.HITSOUND, hitsound_idx))
         events.append(Event(EventType.VOLUME, tp.volume))
 
+    def _add_position_event(self, pos: npt.NDArray, last_pos: npt.NDArray, events: list[Event]) -> npt.NDArray:
+        if self.add_positions:
+            events.append(Event(EventType.POS_X, int(np.clip(pos[0], self.x_min, self.x_max))))
+            events.append(Event(EventType.POS_Y, int(np.clip(pos[1], self.y_min, self.y_max))))
+        else:
+            dist = self._clip_dist(np.linalg.norm(pos - last_pos))
+            events.append(Event(EventType.DISTANCE, dist))
+        return pos
+
+
     def _parse_circle(self, circle: Circle, events: list[Event], last_pos: npt.NDArray, beatmap: Beatmap) -> npt.NDArray:
         """Parse a circle hit object.
 
@@ -166,16 +185,15 @@ class OsuParser:
             pos: Position of the circle.
         """
         pos = np.array(circle.position)
-        dist = self._clip_dist(np.linalg.norm(pos - last_pos))
 
         self._add_time_event(circle.time, beatmap, events)
-        events.append(Event(EventType.DISTANCE, dist))
+        last_pos = self._add_position_event(pos, last_pos, events)
         if circle.new_combo:
             events.append(Event(EventType.NEW_COMBO))
         self._add_hitsound_event(circle.time, circle.hitsound, circle.addition, beatmap, events)
         events.append(Event(EventType.CIRCLE))
 
-        return pos
+        return last_pos
 
     def _parse_slider(self, slider: Slider, events: list[Event], last_pos: npt.NDArray, beatmap: Beatmap) -> npt.NDArray:
         """Parse a slider hit object.
@@ -193,11 +211,9 @@ class OsuParser:
             return last_pos
 
         pos = np.array(slider.position)
-        dist = self._clip_dist(np.linalg.norm(pos - last_pos))
-        last_pos = pos
 
         self._add_time_event(slider.time, beatmap, events)
-        events.append(Event(EventType.DISTANCE, dist))
+        last_pos = self._add_position_event(pos, last_pos, events)
         if slider.new_combo:
             events.append(Event(EventType.NEW_COMBO))
         self._add_hitsound_event(slider.time, slider.edge_sounds[0] if len(slider.edge_sounds) > 0 else 0,
@@ -217,11 +233,9 @@ class OsuParser:
         def add_anchor_time_dist(i: int, last_pos: npt.NDArray, add_snap: bool = False) -> npt.NDArray:
             time = slider.time + i / (control_point_count - 1) * duration
             pos = np.array(slider.curve.points[i])
-            dist = self._clip_dist(np.linalg.norm(pos - last_pos))
-            last_pos = pos
 
             self._add_time_event(time, beatmap, events, add_snap)
-            events.append(Event(EventType.DISTANCE, dist))
+            last_pos = self._add_position_event(pos, last_pos, events)
 
             return last_pos
 
@@ -251,11 +265,9 @@ class OsuParser:
         events.append(Event(EventType.LAST_ANCHOR))
 
         pos = np.array(slider.curve(1))
-        dist = self._clip_dist(np.linalg.norm(pos - last_pos))
-        last_pos = pos
 
         self._add_time_event(slider.end_time, beatmap, events)
-        events.append(Event(EventType.DISTANCE, dist))
+        last_pos = self._add_position_event(pos, last_pos, events)
         self._add_hitsound_event(slider.end_time, slider.edge_sounds[-1] if len(slider.edge_sounds) > 0 else 0,
                                  slider.edge_additions[-1] if len(slider.edge_additions) > 0 else '0:0', beatmap, events)
         events.append(Event(EventType.SLIDER_END))

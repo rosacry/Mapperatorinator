@@ -42,7 +42,11 @@ class Tokenizer:
         self.beatmap_idx: dict[int, int] = {}  # beatmap_id -> beatmap_idx
         self.context_sos: dict[ContextType, int] = {}
         self.context_eos: dict[ContextType, int] = {}
-        self.event_ranges: list[EventRange] = [EventRange(EventType.TIME_SHIFT, -512, 512)]
+        self.event_ranges: list[EventRange] = [
+            EventRange(EventType.TIME_SHIFT, -512, 512),
+            EventRange(EventType.SNAPPING, 0, 16),
+            EventRange(EventType.DISTANCE, 0, 640),
+        ]
         self.input_event_ranges: list[EventRange] = []
         self.num_classes = 0
         self.num_diff_classes = 0
@@ -67,7 +71,10 @@ class Tokenizer:
             max_time_shift = int(miliseconds_per_sequence / MILISECONDS_PER_STEP)
             min_time_shift = -max_time_shift if args.data.add_pre_tokens or args.data.add_pre_tokens_at_step >= 0 else 0
 
-            self.event_ranges = [EventRange(EventType.TIME_SHIFT, min_time_shift, max_time_shift)]
+            self.event_ranges = [
+                EventRange(EventType.TIME_SHIFT, min_time_shift, max_time_shift),
+                EventRange(EventType.SNAPPING, 0, 16),
+            ]
             self.input_event_ranges: list[EventRange] = []
 
             self._init_beatmap_idx(args)
@@ -88,9 +95,13 @@ class Tokenizer:
                 self._init_descriptor_idx(args)
                 self.input_event_ranges.append(EventRange(EventType.DESCRIPTOR, 0, self.num_descriptor_classes))
 
+            if args.data.add_positions:
+                self.event_ranges.append(EventRange(EventType.POS_X, -256, 768))
+                self.event_ranges.append(EventRange(EventType.POS_Y, -256, 640))
+            else:
+                self.event_ranges.append(EventRange(EventType.DISTANCE, 0, 640))
+
         self.event_ranges: list[EventRange] = self.event_ranges + [
-            EventRange(EventType.SNAPPING, 0, 16),
-            EventRange(EventType.DISTANCE, 0, 640),
             EventRange(EventType.NEW_COMBO, 0, 0),
             EventRange(EventType.HITSOUND, 0, 2 ** 3 * 3 * 3),
             EventRange(EventType.VOLUME, 0, 100),
