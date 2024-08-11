@@ -314,7 +314,10 @@ class Postprocessor(object):
             sv = last_sv
         else:
             # Quantize the sv to multiples of 1/20 to 'humanize' the beatmap
-            sv = round(sv * 20) / 20
+            rounded_sv = round(sv * 20) / 20
+            if rounded_sv < 0.1:  # If the sv is low, try higher precision
+                rounded_sv = round(sv * 100) / 100
+            sv = rounded_sv if rounded_sv > 1E-5 else sv
 
         # Recalculate the required length to align with the actual sv
         adjusted_length = sv * span_duration * 100 / redline.ms_per_beat * self.slider_multiplier
