@@ -19,7 +19,7 @@ from osuT5.utils import (
 
 @hydra.main(config_path="../configs/osuT5", config_name="train_v1", version_base="1.1")
 def main(args: DictConfig):
-    ddp_kwargs = DistributedDataParallelKwargs(find_unused_parameters=args.optim.grad_acc > 1)
+    ddp_kwargs = DistributedDataParallelKwargs(find_unused_parameters=False)
     accelerator = Accelerator(
         cpu=args.device == "cpu",
         mixed_precision=args.precision,
