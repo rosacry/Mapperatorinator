@@ -78,7 +78,7 @@ def main(args: DictConfig):
 
     if args.checkpoint_path:
         accelerator.load_state(args.checkpoint_path)
-        shared.current_train_step = scheduler.scheduler.last_epoch + 1
+        shared.current_train_step = scheduler.scheduler.last_epoch // accelerator.num_processes + 1
 
     if args.compile:
         model = torch.compile(model)
