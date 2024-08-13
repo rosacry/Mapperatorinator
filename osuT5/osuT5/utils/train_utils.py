@@ -322,7 +322,7 @@ def train(
                     train_averager.update(stats)
 
                 optimizer.step()
-                if accelerator.is_main_process:
+                if accelerator.step % accelerator.num_processes == 0:
                     lr_scheduler.step()
 
                 optimizer.zero_grad(set_to_none=True)
