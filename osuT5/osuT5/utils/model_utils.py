@@ -86,25 +86,25 @@ def get_optimizer(model: OsuT, args: DictConfig) -> Optimizer:
     return optimizer
 
 
-def get_scheduler(optimizer: Optimizer, args: DictConfig) -> LRScheduler:
+def get_scheduler(optimizer: Optimizer, args: DictConfig, accelerator) -> LRScheduler:
     scheduler_p1 = LinearLR(
         optimizer,
         start_factor=0.5,
         end_factor=1,
-        total_iters=args.optim.warmup_steps,
+        total_iters=args.optim.warmup_steps * accelerator.num_processes,
         last_epoch=-1,
     )
 
     scheduler_p2 = CosineAnnealingLR(
         optimizer,
-        T_max=args.optim.total_steps - args.optim.warmup_steps,
+        T_max=args.optim.total_steps * accelerator.num_processes - args.optim.warmup_steps * accelerator.num_processes,
         eta_min=args.optim.final_cosine,
     )
 
     scheduler = SequentialLR(
         optimizer,
         schedulers=[scheduler_p1, scheduler_p2],
-        milestones=[args.optim.warmup_steps],
+        milestones=[args.optim.warmup_steps * accelerator.num_processes],
     )
 
     return scheduler
