@@ -43,6 +43,11 @@ def maybe_save_checkpoint(accelerator: Accelerator, args: DictConfig, shared: Na
             shared.current_train_step > args.optim.total_steps
             or shared.current_train_step % args.checkpoint.every_steps == 0
     ):
+        accelerator.wait_for_everyone()
+
+        if not accelerator.is_main_process:
+            return
+
         if shared.current_loss < shared.best_loss:
             shared.best_loss = shared.current_loss
             is_best = True
@@ -50,7 +55,6 @@ def maybe_save_checkpoint(accelerator: Accelerator, args: DictConfig, shared: Na
             is_best = False
 
         output_dir = f"checkpoint-{shared.current_train_step}"
-        accelerator.wait_for_everyone()
         # Saving T5 has an issue that safe serialization removes shared tensors and then the model can't be loaded.
         accelerator.save_state(output_dir=output_dir, safe_serialization=False)
 
