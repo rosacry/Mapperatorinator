@@ -24,13 +24,14 @@ class DiffisionPipeline(object):
     def __init__(self, args: DictConfig):
         """Model inference stage that generates positions for distance events."""
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        self.num_sampling_steps = args.num_sampling_steps
+        self.diffusion_steps = args.diffusion.diffusion_steps
         self.cfg_scale = args.cfg_scale
         self.seq_len = args.diffusion.seq_len
         self.num_classes = args.diffusion.num_classes
         self.beatmap_idx = get_beatmap_idx(args.beatmap_idx)
         self.style_id = args.style_id
         self.refine_iters = args.refine_iters
+        self.random_init = args.random_init
 
         if self.style_id in self.beatmap_idx:
             self.class_label = self.beatmap_idx[self.style_id]
@@ -50,13 +51,14 @@ class DiffisionPipeline(object):
             events: List of Event objects with position events.
         """
 
-        seq_o, seq_c, seq_len, seq_indices = self.events_to_sequence(events)
+        seq_x, seq_o, seq_c, seq_len, seq_indices = self.events_to_sequence(events)
 
         seq_o = seq_o - seq_o[0]  # Normalize to relative time
         print(f"seq len {seq_len}")
 
         diffusion = create_diffusion(
-            str(self.num_sampling_steps),
+            [100,0,0,0,0,0,0,0,0,0],
+            diffusion_steps=self.diffusion_steps,
             noise_schedule="squaredcos_cap_v2",
         )
 
@@ -69,7 +71,7 @@ class DiffisionPipeline(object):
 
         # Create sampling noise:
         n = len(class_labels)
-        z = torch.randn(n, 2, seq_len, device=self.device)
+        z = seq_x.repeat(n, 1, 1).to(self.device)
         o = seq_o.repeat(n, 1).to(self.device)
         c = seq_c.repeat(n, 1, 1).to(self.device)
         y = torch.tensor(class_labels, device=self.device)
@@ -82,12 +84,15 @@ class DiffisionPipeline(object):
         y = torch.cat([y, y_null], 0)
         model_kwargs = dict(o=o, c=c, y=y, cfg_scale=self.cfg_scale, attn_mask=attn_mask)
 
+        if self.random_init:
+            z = torch.randn(*z.shape, device=z.device)
+
         def to_positions(samples):
             samples, _ = samples.chunk(2, dim=0)  # Remove null class samples
             samples *= torch.tensor((512, 384), device=self.device).repeat(n, 1).unsqueeze(2)
             return samples.cpu()
 
-        # Sample images:
+        # Sample positions:
         samples = diffusion.p_sample_loop(
             model.forward_with_cfg,
             z.shape,
@@ -98,8 +103,8 @@ class DiffisionPipeline(object):
             device=self.device,
         )
 
+        # Refine result with refine model
         if refine_model is not None:
-            # Refine result with refine model
             for _ in tqdm(range(self.refine_iters)):
                 t = torch.tensor([0] * samples.shape[0], device=self.device)
                 with torch.no_grad():
@@ -116,7 +121,7 @@ class DiffisionPipeline(object):
         return self.events_with_pos(events, positions.squeeze(0), seq_indices)
 
     @staticmethod
-    def events_to_sequence(events: list[Event]) -> tuple[torch.Tensor, torch.Tensor, int, dict[int, int]]:
+    def events_to_sequence(events: list[Event]) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, int, dict[int, int]]:
         # Calculate the time of every event and interpolate time for control point events
         event_times = []
         update_event_times(events, event_times)
@@ -144,10 +149,17 @@ class DiffisionPipeline(object):
         new_combo = False
         head_time = 0
         last_anchor_time = 0
+        last_pos = (256, 192)
+        pos = (256, 192)
         for i, event in enumerate(events):
             indices.append(i)
             if event.type == EventType.DISTANCE:
                 distance = event.value
+            elif event.type == EventType.POS_X:
+                pos = (event.value, pos[1])
+            elif event.type == EventType.POS_Y:
+                pos = (pos[0], event.value)
+                distance = ((pos[0] - last_pos[0]) ** 2 + (pos[1] - last_pos[1]) ** 2) ** 0.5
             elif event.type == EventType.NEW_COMBO:
                 new_combo = True
             elif event.type in event_index:
@@ -170,32 +182,37 @@ class DiffisionPipeline(object):
                 elif event.type == EventType.LAST_ANCHOR:
                     last_anchor_time = time
 
-                features = torch.zeros(18)
-                features[0] = time
-                features[1] = distance
-                features[index + 2] = 1
+                features = torch.zeros(20)
+                features[0] = pos[0]
+                features[1] = pos[1]
+                features[2] = time
+                features[3] = distance
+                features[index + 4] = 1
                 data_chunks.append(features)
 
                 for j in indices:
                     seq_indices[j] = len(data_chunks) - 1
                 indices = []
 
+                last_pos = pos
+
         for j in indices:
             seq_indices[j] = len(data_chunks) - 1
 
         seq = torch.stack(data_chunks, 0)
         seq = torch.swapaxes(seq, 0, 1)
-        seq_o = seq[0, :]
-        seq_d = seq[1, :]
+        seq_x = seq[:2, :] / torch.tensor((512, 384)).unsqueeze(1)
+        seq_o = seq[2, :]
+        seq_d = seq[3, :]
         seq_c = torch.concatenate(
             [
                 timestep_embedding(seq_d, 128).T,
-                seq[2:, :],
+                seq[4:, :],
             ],
             0,
         )
 
-        return seq_o, seq_c, seq.shape[1], seq_indices
+        return seq_x, seq_o, seq_c, seq.shape[1], seq_indices
 
     @staticmethod
     def events_with_pos(events: list[Event], sampled_seq: torch.Tensor, seq_indices: dict[int, int]) -> list[Event]:
@@ -207,6 +224,14 @@ class DiffisionPipeline(object):
                 pos_x = sampled_seq[0, index].item()
                 pos_y = sampled_seq[1, index].item()
                 new_events.append(Event(EventType.POS_X, int(round(pos_x))))
+                new_events.append(Event(EventType.POS_Y, int(round(pos_y))))
+            elif event.type == EventType.POS_X:
+                index = seq_indices[i]
+                pos_x = sampled_seq[0, index].item()
+                new_events.append(Event(EventType.POS_X, int(round(pos_x))))
+            elif event.type == EventType.POS_Y:
+                index = seq_indices[i]
+                pos_y = sampled_seq[1, index].item()
                 new_events.append(Event(EventType.POS_Y, int(round(pos_y))))
             else:
                 new_events.append(event)
