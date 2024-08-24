@@ -151,15 +151,18 @@ class DiffisionPipeline(object):
         last_anchor_time = 0
         last_pos = (256, 192)
         pos = (256, 192)
+        distance_defined = False
         for i, event in enumerate(events):
             indices.append(i)
             if event.type == EventType.DISTANCE:
                 distance = event.value
+                distance_defined = True
             elif event.type == EventType.POS_X:
                 pos = (event.value, pos[1])
             elif event.type == EventType.POS_Y:
                 pos = (pos[0], event.value)
-                distance = ((pos[0] - last_pos[0]) ** 2 + (pos[1] - last_pos[1]) ** 2) ** 0.5
+                if not distance_defined:
+                    distance = ((pos[0] - last_pos[0]) ** 2 + (pos[1] - last_pos[1]) ** 2) ** 0.5
             elif event.type == EventType.NEW_COMBO:
                 new_combo = True
             elif event.type in event_index:

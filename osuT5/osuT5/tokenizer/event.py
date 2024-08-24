@@ -29,6 +29,7 @@ class EventType(Enum):
     DESCRIPTOR = "descriptor"
     POS_X = "pos_x"
     POS_Y = "pos_y"
+    POS = "pos"
 
 
 class ContextType(Enum):

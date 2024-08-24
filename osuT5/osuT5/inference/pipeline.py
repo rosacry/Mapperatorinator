@@ -44,6 +44,13 @@ class Pipeline(object):
         self.add_gd_context = args.osut5.data.add_gd_context
         self.parser = OsuParser(args.osut5, self.tokenizer)
         self.need_beatmap_idx = args.osut5.model.do_style_embed
+        self.add_positions = args.osut5.data.add_positions
+
+        if self.add_positions:
+            self.position_precision = args.data.position_precision
+            x_min, x_max, y_min, y_max = args.data.position_range
+            x_min, x_max = x_min / self.position_precision, x_max / self.position_precision
+            self.x_count = x_max - x_min + 1
 
     def generate(
             self,
@@ -225,6 +232,10 @@ class Pipeline(object):
                 lookahead_time = frame_time + self.lookahead_max_time
                 self._trim_events_after_time(events, event_times, lookahead_time)
 
+        # Rescale and unpack position events
+        if self.add_positions:
+            events = self._rescale_positions(events)
+
         return events
 
     def _prepare_events(self, events: list[Event]) -> tuple[list[Event], list[float]]:
@@ -345,3 +356,16 @@ class Pipeline(object):
             logits[indices_to_remove] = filter_value
 
         return logits
+
+    def _rescale_positions(self, events: list[Event]) -> list[Event]:
+        new_events = []
+        for event in events:
+            if event.type == EventType.POS_X or event.type == EventType.POS_Y:
+                new_events.append(Event(type=event.type, value=event.value * self.position_precision))
+            elif event.type == EventType.POS:
+                new_events.append(Event(type=EventType.POS_X, value=(event.value % self.x_count) * self.position_precision))
+                new_events.append(Event(type=EventType.POS_Y, value=(event.value // self.x_count) * self.position_precision))
+            else:
+                new_events.append(event)
+
+        return new_events

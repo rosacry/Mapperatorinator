@@ -24,6 +24,7 @@ data:                  # Data settings
   add_hitsounds: true   # Model beatmap hitsounds
   add_pre_tokens: false
   per_track: true
+  add_distances: false   # Model hit object distances
   add_positions: true
 
 dataloader:             # Dataloader settings
