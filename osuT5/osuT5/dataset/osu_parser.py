@@ -9,7 +9,7 @@ from slider import Beatmap, Circle, Slider, Spinner
 from slider.curve import Linear, Catmull, Perfect, MultiBezier
 
 from ..tokenizer import Event, EventType, Tokenizer
-from .data_utils import merge_events
+from .data_utils import merge_events, speed_events
 
 
 class OsuParser:
@@ -29,7 +29,7 @@ class OsuParser:
             self.dist_min = dist_range.min_value
             self.dist_max = dist_range.max_value
 
-    def parse(self, beatmap: Beatmap) -> list[Event]:
+    def parse(self, beatmap: Beatmap, speed: float = 1.0) -> list[Event]:
         # noinspection PyUnresolvedReferences
         """Parse an .osu beatmap.
 
@@ -38,6 +38,7 @@ class OsuParser:
 
         Args:
             beatmap: Beatmap object parsed from an .osu file.
+            speed: Speed multiplier for the beatmap.
 
         Returns:
             events: List of Event object lists.
@@ -74,9 +75,12 @@ class OsuParser:
         if self.add_timing:
             events = merge_events(self.parse_timing(beatmap), events)
 
+        if speed != 1.0:
+            events = speed_events(events, speed)
+
         return events
 
-    def parse_timing(self, beatmap: Beatmap) -> list[Event]:
+    def parse_timing(self, beatmap: Beatmap, speed: float = 1.0) -> list[Event]:
         """Extract all timing information from a beatmap."""
         events = []
         last_ho = beatmap.hit_objects(stacking=False)[-1]
@@ -101,6 +105,9 @@ class OsuParser:
 
                 measure_counter += 1
                 time += timedelta(milliseconds=tp.ms_per_beat)
+
+        if speed != 1.0:
+            events = speed_events(events, speed)
 
         return events
 

@@ -11,7 +11,7 @@ from ..tokenizer import Event, EventType
 MILISECONDS_PER_SECOND = 1000
 
 
-def load_audio_file(file: Path, sample_rate: int) -> npt.NDArray:
+def load_audio_file(file: Path, sample_rate: int, speed: float = 1.0) -> npt.NDArray:
     """Load an audio file as a numpy time-series array
 
     The signals are resampled, converted to mono channel, and normalized.
@@ -19,11 +19,13 @@ def load_audio_file(file: Path, sample_rate: int) -> npt.NDArray:
     Args:
         file: Path to audio file.
         sample_rate: Sample rate to resample the audio.
+        speed: Speed multiplier for the audio.
 
     Returns:
         samples: Audio time series.
     """
     audio = AudioSegment.from_file(file, format=file.suffix[1:])
+    audio.frame_rate = int(audio.frame_rate * speed)
     audio = audio.set_frame_rate(sample_rate)
     audio = audio.set_channels(1)
     samples = np.array(audio.get_array_of_samples()).astype(np.float32)
@@ -146,3 +148,21 @@ def remove_events_of_type(events: list[Event], event_types: list[EventType]) -> 
         filtered_events: Filtered list of events.
     """
     return [event for event in events if event.type not in event_types]
+
+
+def speed_events(events: list[Event], speed: float) -> list[Event]:
+    """Change the speed of a list of events.
+
+    Args:
+        events: List of events.
+        speed: Speed multiplier.
+
+    Returns:
+        sped_events: Sped up list of events.
+    """
+    sped_events = []
+    for event in events:
+        if event.type == EventType.TIME_SHIFT:
+            event.value = int(event.value / speed)
+        sped_events.append(event)
+    return sped_events

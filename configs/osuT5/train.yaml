@@ -52,6 +52,7 @@ data:                  # Data settings
   add_timing: false      # Model beatmap timing
   add_hitsounds: false   # Model beatmap hitsounds
   add_positions: false   # Model hit object coordinates instead of spacing
+  dt_augment_prob: 0.0   # Probability of augmenting the dataset with DT
 
 
 dataloader:             # Dataloader settings

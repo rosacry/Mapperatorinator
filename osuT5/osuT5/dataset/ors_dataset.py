@@ -658,7 +658,9 @@ class BeatmapDatasetIterable:
             return json.load(f)
 
     @staticmethod
-    def _get_difficulty(metadata: dict, beatmap_name: str):
+    def _get_difficulty(metadata: dict, beatmap_name: str, double_time: bool = False):
+        if double_time:
+            return metadata["Beatmaps"][beatmap_name]["StandardStarRating"]["64"]
         return metadata["Beatmaps"][beatmap_name]["StandardStarRating"]["0"]
 
     @staticmethod
@@ -675,10 +677,13 @@ class BeatmapDatasetIterable:
             if self.args.min_difficulty > 0 and self._get_difficulty(metadata, beatmap_path.stem) < self.args.min_difficulty:
                 continue
 
-            audio_path = beatmap_path.parents[1] / list(beatmap_path.parents[1].glob('audio.*'))[0]
-            audio_samples = load_audio_file(audio_path, self.args.sample_rate)
+            double_time = random.random() < self.args.dt_augment_prob
+            speed = 1.5 if double_time else 1.0
 
-            for sample in self._get_next_beatmap(audio_samples, beatmap_path, metadata):
+            audio_path = beatmap_path.parents[1] / list(beatmap_path.parents[1].glob('audio.*'))[0]
+            audio_samples = load_audio_file(audio_path, self.args.sample_rate, speed)
+
+            for sample in self._get_next_beatmap(audio_samples, beatmap_path, metadata, speed):
                 yield sample
 
     def _get_next_tracks(self) -> dict:
@@ -692,8 +697,11 @@ class BeatmapDatasetIterable:
                                                     < self.args.min_difficulty for beatmap_name in metadata["Beatmaps"]):
                 continue
 
+            double_time = random.random() < self.args.dt_augment_prob
+            speed = 1.5 if double_time else 1.0
+
             audio_path = track_path / list(track_path.glob('audio.*'))[0]
-            audio_samples = load_audio_file(audio_path, self.args.sample_rate)
+            audio_samples = load_audio_file(audio_path, self.args.sample_rate, speed)
 
             for beatmap_name in metadata["Beatmaps"]:
                 beatmap_path = (track_path / "beatmaps" / beatmap_name).with_suffix(".osu")
@@ -701,10 +709,10 @@ class BeatmapDatasetIterable:
                 if self.args.min_difficulty > 0 and self._get_difficulty(metadata, beatmap_name) < self.args.min_difficulty:
                     continue
 
-                for sample in self._get_next_beatmap(audio_samples, beatmap_path, metadata):
+                for sample in self._get_next_beatmap(audio_samples, beatmap_path, metadata, speed):
                     yield sample
 
-    def _get_next_beatmap(self, audio_samples, beatmap_path: Path, metadata: dict) -> dict:
+    def _get_next_beatmap(self, audio_samples, beatmap_path: Path, metadata: dict, speed: float) -> dict:
         context_type = None
         if len(self.args.context_types) > 0:
             # Randomly select a context type with probabilities of context_weights
@@ -717,12 +725,12 @@ class BeatmapDatasetIterable:
         frames, frame_times = self._get_frames(audio_samples)
 
         osu_beatmap = Beatmap.from_path(beatmap_path)
-        events = self.parser.parse(osu_beatmap)
+        events = self.parser.parse(osu_beatmap, speed)
         extra_data = {
             "context_type": context_type,
             "beatmap_id": osu_beatmap.beatmap_id,
             "beatmap_idx": self._get_idx(metadata, beatmap_name),
-            "difficulty": self._get_difficulty(metadata, beatmap_name)
+            "difficulty": self._get_difficulty(metadata, beatmap_name, speed > 1)
         }
 
         other_events = None
@@ -731,15 +739,15 @@ class BeatmapDatasetIterable:
             other_name = random.choice(other_beatmaps)
             other_beatmap_path = (beatmap_path.parent / other_name).with_suffix(".osu")
             other_beatmap = Beatmap.from_path(other_beatmap_path)
-            other_events = self.parser.parse(other_beatmap)
+            other_events = self.parser.parse(other_beatmap, speed)
 
             extra_data["other_beatmap_id"] = other_beatmap.beatmap_id
             extra_data["other_beatmap_idx"] = self._get_idx(metadata, other_name)
-            extra_data["other_difficulty"] = self._get_difficulty(metadata, other_name)
+            extra_data["other_difficulty"] = self._get_difficulty(metadata, other_name, speed > 1)
         elif context_type == ContextType.NO_HS:
             other_events = remove_events_of_type(events, [EventType.HITSOUND, EventType.VOLUME])
         elif context_type == ContextType.TIMING:
-            other_events = self.parser.parse_timing(osu_beatmap)
+            other_events = self.parser.parse_timing(osu_beatmap, speed)
 
         if self.sample_weights is not None:
             # Get the weight for the current beatmap
