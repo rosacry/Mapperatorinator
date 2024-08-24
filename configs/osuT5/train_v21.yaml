@@ -7,6 +7,8 @@ compile: true          # PyTorch 2.0 optimization
 precision: 'bf16'         # Enable mixed precision (no/fp16/bf16/fp8)
 
 data:                  # Data settings
+  train_dataset_path: "/workspace/datasets/ORS16291"
+  test_dataset_path: "/workspace/datasets/ORS16291"
   special_token_len: 2
   diff_token_index: 0
   mapper_token_index: 1
@@ -34,5 +36,5 @@ dataloader:             # Dataloader settings
 
 optim:                  # Optimizer settings
   base_lr: 1e-2         # Should not be scaled with the number of devices present
-  batch_size: 64
+  batch_size: 128
   grad_acc: 8
