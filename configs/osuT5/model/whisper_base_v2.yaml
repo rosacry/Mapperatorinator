@@ -1,0 +1,13 @@
+defaults:
+  - model
+  - _self_
+
+name: 'openai/whisper-base'
+input_features: true
+do_style_embed: false
+
+spectrogram:
+  sample_rate: 16000
+  hop_length: 128
+  n_fft: 512
+  n_mels: 388

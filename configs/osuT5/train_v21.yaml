@@ -1,0 +1,34 @@
+defaults:
+  - train
+  - _self_
+  - model: whisper_base_v2
+
+compile: true          # PyTorch 2.0 optimization
+precision: 'bf16'         # Enable mixed precision (no/fp16/bf16/fp8)
+
+data:                  # Data settings
+  special_token_len: 2
+  diff_token_index: 0
+  mapper_token_index: 1
+  add_descriptors: true
+  timing_random_offset: 2
+  src_seq_len: 1024
+  tgt_seq_len: 1536
+  rhythm_weight: 3.0    # Weight of rhythm tokens in the loss calculation
+  context_types: ["none", "timing", "no_hs", "gd"]      # List of context types to include in the dataset
+  context_weights: [3, 1, 1, 1]    # List of weights for each context type. Determines how often each context type is sampled
+  descriptors_path: "../../../datasets/beatmap_descriptors.csv"   # Path to file with all beatmap descriptors
+  mappers_path: "../../../datasets/beatmap_users.json"       # Path to file with all beatmap mappers
+  add_timing: true      # Model beatmap timing
+  add_hitsounds: true   # Model beatmap hitsounds
+  add_pre_tokens: false
+  per_track: true
+  add_positions: true
+
+dataloader:             # Dataloader settings
+  num_workers: 8
+
+optim:                  # Optimizer settings
+  base_lr: 1e-2         # Should not be scaled with the number of devices present
+  batch_size: 64
+  grad_acc: 8
