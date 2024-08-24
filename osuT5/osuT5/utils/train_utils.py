@@ -221,7 +221,7 @@ def eval_model(
                 ct_logits = outputs.logits[ct_index]
                 ct_preds = preds[ct_index]
                 ct_labels = labels[ct_index]
-                ct_weights = batch["sample_weights"][ct_index]
+                ct_weights = batch["sample_weights"][ct_index] if "sample_weights" in batch else None
                 ct_loss = calc_loss(loss_fn, ct_logits, ct_labels, ct_weights)
                 stats = get_stats(ct_loss, ct_preds, ct_labels, tokenizer, args)
 
@@ -261,8 +261,12 @@ def get_stats(loss, preds, labels, tokenizer, args: DictConfig):
              "other_acc": acc_range(preds, labels, tokenizer.event_end[EventType.VOLUME],
                                     tokenizer.event_end[EventType.VOLUME] + tokenizer.vocab_size_out)}
     if args.data.add_positions:
-        stats["position_acc"] = acc_range(preds, labels, tokenizer.event_start[EventType.POS_X],
-                                          tokenizer.event_end[EventType.POS_Y])
+        if args.data.position_split_axes:
+            stats["position_acc"] = acc_range(preds, labels, tokenizer.event_start[EventType.POS_X],
+                                              tokenizer.event_end[EventType.POS_Y])
+        else:
+            stats["position_acc"] = acc_range(preds, labels, tokenizer.event_start[EventType.POS],
+                                              tokenizer.event_end[EventType.POS])
     else:
         stats["spacing_acc"] = acc_range(preds, labels, tokenizer.event_start[EventType.DISTANCE],
                                          tokenizer.event_end[EventType.DISTANCE]),

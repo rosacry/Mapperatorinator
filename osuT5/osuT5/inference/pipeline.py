@@ -49,7 +49,10 @@ class Pipeline(object):
         if self.add_positions:
             self.position_precision = args.data.position_precision
             x_min, x_max, y_min, y_max = args.data.position_range
-            x_min, x_max = x_min / self.position_precision, x_max / self.position_precision
+            self.x_min = x_min / self.position_precision
+            self.x_max = x_max / self.position_precision
+            self.y_min = y_min / self.position_precision
+            self.y_max = y_max / self.position_precision
             self.x_count = x_max - x_min + 1
 
     def generate(
@@ -363,8 +366,8 @@ class Pipeline(object):
             if event.type == EventType.POS_X or event.type == EventType.POS_Y:
                 new_events.append(Event(type=event.type, value=event.value * self.position_precision))
             elif event.type == EventType.POS:
-                new_events.append(Event(type=EventType.POS_X, value=(event.value % self.x_count) * self.position_precision))
-                new_events.append(Event(type=EventType.POS_Y, value=(event.value // self.x_count) * self.position_precision))
+                new_events.append(Event(type=EventType.POS_X, value=((event.value % self.x_count) + self.x_min) * self.position_precision))
+                new_events.append(Event(type=EventType.POS_Y, value=((event.value // self.x_count) + self.y_min) * self.position_precision))
             else:
                 new_events.append(event)
 

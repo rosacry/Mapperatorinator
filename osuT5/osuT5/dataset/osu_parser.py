@@ -19,17 +19,16 @@ class OsuParser:
         self.add_hitsounds = args.data.add_hitsounds
         self.add_distances = args.data.add_distances
         self.add_positions = args.data.add_positions
-        self.position_precision = args.data.position_precision
-        self.position_split_axes = args.data.position_split_axes
         if self.add_positions:
-            x_range = tokenizer.event_range[EventType.POS_X]
-            y_range = tokenizer.event_range[EventType.POS_Y]
-            self.x_min = x_range.min_value
-            self.x_max = x_range.max_value
-            self.y_min = y_range.min_value
-            self.y_max = y_range.max_value
-            self.x_count = x_range.max_value - x_range.min_value + 1
-        else:
+            self.position_precision = args.data.position_precision
+            self.position_split_axes = args.data.position_split_axes
+            x_min, x_max, y_min, y_max = args.data.position_range
+            self.x_min = x_min / self.position_precision
+            self.x_max = x_max / self.position_precision
+            self.y_min = y_min / self.position_precision
+            self.y_max = y_max / self.position_precision
+            self.x_count = self.x_max - self.x_min + 1
+        if self.add_distances:
             dist_range = tokenizer.event_range[EventType.DISTANCE]
             self.dist_min = dist_range.min_value
             self.dist_max = dist_range.max_value
@@ -191,7 +190,7 @@ class OsuParser:
                 events.append(Event(EventType.POS_X, p[0]))
                 events.append(Event(EventType.POS_Y, p[1]))
             else:
-                events.append(Event(EventType.POS, p[0] + p[1] * self.x_count))
+                events.append(Event(EventType.POS, (p[0] - self.x_min) + (p[1] - self.y_min) * self.x_count))
 
         return pos
 
