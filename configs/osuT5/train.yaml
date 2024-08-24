@@ -51,7 +51,11 @@ data:                  # Data settings
   mappers_path: ''       # Path to file with all beatmap mappers
   add_timing: false      # Model beatmap timing
   add_hitsounds: false   # Model beatmap hitsounds
-  add_positions: false   # Model hit object coordinates instead of spacing
+  add_distances: true   # Model hit object distances
+  add_positions: false   # Model hit object coordinates
+  position_precision: 1  # Precision of hit object coordinates
+  position_split_axes: true  # Split hit object X and Y coordinates into separate tokens
+  position_range: [-256, 768, -256, 640]  # Range of hit object coordinates
   dt_augment_prob: 0.0   # Probability of augmenting the dataset with DT
 
 

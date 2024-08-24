@@ -95,11 +95,21 @@ class Tokenizer:
                 self._init_descriptor_idx(args)
                 self.input_event_ranges.append(EventRange(EventType.DESCRIPTOR, 0, self.num_descriptor_classes))
 
-            if args.data.add_positions:
-                self.event_ranges.append(EventRange(EventType.POS_X, -256, 768))
-                self.event_ranges.append(EventRange(EventType.POS_Y, -256, 640))
-            else:
+            if args.data.add_distances:
                 self.event_ranges.append(EventRange(EventType.DISTANCE, 0, 640))
+
+            if args.data.add_positions:
+                p = args.data.position_precision
+                x_min, x_max, y_min, y_max = args.data.position_range
+                x_min, x_max, y_min, y_max = x_min // p, x_max // p, y_min // p, y_max // p
+
+                if args.data.position_split_axes:
+                    self.event_ranges.append(EventRange(EventType.POS_X, x_min, x_max))
+                    self.event_ranges.append(EventRange(EventType.POS_Y, y_min, y_max))
+                else:
+                    x_count = x_max - x_min + 1
+                    y_count = y_max - y_min + 1
+                    self.event_ranges.append(EventRange(EventType.POS, 0, x_count * y_count - 1))
 
         self.event_ranges: list[EventRange] = self.event_ranges + [
             EventRange(EventType.NEW_COMBO, 0, 0),

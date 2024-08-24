@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import timedelta
+from typing import Tuple
 
 import numpy as np
 import numpy.typing as npt
@@ -16,7 +17,10 @@ class OsuParser:
     def __init__(self, args: DictConfig, tokenizer: Tokenizer) -> None:
         self.add_timing = args.data.add_timing
         self.add_hitsounds = args.data.add_hitsounds
+        self.add_distances = args.data.add_distances
         self.add_positions = args.data.add_positions
+        self.position_precision = args.data.position_precision
+        self.position_split_axes = args.data.position_split_axes
         if self.add_positions:
             x_range = tokenizer.event_range[EventType.POS_X]
             y_range = tokenizer.event_range[EventType.POS_Y]
@@ -24,6 +28,7 @@ class OsuParser:
             self.x_max = x_range.max_value
             self.y_min = y_range.min_value
             self.y_max = y_range.max_value
+            self.x_count = x_range.max_value - x_range.min_value + 1
         else:
             dist_range = tokenizer.event_range[EventType.DISTANCE]
             self.dist_min = dist_range.min_value
@@ -111,10 +116,6 @@ class OsuParser:
 
         return events
 
-    def _clip_dist(self, dist: int) -> int:
-        """Clip distance to valid range."""
-        return int(np.clip(dist, self.dist_min, self.dist_max))
-
     @staticmethod
     def uninherited_point_at(time: timedelta, beatmap: Beatmap):
         tp = beatmap.timing_point_at(time)
@@ -170,15 +171,29 @@ class OsuParser:
         events.append(Event(EventType.HITSOUND, hitsound_idx))
         events.append(Event(EventType.VOLUME, tp.volume))
 
+    def _clip_dist(self, dist: int) -> int:
+        """Clip distance to valid range."""
+        return int(np.clip(dist, self.dist_min, self.dist_max))
+
+    def _scale_clip_pos(self, pos: npt.NDArray) -> Tuple[int, int]:
+        """Clip position to valid range."""
+        p = pos / self.position_precision
+        return int(np.clip(p[0], self.x_min, self.x_max)), int(np.clip(p[1], self.y_min, self.y_max))
+
     def _add_position_event(self, pos: npt.NDArray, last_pos: npt.NDArray, events: list[Event]) -> npt.NDArray:
-        if self.add_positions:
-            events.append(Event(EventType.POS_X, int(np.clip(pos[0], self.x_min, self.x_max))))
-            events.append(Event(EventType.POS_Y, int(np.clip(pos[1], self.y_min, self.y_max))))
-        else:
+        if self.add_distances:
             dist = self._clip_dist(np.linalg.norm(pos - last_pos))
             events.append(Event(EventType.DISTANCE, dist))
-        return pos
 
+        if self.add_positions:
+            p = self._scale_clip_pos(pos)
+            if self.position_split_axes:
+                events.append(Event(EventType.POS_X, p[0]))
+                events.append(Event(EventType.POS_Y, p[1]))
+            else:
+                events.append(Event(EventType.POS, p[0] + p[1] * self.x_count))
+
+        return pos
 
     def _parse_circle(self, circle: Circle, events: list[Event], last_pos: npt.NDArray, beatmap: Beatmap) -> npt.NDArray:
         """Parse a circle hit object.
