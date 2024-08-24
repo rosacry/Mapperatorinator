@@ -2,6 +2,7 @@ from pathlib import Path
 
 import hydra
 import torch
+from accelerate.utils import set_seed
 from omegaconf import DictConfig
 from slider import Beatmap
 
@@ -17,6 +18,7 @@ def prepare_args(args: DictConfig):
     if not isinstance(args.context_type, str):
         return
     args.context_type = ContextType(args.context_type) if args.context_type != "" else None
+    set_seed(args.seed)
 
 
 def get_args_from_beatmap(args: DictConfig, tokenizer: Tokenizer):
