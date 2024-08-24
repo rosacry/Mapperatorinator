@@ -267,7 +267,7 @@ def get_stats(loss, preds, labels, tokenizer, args: DictConfig):
         else:
             stats["position_acc"] = acc_range(preds, labels, tokenizer.event_start[EventType.POS],
                                               tokenizer.event_end[EventType.POS])
-    else:
+    if args.data.add_distances:
         stats["spacing_acc"] = acc_range(preds, labels, tokenizer.event_start[EventType.DISTANCE],
                                          tokenizer.event_end[EventType.DISTANCE]),
     return stats
