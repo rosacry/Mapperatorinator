@@ -24,6 +24,7 @@ data:                  # Data settings
   add_pre_tokens: false
   per_track: true
   add_positions: true
+  dt_augment_prob: 0.5   # Probability of augmenting the dataset with DT
 
 dataloader:             # Dataloader settings
   num_workers: 8

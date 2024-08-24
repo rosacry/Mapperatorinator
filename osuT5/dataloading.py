@@ -58,7 +58,7 @@ def main(args: DictConfig):
                 length = b['decoder_attention_mask'][i].sum().item()
                 lengths.append(length)
             shared.current_train_step += 1
-            if len(lengths) > 10000:
+            if len(lengths) > 100000:
                 break
 
         plt.hist(lengths, bins=100)
