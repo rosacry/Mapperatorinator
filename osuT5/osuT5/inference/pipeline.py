@@ -47,8 +47,8 @@ class Pipeline(object):
         self.add_positions = args.osut5.data.add_positions
 
         if self.add_positions:
-            self.position_precision = args.data.position_precision
-            x_min, x_max, y_min, y_max = args.data.position_range
+            self.position_precision = args.osut5.data.position_precision
+            x_min, x_max, y_min, y_max = args.osut5.data.position_range
             self.x_min = x_min / self.position_precision
             self.x_max = x_max / self.position_precision
             self.y_min = y_min / self.position_precision
