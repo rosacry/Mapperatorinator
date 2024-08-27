@@ -25,6 +25,7 @@ class DiffisionPipeline(object):
         """Model inference stage that generates positions for distance events."""
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.diffusion_steps = args.diffusion.diffusion_steps
+        self.timesteps = args.timesteps
         self.cfg_scale = args.cfg_scale
         self.seq_len = args.diffusion.seq_len
         self.num_classes = args.diffusion.num_classes
@@ -57,7 +58,7 @@ class DiffisionPipeline(object):
         print(f"seq len {seq_len}")
 
         diffusion = create_diffusion(
-            [100,0,0,0,0,0,0,0,0,0],
+            timestep_respacing=self.timesteps,
             diffusion_steps=self.diffusion_steps,
             noise_schedule="squaredcos_cap_v2",
         )
