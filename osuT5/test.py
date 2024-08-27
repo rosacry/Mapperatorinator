@@ -241,6 +241,7 @@ def main(args: DictConfig):
 
     args.data.sample_weights_path = "../../../datasets/rhythm_complexities.csv"
     args.data.timing_random_offset = 0
+    args.data.dt_augment_prob = 0
     test(args, accelerator, model, tokenizer, "test")
 
     args.data.timing_random_offset = 2

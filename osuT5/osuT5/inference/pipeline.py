@@ -53,7 +53,7 @@ class Pipeline(object):
             self.x_max = x_max / self.position_precision
             self.y_min = y_min / self.position_precision
             self.y_max = y_max / self.position_precision
-            self.x_count = x_max - x_min + 1
+            self.x_count = self.x_max - self.x_min + 1
 
     def generate(
             self,
