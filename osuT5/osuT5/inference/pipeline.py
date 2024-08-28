@@ -6,6 +6,8 @@ import torch
 import torch.nn.functional as F
 from slider import Beatmap
 from tqdm import tqdm
+from transformers.generation import ClassifierFreeGuidanceLogitsProcessor
+from transformers import LogitsProcessorList, TemperatureLogitsWarper, TopPLogitsWarper
 
 from omegaconf import DictConfig
 
@@ -55,6 +57,13 @@ class Pipeline(object):
             self.y_max = y_max / self.position_precision
             self.x_count = self.x_max - self.x_min + 1
 
+        self.cfg_scale = args.cfg_scale
+        processor_list = [] if self.cfg_scale <= 1 else [ClassifierFreeGuidanceLogitsProcessor(self.cfg_scale)]
+        self.logits_processor = LogitsProcessorList(processor_list + [
+            TemperatureLogitsWarper(args.temperature),
+            TopPLogitsWarper(args.top_p),
+        ])
+
     def generate(
             self,
             model: OsuT,
@@ -82,7 +91,7 @@ class Pipeline(object):
             events: List of Event object lists.
             event_times: Corresponding event times of Event object lists in miliseconds.
         """
-        if descriptors is None:
+        if descriptors is None or len(descriptors) == 0:
             descriptors = ["unknown"] if self.add_descriptors else []
 
         events = []
@@ -97,19 +106,32 @@ class Pipeline(object):
                 print(f"Beatmap ID {beatmap_id} not found in dataset, using default style.")
 
         # Prepare special tokens
-        special_tokens = torch.empty((1, self.special_token_len + len(descriptors)), dtype=torch.long, device=self.device)
+        cond_tokens = torch.empty((1, self.special_token_len + len(descriptors)), dtype=torch.long, device=self.device)
 
         if self.style_token_index >= 0:
             style_token = self.tokenizer.encode_style(beatmap_id) if beatmap_id != -1 else self.tokenizer.style_unk
-            special_tokens[:, self.style_token_index] = style_token
+            cond_tokens[:, self.style_token_index] = style_token
         if self.diff_token_index >= 0:
             diff_token = self.tokenizer.encode_diff(difficulty) if difficulty != -1 else self.tokenizer.diff_unk
-            special_tokens[:, self.diff_token_index] = diff_token
+            cond_tokens[:, self.diff_token_index] = diff_token
         if self.mapper_token_index >= 0:
             mapper_token = self.tokenizer.encode_mapper_id(mapper_id) if mapper_id != -1 else self.tokenizer.mapper_unk
-            special_tokens[:, self.mapper_token_index] = mapper_token
+            cond_tokens[:, self.mapper_token_index] = mapper_token
         for i, descriptor in enumerate(descriptors):
-            special_tokens[:, self.special_token_len + i] = self.tokenizer.encode_descriptor_name(descriptor)
+            cond_tokens[:, self.special_token_len + i] = self.tokenizer.encode_descriptor_name(descriptor)
+
+        # Prepare unconditional prompt
+        uncond_tokens = torch.empty((1, self.special_token_len + (1 if self.add_descriptors else 0)), dtype=torch.long, device=self.device)
+
+        if self.style_token_index >= 0:
+            uncond_tokens[:, self.style_token_index] = self.tokenizer.style_unk
+        if self.diff_token_index >= 0:
+            diff_token = self.tokenizer.encode_diff(difficulty) if difficulty != -1 else self.tokenizer.diff_unk
+            uncond_tokens[:, self.diff_token_index] = diff_token
+        if self.mapper_token_index >= 0:
+            uncond_tokens[:, self.mapper_token_index] = self.tokenizer.mapper_unk
+        if self.add_descriptors:
+            uncond_tokens[:, self.special_token_len] = self.tokenizer.descriptor_unk
 
         # Prepare other beatmap context
         other_events, other_event_times = [], []
@@ -159,8 +181,19 @@ class Pipeline(object):
         context_eos = torch.tensor([[self.tokenizer.context_eos[context_type]]], dtype=torch.long, device=self.device)\
             if context_type is not None else torch.empty((1, 0), dtype=torch.long, device=self.device)
 
+        def get_prompt(user_prompt, context_tokens, prev_tokens, post_tokens):
+            prefix = torch.concatenate([context_sos, other_special_tokens, context_tokens, context_eos, user_prompt, prev_tokens], dim=-1)
+            if self.center_pad_decoder:
+                prefix = F.pad(prefix, (self.tgt_seq_len // 2 - prefix.shape[1], 0), value=self.tokenizer.pad_id)
+
+            prompt = torch.tensor([[self.tokenizer.sos_id]], dtype=torch.long, device=self.device)
+            prompt = torch.concatenate([prefix, prompt, post_tokens], dim=-1)
+            return prompt
+
         # Start generation
         for sequence_index, frames in enumerate(tqdm(sequences)):
+            frames = frames.to(self.device).unsqueeze(0)
+
             # Get tokens of previous frame
             frame_time = sequence_index * self.miliseconds_per_stride
 
@@ -174,32 +207,36 @@ class Pipeline(object):
             post_events = self._get_events_time_range(
                 events, event_times, frame_time, frame_time + self.miliseconds_per_sequence)
             post_tokens = self._encode(post_events, frame_time)
-            post_token_length = post_tokens.shape[1]
 
             context_events = self._get_events_time_range(
                 other_events, other_event_times, frame_time,
                 frame_time + self.miliseconds_per_sequence)
             context_tokens = self._encode(context_events, frame_time)
 
-            # Get prefix tokens
-            prefix = torch.concatenate([context_sos, other_special_tokens, context_tokens, context_eos, special_tokens, prev_tokens], dim=-1)
-            if self.center_pad_decoder:
-                prefix = F.pad(prefix, (self.tgt_seq_len // 2 - prefix.shape[1], 0), value=self.tokenizer.pad_id)
-            prefix_length = prefix.shape[1]
+            # Prepare classifier-free guidance
+            cond_prompt = get_prompt(cond_tokens, context_tokens, prev_tokens, post_tokens)
+            prompt = cond_prompt
+            prompt_length = prompt.shape[1]
 
-            # Get tokens
-            tokens = torch.tensor([[self.tokenizer.sos_id]], dtype=torch.long, device=self.device)
-            tokens = torch.concatenate([prefix, tokens, post_tokens], dim=-1)
+            if self.cfg_scale > 1:
+                uncond_prompt = get_prompt(uncond_tokens, context_tokens, prev_tokens, post_tokens)
+                # Left-pad unconditional prompt to match the length of conditional prompt
+                uncond_prompt = F.pad(uncond_prompt, (prompt_length - uncond_prompt.shape[1], 0), value=self.tokenizer.pad_id)
+                prompt = torch.concatenate([cond_prompt, uncond_prompt], dim=0)
 
-            frames = frames.to(self.device).unsqueeze(0)
+                # Repeat frames to match the batch size
+                frames = frames.repeat(prompt.shape[0], 1)
+
+            # Prepare cache for autoregressive decoding
             encoder_outputs = None
             past_key_values = None
 
-            while tokens.shape[-1] < self.tgt_seq_len:
+            input_ids = cond_prompt
+
+            while input_ids.shape[1] < self.tgt_seq_len:
                 if past_key_values is not None:
                     out = model.forward(
-                        decoder_input_ids=tokens[:, -1:],
-                        decoder_attention_mask=tokens.ne(self.tokenizer.pad_id),
+                        decoder_input_ids=input_ids[:, -1:].repeat(2, 1) if self.cfg_scale > 1 else input_ids[:, -1:],
                         encoder_outputs=encoder_outputs,
                         beatmap_idx=beatmap_idx,
                         use_cache=True,
@@ -208,19 +245,20 @@ class Pipeline(object):
                 else:
                     out = model.forward(
                         frames=frames,
-                        decoder_input_ids=tokens,
-                        decoder_attention_mask=tokens.ne(self.tokenizer.pad_id),
+                        decoder_input_ids=prompt,
+                        decoder_attention_mask=prompt.ne(self.tokenizer.pad_id),
                         beatmap_idx=beatmap_idx,
                     )
+
                 past_key_values = out.past_key_values
                 encoder_outputs = (out.encoder_last_hidden_state, out.encoder_hidden_states, out.encoder_attentions)
-                logits = out.logits
-                logits = logits[:, -1, :]
-                logits = self._filter(logits, 0.9)
+
+                # noinspection PyTypeChecker
+                logits = self.logits_processor(input_ids, out.logits[:, -1, :])
                 probabilities = F.softmax(logits, dim=-1)
                 next_tokens = torch.multinomial(probabilities, 1)
 
-                tokens = torch.cat([tokens, next_tokens], dim=-1)
+                input_ids = torch.cat([input_ids, next_tokens], dim=-1)
 
                 # check if any sentence in batch has reached EOS, mark as finished
                 eos_in_sentence = next_tokens == self.tokenizer.eos_id
@@ -235,8 +273,8 @@ class Pipeline(object):
                         next_event.value * MILISECONDS_PER_STEP > self.lookahead_max_time):
                     break
 
-            # Trim prefix, SOS, post-tokens, and EOS tokens
-            predicted_tokens = tokens[:, prefix_length + 1 + post_token_length:-1]
+            # Trim prompt and EOS tokens
+            predicted_tokens = input_ids[:, prompt_length:-1]
             result = self._decode(predicted_tokens[0], frame_time)
             events += result
             self._update_event_times(events, event_times, frame_time + self.eos_time)
