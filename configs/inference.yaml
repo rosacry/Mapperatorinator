@@ -15,7 +15,7 @@ seed: 0                 # Random seed
 cfg_scale: 1.0              # Scale of classifier-free guidance
 temperature: 1.0        # Sampling temperature
 top_p: 0.9              # Top-p sampling threshold
-linear_bias: 0.0        # Logit bias for sampling straight sliders
+timeshift_bias: 0.0        # Logit bias for sampling timeshift tokens
 
 bpm: 120                # Beats per minute of input audio
 offset: 0               # Start of beat, in miliseconds, from the beginning of input audio
