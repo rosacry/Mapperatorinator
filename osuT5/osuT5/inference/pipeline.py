@@ -64,6 +64,10 @@ class Pipeline(object):
             TopPLogitsWarper(args.top_p),
         ])
 
+        self.linear_bias = args.linear_bias
+        self.head_token = tokenizer.encode(Event(EventType.SLIDER_HEAD))
+        self.time_range = range(tokenizer.event_start[EventType.TIME_SHIFT], tokenizer.event_end[EventType.TIME_SHIFT])
+
     def generate(
             self,
             model: OsuT,
@@ -253,8 +257,11 @@ class Pipeline(object):
                 past_key_values = out.past_key_values
                 encoder_outputs = (out.encoder_last_hidden_state, out.encoder_hidden_states, out.encoder_attentions)
 
+                logits = out.logits[:, -1, :]
+                if self.linear_bias != 0 and input_ids[0, -1] == self.head_token:
+                    logits[:, self.time_range] += self.linear_bias
                 # noinspection PyTypeChecker
-                logits = self.logits_processor(input_ids, out.logits[:, -1, :])
+                logits = self.logits_processor(input_ids, logits)
                 probabilities = F.softmax(logits, dim=-1)
                 next_tokens = torch.multinomial(probabilities, 1)
 
