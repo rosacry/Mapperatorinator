@@ -193,15 +193,26 @@ class Pipeline(object):
 
             frames = frames.to(self.device).unsqueeze(0)
             encoder_outputs = None
+            past_key_values = None
 
             while tokens.shape[-1] < self.tgt_seq_len:
-                out = model.forward(
-                    frames=frames,
-                    decoder_input_ids=tokens,
-                    decoder_attention_mask=tokens.ne(self.tokenizer.pad_id),
-                    encoder_outputs=encoder_outputs,
-                    beatmap_idx=beatmap_idx,
-                )
+                if past_key_values is not None:
+                    out = model.forward(
+                        decoder_input_ids=tokens[:, -1:],
+                        decoder_attention_mask=tokens.ne(self.tokenizer.pad_id),
+                        encoder_outputs=encoder_outputs,
+                        beatmap_idx=beatmap_idx,
+                        use_cache=True,
+                        past_key_values=past_key_values,
+                    )
+                else:
+                    out = model.forward(
+                        frames=frames,
+                        decoder_input_ids=tokens,
+                        decoder_attention_mask=tokens.ne(self.tokenizer.pad_id),
+                        beatmap_idx=beatmap_idx,
+                    )
+                past_key_values = out.past_key_values
                 encoder_outputs = (out.encoder_last_hidden_state, out.encoder_hidden_states, out.encoder_attentions)
                 logits = out.logits
                 logits = logits[:, -1, :]
