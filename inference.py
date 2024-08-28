@@ -48,7 +48,7 @@ def get_args_from_beatmap(args: DictConfig, tokenizer: Tokenizer):
 
 def find_model(ckpt_path, args: DictConfig, device):
     assert Path(ckpt_path).exists(), f"Could not find DiT checkpoint at {ckpt_path}"
-    checkpoint = torch.load(ckpt_path, map_location=lambda storage, loc: storage)
+    checkpoint = torch.load(ckpt_path, map_location=lambda storage, loc: storage, weights_only=False)
     if "ema" in checkpoint:  # supports checkpoints from train.py
         checkpoint = checkpoint["ema"]
 
