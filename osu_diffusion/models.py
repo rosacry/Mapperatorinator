@@ -4,9 +4,9 @@ import numpy as np
 import torch
 import torch.nn as nn
 
-from .positional_embedding import offset_sequence_embedding
-from .positional_embedding import position_sequence_embedding
-from .positional_embedding import timestep_embedding
+from positional_embedding import offset_sequence_embedding
+from positional_embedding import position_sequence_embedding
+from positional_embedding import timestep_embedding
 
 
 def modulate(x, shift, scale):
