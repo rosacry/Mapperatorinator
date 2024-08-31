@@ -28,7 +28,7 @@ optim:                  # Optimizer settings
   warmup_steps: 0
   lr_scheduler: cosine
   weight_decay: 0.0
-  grad_acc: 2
+  grad_acc: 1
   final_cosine: 1e-4
 
 checkpoint:             # Checkpoint settings
