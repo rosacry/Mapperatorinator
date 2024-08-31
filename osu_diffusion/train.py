@@ -181,6 +181,7 @@ def main(args):
     if args.checkpoint_path:
         accelerator.load_state(args.checkpoint_path)
 
+    uncompiled_model = model
     if args.compile:
         model = torch.compile(model)
 
@@ -188,7 +189,6 @@ def main(args):
     train_steps = 0
     log_steps = 0
     running_loss = 0
-    avg_loss = 0
     epoch = 0
     start_time = time()
 
@@ -212,7 +212,7 @@ def main(args):
                 scheduler.step()
                 optimizer.zero_grad(set_to_none=True)
 
-                update_ema(ema, model)
+                update_ema(ema, uncompiled_model)
 
                 # Log loss values:
                 running_loss += loss.item()

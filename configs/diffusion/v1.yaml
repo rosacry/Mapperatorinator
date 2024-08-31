@@ -1,4 +1,4 @@
-compile: false
+compile: true
 device: gpu
 precision: 'bf16'              # Precision
 seed: 0                     # Global seed
@@ -10,9 +10,9 @@ l1_loss: false                    # L1 loss
 diffusion_steps: 1000             # Number of diffusion steps
 
 data:
-  train_dataset_path: 'data'               # Path to the data
-  num_classes: 52670          # Number of classes stored in the model
-  end: 13402
+  train_dataset_path: '/workspace/datasets/ORS16291/'               # Path to the data
+  num_classes: 64821          # Number of classes stored in the model
+  end: 16291
   start: 0
   seq_len: 128                      # Sequence length
   stride: 16                        # Stride
