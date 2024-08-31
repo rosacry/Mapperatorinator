@@ -156,7 +156,7 @@ def split_and_process_sequence(
 ) -> tuple[tuple[torch.Tensor, torch.Tensor, torch.Tensor], int]:
     seq_d = calc_distances(seq)
     # Augment and normalize positions for diffusion
-    seq_x = random_flip(seq[:2, :]) / playfield_size.unsqueeze(1)
+    seq_x = random_flip(seq[:2, :]) / playfield_size.unsqueeze(1) * 2 - 1
     seq_o = seq[2, :]
     seq_c = torch.concatenate(
         [
@@ -174,7 +174,7 @@ def split_and_process_sequence_no_augment(
 ) -> tuple[tuple[torch.Tensor, torch.Tensor, torch.Tensor], int]:
     seq_d = calc_distances(seq)
     # Augment and normalize positions for diffusion
-    seq_x = seq[:2, :] / playfield_size.to(seq.device).unsqueeze(1)
+    seq_x = seq[:2, :] / playfield_size.to(seq.device).unsqueeze(1) * 2 - 1
     seq_o = seq[2, :]
     seq_c = torch.concatenate(
         [
@@ -537,7 +537,7 @@ def main(args):
             x = torch.swapaxes(x, 1, 2)  # (N, T, C)
             c = torch.swapaxes(c, 1, 2)  # (N, T, E)
             print(x.shape, o.shape, c.shape, y.shape)
-            batch_pos_emb = position_sequence_embedding(x * playfield_size, 128)
+            batch_pos_emb = position_sequence_embedding((x + 1) / 2 * playfield_size, 128)
             print(batch_pos_emb.shape)
             batch_offset_emb = offset_sequence_embedding(o / 10, 128)
             print(batch_offset_emb.shape)

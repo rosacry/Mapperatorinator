@@ -1,21 +1,20 @@
 """
 A minimal training script for DiT using PyTorch DDP.
 """
+import hydra
 import torch
+from accelerate import Accelerator
+from accelerate.utils import ProjectConfiguration, set_seed
+from omegaconf import DictConfig
+from torch.optim import Optimizer
+from torch.optim.lr_scheduler import LRScheduler, LinearLR, CosineAnnealingLR, SequentialLR
 
 # the first flag below was False when we tested this script but True makes A100 training a lot faster:
 torch.backends.cuda.matmul.allow_tf32 = True
 torch.backends.cudnn.allow_tf32 = True
-import torch.distributed as dist
-from torch.nn.parallel import DistributedDataParallel as DDP
-import numpy as np
 from collections import OrderedDict
 from copy import deepcopy
-from glob import glob
 from time import time
-import argparse
-import logging
-import os
 
 from models import DiT_models
 from diffusion import create_diffusion
@@ -63,32 +62,28 @@ def requires_grad_non_embed(model, flag=True):
         param.requires_grad = flag
 
 
-def cleanup():
-    """
-    End DDP training.
-    """
-    dist.destroy_process_group()
+def get_scheduler(optimizer: Optimizer, args: DictConfig, accelerator) -> LRScheduler:
+    scheduler_p1 = LinearLR(
+        optimizer,
+        start_factor=0.5,
+        end_factor=1,
+        total_iters=args.optim.warmup_steps * accelerator.num_processes,
+        last_epoch=-1,
+    )
 
+    scheduler_p2 = CosineAnnealingLR(
+        optimizer,
+        T_max=args.optim.total_steps * accelerator.num_processes - args.optim.warmup_steps * accelerator.num_processes,
+        eta_min=args.optim.final_cosine,
+    )
 
-def create_logger(logging_dir, rank):
-    """
-    Create a logger that writes to a log file and stdout.
-    """
-    if rank == 0:  # real logger
-        logging.basicConfig(
-            level=logging.INFO,
-            format="[\033[34m%(asctime)s\033[0m] %(message)s",
-            datefmt="%Y-%m-%d %H:%M:%S",
-            handlers=[
-                logging.StreamHandler(),
-                logging.FileHandler(f"{logging_dir}/log.txt"),
-            ],
-        )
-        logger = logging.getLogger(__name__)
-    else:  # dummy logger (does nothing)
-        logger = logging.getLogger(__name__)
-        logger.addHandler(logging.NullHandler())
-    return logger
+    scheduler = SequentialLR(
+        optimizer,
+        schedulers=[scheduler_p1, scheduler_p2],
+        milestones=[args.optim.warmup_steps * accelerator.num_processes],
+    )
+
+    return scheduler
 
 
 #################################################################################
@@ -96,242 +91,164 @@ def create_logger(logging_dir, rank):
 #################################################################################
 
 
+@hydra.main(config_path="../configs/diffusion", config_name="v1", version_base="1.1")
 def main(args):
     """
     Trains a new DiT model.
     """
-    assert torch.cuda.is_available(), "Training currently requires at least one GPU."
+    accelerator = Accelerator(
+        cpu=args.device == "cpu",
+        mixed_precision=args.precision,
+        gradient_accumulation_steps=args.optim.grad_acc,
+        log_with=args.logging.log_with,
+        project_config=ProjectConfiguration(
+            project_dir="..", logging_dir="tensorboard_logs"
+        ),
+    )
+    accelerator.init_trackers(
+        "osu-diffusion",
+        init_kwargs={
+            "wandb": {
+                "entity": "mappingtools",
+                "job_type": "training",
+                "config": dict(args),
+                "mode": args.logging.mode,
+            }
+        }
+    )
 
-    # Setup DDP:
-    dist.init_process_group(args.dist)
-    world_size = dist.get_world_size()
-    assert (
-        args.global_batch_size % dist.get_world_size() == 0
-    ), f"Batch size must be divisible by world size."
-    rank = dist.get_rank()
-    device = rank % torch.cuda.device_count()
-    seed = args.global_seed * world_size + rank
-    torch.manual_seed(seed)
-    torch.cuda.set_device(device)
-    print(f"Starting rank={rank}, seed={seed}, world_size={world_size}.")
-
-    # Setup an experiment folder:
-    if rank == 0:
-        os.makedirs(
-            args.results_dir,
-            exist_ok=True,
-        )  # Make results folder (holds all experiment subfolders)
-        experiment_index = len(glob(f"{args.results_dir}/*"))
-        model_string_name = args.model.replace(
-            "/",
-            "-",
-        )  # e.g., DiT-XL/2 --> DiT-XL-2 (for naming folders)
-        experiment_dir = f"{args.results_dir}/{experiment_index:03d}-{model_string_name}"  # Create an experiment folder
-        checkpoint_dir = (
-            f"{experiment_dir}/checkpoints"  # Stores saved model checkpoints
-        )
-        os.makedirs(checkpoint_dir, exist_ok=True)
-        logger = create_logger(experiment_dir, rank)
-        logger.info(f"Experiment directory created at {experiment_dir}")
-    else:
-        checkpoint_dir = ""
-        logger = create_logger(None, rank)
+    device = accelerator.device
+    set_seed(args.seed)
 
     # Create model:
     model = DiT_models[args.model](
-        num_classes=args.num_classes,
+        num_classes=args.data.num_classes,
         context_size=feature_size - 3 + 128,
         class_dropout_prob=0.2,
-    )
+    ).to(device)
     # Note that parameter initialization is done within the DiT constructor
-    ema: torch.nn.Module = deepcopy(model).to(
-        device,
-    )  # Create an EMA of the model for use after training
+    ema: torch.nn.Module = deepcopy(model).to(device)  # Create an EMA of the model for use after training
     requires_grad(ema, False)
 
-    model = DDP(model.to(device), device_ids=[rank], find_unused_parameters=args.embed_only_epochs > 0)
     diffusion = create_diffusion(
         timestep_respacing="",
         noise_schedule=args.noise_schedule,
         use_l1=args.l1_loss,
+        diffusion_steps=args.diffusion_steps,
     )  # default: 1000 steps, linear noise schedule
-    logger.info(f"DiT Parameters: {sum(p.numel() for p in model.parameters()):,}")
+    print(f"DiT Parameters: {sum(p.numel() for p in model.parameters()):,}")
 
     # Setup optimizer (we used default Adam betas=(0.9, 0.999) and a constant learning rate of 1e-4 in our paper):
-    opt = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=0)
-    scaler = torch.cuda.amp.GradScaler(enabled=args.use_amp)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=args.optim.base_lr, weight_decay=args.optim.weight_decay)
+    scheduler = get_scheduler(optimizer, args, accelerator)
 
     # Setup data:
-    global_start = args.data_start
-    global_end = args.data_end
-    per_rank = int(np.ceil((global_end - global_start) / float(world_size)))
-    dataset_start = global_start + rank * per_rank
-    dataset_end = min(dataset_start + per_rank, global_end)
-    batch_size = int(args.global_batch_size // world_size)
-
+    batch_size = args.optim.batch_size // args.optim.grad_acc // accelerator.num_processes
     loader = get_data_loader(
-        dataset_path=args.data_path,
-        start=dataset_start,
-        end=dataset_end,
+        dataset_path=args.data.train_dataset_path,
+        start=args.data.start,
+        end=args.data.end,
         iterable_factory=BeatmapDatasetIterableFactory(
-            args.seq_len,
-            args.stride,
+            args.data.seq_len,
+            args.data.stride,
             load_and_process_beatmap,
             window_and_relative_time,
         ),
         cycle_length=batch_size // 2,
         batch_size=batch_size,
-        num_workers=args.num_workers,
+        num_workers=args.dataloader.num_workers,
         shuffle=True,
         pin_memory=True,
         drop_last=True,
-    )
-    logger.info(
-        f"Dataset contains {(dataset_end - dataset_start):,} beatmap sets ({args.data_path})",
     )
 
     # Prepare models for training:
     update_ema(
         ema,
-        model.module,
+        model,
         decay=0,
     )  # Ensure EMA is initialized with synced weights
     model.train()  # important! This enables embedding dropout for classifier-free guidance
     ema.eval()  # EMA model should always be in eval mode
 
+    # noinspection PyTypeChecker
+    model, optimizer, loader, scheduler = accelerator.prepare(
+        model, optimizer, loader, scheduler
+    )
+    accelerator.register_for_checkpointing(ema)
+
     # Load checkpoint
-    if args.ckpt is not None:
-        assert os.path.isfile(
-            args.ckpt,
-        ), f"Could not find DiT checkpoint at {args.ckpt}"
-        checkpoint = torch.load(args.ckpt, map_location=lambda storage, loc: storage)
+    if args.checkpoint_path:
+        accelerator.load_state(args.checkpoint_path)
 
-        # Update the learning rate to what you want
-        checkpoint["opt"]["param_groups"][0]["lr"] = args.lr
-
-        if args.relearn_embeds:
-            del checkpoint["model"]["y_embedder.embedding_table.weight"]
-            del checkpoint["ema"]["y_embedder.embedding_table.weight"]
-            del checkpoint["opt"]["state"][7]
-
-        model.module.load_state_dict(checkpoint["model"], not args.relearn_embeds)
-        ema.load_state_dict(checkpoint["ema"], not args.relearn_embeds)
-        opt.load_state_dict(checkpoint["opt"])
-        scaler.load_state_dict(checkpoint["scaler"])
-        logger.info(f"Restored from checkpoint at {args.ckpt}")
-
-    if args.embed_only_epochs > 0:
-        logger.info(f"Freezing non-embedding layers for {args.embed_only_epochs} epochs")
-        requires_grad_non_embed(model.module, False)
+    if args.compile:
+        model = torch.compile(model)
 
     # Variables for monitoring/logging purposes:
     train_steps = 0
     log_steps = 0
     running_loss = 0
+    avg_loss = 0
+    epoch = 0
     start_time = time()
 
-    logger.info(f"Training for {args.epochs} epochs...")
-    for epoch in range(args.epochs):
-        logger.info(f"Beginning epoch {epoch}...")
-
-        if 0 < args.embed_only_epochs == epoch:
-            logger.info(f"Un-freezing non-embedding layers")
-            requires_grad_non_embed(model.module, True)
-            for g in opt.param_groups:
-                g["lr"] = 1e-4
+    print(f"Training for {args.optim.total_steps} steps...")
+    while train_steps < args.optim.total_steps:
+        print(f"Beginning epoch {epoch}...")
+        optimizer.zero_grad(set_to_none=True)
 
         for (x, o, c), y in loader:
-            x = x.to(device)
-            o = o.to(device)
-            c = c.to(device)
-            y = y.to(device)
-            t = torch.randint(0, diffusion.num_timesteps, (x.shape[0],), device=device)
-            with torch.autocast(
-                device_type="cuda",
-                dtype=torch.float16,
-                enabled=args.use_amp,
-            ):
+            with accelerator.accumulate(model):
+                if train_steps > args.optim.total_steps:
+                    break
+
+                t = torch.randint(0, diffusion.num_timesteps, (x.shape[0],), device=device)
                 model_kwargs = dict(o=o, c=c, y=y)
                 loss_dict = diffusion.training_losses(model, x, t, model_kwargs)
                 loss = loss_dict["loss"].mean()
-            scaler.scale(loss).backward()
-            scaler.step(opt)
-            scaler.update()
-            opt.zero_grad(set_to_none=True)
-            update_ema(ema, model.module)
+                accelerator.backward(loss)
 
-            # Log loss values:
-            running_loss += loss.item()
-            log_steps += 1
-            train_steps += 1
-            if train_steps % args.log_every == 0:
-                # Measure training speed:
-                torch.cuda.synchronize()
-                end_time = time()
-                steps_per_sec = log_steps / (end_time - start_time)
-                # Reduce loss history over all processes:
-                avg_loss = torch.tensor(running_loss / log_steps, device=device)
-                dist.all_reduce(avg_loss, op=dist.ReduceOp.SUM)
-                avg_loss = avg_loss.item() / world_size
-                logger.info(
-                    f"(step={train_steps:07d}) Train Loss: {avg_loss:.4f}, Train Steps/Sec: {steps_per_sec:.2f}",
-                )
-                # Reset monitoring variables:
-                running_loss = 0
-                log_steps = 0
-                start_time = time()
+                optimizer.step()
+                scheduler.step()
+                optimizer.zero_grad(set_to_none=True)
 
-            # Save DiT checkpoint:
-            if train_steps % args.ckpt_every == 0 and train_steps > 0:
-                if rank == 0:
-                    checkpoint = {
-                        "model": model.module.state_dict(),
-                        "ema": ema.state_dict(),
-                        "opt": opt.state_dict(),
-                        "scaler": scaler.state_dict(),
-                        "args": args,
-                    }
-                    checkpoint_path = f"{checkpoint_dir}/{train_steps:07d}.pt"
-                    torch.save(checkpoint, checkpoint_path)
-                    logger.info(f"Saved checkpoint to {checkpoint_path}")
-                dist.barrier()
+                update_ema(ema, model)
+
+                # Log loss values:
+                running_loss += loss.item()
+
+                if accelerator.sync_gradients:
+                    log_steps += 1
+                    train_steps += 1
+                    if train_steps % args.logging.every_steps == 0:
+                        # Measure training speed:
+                        end_time = time()
+                        steps_per_sec = log_steps / (end_time - start_time)
+                        avg_loss = running_loss / log_steps
+                        print(
+                            f"(step={train_steps:07d}) Train Loss: {avg_loss:.4f}, Train Steps/Sec: {steps_per_sec:.2f}",
+                        )
+                        accelerator.log({"train_loss": avg_loss, "steps_per_sec": steps_per_sec}, train_steps)
+                        # Reset monitoring variables:
+                        running_loss = 0
+                        log_steps = 0
+                        start_time = time()
+
+                    # Save DiT checkpoint:
+                    if train_steps % args.checkpoint.every_steps == 0 and train_steps > 0:
+                        accelerator.wait_for_everyone()
+                        if accelerator.is_main_process:
+                            output_dir = f"checkpoint-{train_steps}"
+                            accelerator.save_state(output_dir=output_dir, safe_serialization=True)
+                            print(f"Saved checkpoint to {output_dir}")
+
+        epoch += 1
 
     model.eval()  # important! This disables randomized embedding dropout
     # do any sampling/FID calculation/etc. with ema (or model) in eval mode ...
 
-    logger.info("Done!")
-    cleanup()
+    print("Done!")
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--data-path", type=str, required=True)
-    parser.add_argument("--num-classes", type=int, default=52670)
-    parser.add_argument("--data-end", type=int, default=13402)
-    parser.add_argument("--data-start", type=int, default=0)
-    parser.add_argument("--results-dir", type=str, default="results")
-    parser.add_argument(
-        "--model",
-        type=str,
-        choices=list(DiT_models.keys()),
-        default="DiT-B",
-    )
-    parser.add_argument("--epochs", type=int, default=1400)
-    parser.add_argument("--global-batch-size", type=int, default=256)
-    parser.add_argument("--global-seed", type=int, default=0)
-    parser.add_argument("--num-workers", type=int, default=4)
-    parser.add_argument("--log-every", type=int, default=100)
-    parser.add_argument("--ckpt-every", type=int, default=50_000)
-    parser.add_argument("--seq-len", type=int, default=128)
-    parser.add_argument("--stride", type=int, default=16)
-    parser.add_argument("--use-amp", type=bool, default=True)
-    parser.add_argument("--ckpt", type=str, default=None)
-    parser.add_argument("--dist", type=str, default="nccl")
-    parser.add_argument("--fine-tune-ids", type=str, default=None)
-    parser.add_argument("--noise-schedule", type=str, default="squaredcos_cap_v2")
-    parser.add_argument("--l1-loss", type=bool, default=True)
-    parser.add_argument("--lr", type=float, default=1e-4)
-    parser.add_argument("--relearn-embeds", type=bool, default=False)
-    parser.add_argument("--embed-only-epochs", type=int, default=0)
-    args = parser.parse_args()
-    main(args)
+    main()

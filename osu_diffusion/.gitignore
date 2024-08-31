@@ -7,3 +7,4 @@ logs/
 /embeddings/*.csv
 *.pickle
 __pycache__
+!beatmap_idx.pickle
