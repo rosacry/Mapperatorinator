@@ -226,7 +226,7 @@ class FirstLayer(nn.Module):
 
     def forward(self, x, o, c):
         x_freq = position_sequence_embedding(
-            x * self.playfield_size,
+            (x + 1) / 2 * self.playfield_size,
             self.frequency_embedding_size,
         )
         o_freq = offset_sequence_embedding(o / 10, self.frequency_embedding_size)
