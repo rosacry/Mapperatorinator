@@ -3,18 +3,17 @@ import os
 import pickle
 
 beatmap_idx = {}
-dataset_path = "D:\\Osu! Dingen\\Beatmap ML Datasets\\ORS13402"
+dataset_path = r"C:\Users\Olivier\Documents\Collections\Beatmap ML Datasets\ORS16291"
 idx = 0
 
-for i in range(0, 13402):
+for i in range(0, 16291):
     track_name = "Track" + str(i).zfill(5)
     metadata_File = os.path.join(dataset_path, track_name, "metadata.json")
     with open(metadata_File) as f:
         metadata = json.load(f)
-    for j in range(len(metadata["Beatmaps"])):
-        beatmap_name = str(idx).zfill(6) + "M" + str(j).zfill(3)
-        beatmap_metadata = metadata["Beatmaps"][beatmap_name]
-        beatmap_idx[beatmap_metadata["BeatmapId"]] = idx
+    for j in metadata["Beatmaps"]:
+        beatmap_metadata = metadata["Beatmaps"][j]
+        beatmap_idx[beatmap_metadata["BeatmapId"]] = beatmap_metadata["Index"]
         idx += 1
         print(f"\r{idx}", end="")
 
