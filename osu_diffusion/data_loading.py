@@ -12,9 +12,9 @@ from torch.utils.data import DataLoader, Dataset
 from torch.utils.data import IterableDataset
 import tqdm
 
-from .positional_embedding import offset_sequence_embedding
-from .positional_embedding import position_sequence_embedding
-from .positional_embedding import timestep_embedding
+from positional_embedding import offset_sequence_embedding
+from positional_embedding import position_sequence_embedding
+from positional_embedding import timestep_embedding
 from slider import Position
 from slider.beatmap import Beatmap
 from slider.beatmap import HitObject
