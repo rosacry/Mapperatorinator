@@ -1,3 +1,4 @@
+import json
 import math
 import os.path
 import pickle
@@ -7,14 +8,10 @@ from datetime import timedelta
 from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Optional
 
+import hydra
 import torch
-from torch.utils.data import DataLoader, Dataset
-from torch.utils.data import IterableDataset
 import tqdm
-
-from positional_embedding import offset_sequence_embedding
-from positional_embedding import position_sequence_embedding
-from positional_embedding import timestep_embedding
+from omegaconf import DictConfig
 from slider import Position
 from slider.beatmap import Beatmap
 from slider.beatmap import HitObject
@@ -24,6 +21,13 @@ from slider.curve import Catmull
 from slider.curve import Linear
 from slider.curve import MultiBezier
 from slider.curve import Perfect
+from torch.utils.data import DataLoader, Dataset
+from torch.utils.data import IterableDataset
+
+from positional_embedding import offset_sequence_embedding
+from positional_embedding import position_sequence_embedding
+from positional_embedding import timestep_embedding
+from tokenizer import Tokenizer
 
 playfield_size = torch.tensor((512, 384))
 feature_size = 19
@@ -152,39 +156,51 @@ def calc_distances(seq: torch.Tensor) -> torch.Tensor:
 
 
 def split_and_process_sequence(
-    seq: torch.Tensor,
-) -> tuple[tuple[torch.Tensor, torch.Tensor, torch.Tensor], int]:
+        seq: torch.Tensor,
+        double_time: bool = False,
+) -> tuple[tuple[torch.Tensor, torch.Tensor], int]:
     seq_d = calc_distances(seq)
+
     # Augment and normalize positions for diffusion
     seq_x = random_flip(seq[:2, :]) / playfield_size.unsqueeze(1) * 2 - 1
+
     seq_o = seq[2, :]
+    # Augment the time vector with random speed change
+    if double_time:
+        seq_o /= 1.5
+    # Obscure the absolute time by normalizing to zero and adding a random offset between zero and the max period
+    # We do this to make sure the offset embedding utilizes the full range of values, which is also the case when sampling the model
+    seq_o = seq_o - seq_o[0] + random.random() * 1000000
+
     seq_c = torch.concatenate(
         [
+            timestep_embedding(seq_o * 0.1, 128).T,
             timestep_embedding(seq_d, 128).T,
             seq[3:, :],
         ],
         0,
     )
 
-    return (seq_x, seq_o, seq_c), seq.shape[1]
+    return (seq_x, seq_c), seq.shape[1]
 
 
 def split_and_process_sequence_no_augment(
     seq: torch.Tensor,
-) -> tuple[tuple[torch.Tensor, torch.Tensor, torch.Tensor], int]:
+) -> tuple[tuple[torch.Tensor, torch.Tensor], int]:
     seq_d = calc_distances(seq)
     # Augment and normalize positions for diffusion
     seq_x = seq[:2, :] / playfield_size.to(seq.device).unsqueeze(1) * 2 - 1
     seq_o = seq[2, :]
     seq_c = torch.concatenate(
         [
+            offset_sequence_embedding(seq_o * 0.1, 128).T,
             timestep_embedding(seq_d, 128).T,
             seq[3:, :],
         ],
         0,
     )
 
-    return (seq_x, seq_o, seq_c), seq.shape[1]
+    return (seq_x, seq_c), seq.shape[1]
 
 
 def load_and_process_beatmap(beatmap: Beatmap):
@@ -192,15 +208,64 @@ def load_and_process_beatmap(beatmap: Beatmap):
     return split_and_process_sequence(seq)
 
 
-def window_and_relative_time(seq, s, e):
-    seq_x, seq_o, seq_c = seq
+def window_split_sequence(seq, s, e):
+    seq_x, seq_c = seq
     x = seq_x[:, s:e]
-    # Obscure the absolute time by normalizing to zero and adding a random offset between zero and the max period
-    # We do this to make sure the offset embedding utilizes the full range of values, which is also the case when sampling the model
-    o = seq_o[s:e] - seq_o[s] + random.random() * 100000
     c = seq_c[:, s:e]
 
-    return x, o, c
+    return x, c
+
+
+def load_metadata(track_path: Path) -> dict:
+    metadata_file = track_path / "metadata.json"
+    with open(metadata_file) as f:
+        return json.load(f)
+
+
+def get_difficulty(metadata: dict, beatmap_name: str, double_time: bool = False):
+    if double_time:
+        return metadata["Beatmaps"][beatmap_name]["StandardStarRating"]["64"]
+    return metadata["Beatmaps"][beatmap_name]["StandardStarRating"]["0"]
+
+
+def get_class_vector(
+        args: DictConfig,
+        tokenizer: Tokenizer,
+        beatmap: Beatmap,
+        beatmap_name: str,
+        metadata: dict,
+        double_time: bool = False,
+) -> torch.Tensor:
+    class_vector = torch.zeros(tokenizer.num_tokens)
+    beatmap_id = beatmap.beatmap_id
+    if args.beatmap_class:
+        if random.random() < args.class_dropout_prob:
+            class_vector[tokenizer.style_unk] = 1
+        else:
+            class_vector[tokenizer.encode_style(beatmap_id)] = 1
+    if args.difficulty_class:
+        if random.random() < args.diff_dropout_prob:
+            class_vector[tokenizer.diff_unk] = 1
+        else:
+            difficulty = get_difficulty(metadata, beatmap_name, double_time)
+            class_vector[tokenizer.encode_diff(difficulty)] = 1
+    if args.mapper_class:
+        if random.random() < args.mapper_dropout_prob:
+            class_vector[tokenizer.mapper_unk] = 1
+        else:
+            class_vector[tokenizer.encode_mapper(beatmap_id)] = 1
+    if args.descriptor_class:
+        if random.random() < args.descriptor_dropout_prob:
+            class_vector[tokenizer.descriptor_unk] = 1
+        else:
+            for idx in tokenizer.encode_descriptor(beatmap_id):
+                class_vector[idx] = 1
+    if args.circle_size_class:
+        if random.random() < args.cs_dropout_prob:
+            class_vector[tokenizer.cs_unk] = 1
+        else:
+            class_vector[tokenizer.encode_cs(beatmap.circle_size)] = 1
+    return class_vector
 
 
 class BeatmapDatasetIterable:
@@ -210,37 +275,35 @@ class BeatmapDatasetIterable:
         "seq_len",
         "stride",
         "index",
-        "current_idx",
+        "current_class",
         "current_seq",
         "current_seq_len",
         "seq_index",
-        "seq_func",
-        "win_func",
+        "args",
+        "tokenizer",
     )
 
     def __init__(
         self,
-        beatmap_files: list[str],
-        seq_len: int,
-        stride: int,
-        seq_func: Callable,
-        win_func: Callable,
+        beatmap_files: list[Path],
+        args: DictConfig,
+        tokenizer: Tokenizer,
     ):
         self.beatmap_files = beatmap_files
-        self.seq_len = seq_len
-        self.stride = stride
+        self.seq_len = args.seq_len
+        self.stride = args.stride
+        self.args = args
+        self.tokenizer = tokenizer
         self.index = 0
-        self.current_idx = 0
+        self.current_class = None
         self.current_seq = None
         self.current_seq_len = -1
         self.seq_index = 0
-        self.seq_func = seq_func
-        self.win_func = win_func
 
     def __iter__(self) -> "BeatmapDatasetIterable":
         return self
 
-    def __next__(self) -> tuple[any, int]:
+    def __next__(self) -> tuple[any, torch.Tensor]:
         while (
             self.current_seq is None
             or self.seq_index + self.seq_len > self.current_seq_len
@@ -251,20 +314,29 @@ class BeatmapDatasetIterable:
             # Load the beatmap from file
             beatmap_path = self.beatmap_files[self.index]
             beatmap = Beatmap.from_path(beatmap_path)
+            metadata = load_metadata(beatmap_path.parents[1])
 
-            self.current_idx = int(os.path.basename(beatmap_path)[:6])
-            self.current_seq, self.current_seq_len = self.seq_func(beatmap)
+            double_time = random.random() < self.args.double_time_prob
+            self.current_class = get_class_vector(
+                self.args,
+                self.tokenizer,
+                beatmap,
+                beatmap_path.stem,
+                metadata,
+                double_time
+            )
+            self.current_seq, self.current_seq_len = split_and_process_sequence(beatmap_to_sequence(beatmap), double_time)
             self.seq_index = random.randint(0, self.stride - 1)
             self.index += 1
 
         # Return the preprocessed hit objects as a sequence of overlapping windows
-        window = self.win_func(
+        window = window_split_sequence(
             self.current_seq,
             self.seq_index,
             self.seq_index + self.seq_len,
         )
         self.seq_index += self.stride
-        return window, self.current_idx
+        return window, self.current_class
 
 
 class InterleavingBeatmapDatasetIterable:
@@ -272,7 +344,7 @@ class InterleavingBeatmapDatasetIterable:
 
     def __init__(
         self,
-        beatmap_files: list[str],
+        beatmap_files: list[Path],
         iterable_factory: Callable,
         cycle_length: int,
     ):
@@ -307,24 +379,19 @@ class InterleavingBeatmapDatasetIterable:
 class BeatmapDataset(IterableDataset):
     def __init__(
         self,
-        dataset_path: str,
-        start: int,
-        end: int,
-        iterable_factory: Callable,
-        cycle_length: int = 1,
-        shuffle: bool = False,
-        beatmap_files: Optional[list[str]] = None,
+        args: DictConfig,
+        tokenizer: Tokenizer,
+        beatmap_files: Optional[list[Path]] = None,
     ):
         super(BeatmapDataset).__init__()
-        self.dataset_path = dataset_path
-        self.start = start
-        self.end = end
-        self.iterable_factory = iterable_factory
-        self.cycle_length = cycle_length
-        self.shuffle = shuffle
+        self.args = args
+        self.path = args.train_dataset_path
+        self.start = args.start
+        self.end = args.end
+        self.tokenizer = tokenizer
         self.beatmap_files = beatmap_files
 
-    def _get_beatmap_files(self) -> list[str]:
+    def _get_beatmap_files(self) -> list[Path]:
         if self.beatmap_files is not None:
             return self.beatmap_files
 
@@ -333,14 +400,16 @@ class BeatmapDataset(IterableDataset):
         track_names = ["Track" + str(i).zfill(5) for i in range(self.start, self.end)]
         for track_name in track_names:
             for beatmap_file in os.listdir(
-                    os.path.join(self.dataset_path, track_name, "beatmaps"),
+                    os.path.join(self.path, track_name, "beatmaps"),
             ):
                 beatmap_files.append(
-                    os.path.join(
-                        self.dataset_path,
-                        track_name,
-                        "beatmaps",
-                        beatmap_file,
+                    Path(
+                        os.path.join(
+                            self.path,
+                            track_name,
+                            "beatmaps",
+                            beatmap_file,
+                        )
                     ),
                 )
 
@@ -349,17 +418,24 @@ class BeatmapDataset(IterableDataset):
     def __iter__(self) -> InterleavingBeatmapDatasetIterable | BeatmapDatasetIterable:
         beatmap_files = self._get_beatmap_files()
 
-        if self.shuffle:
+        if self.args.shuffle:
             random.shuffle(beatmap_files)
 
-        if self.cycle_length > 1:
+        if self.args.cycle_length > 1:
             return InterleavingBeatmapDatasetIterable(
                 beatmap_files,
-                self.iterable_factory,
-                self.cycle_length,
+                self._iterable_factory,
+                self.args.cycle_length,
             )
 
-        return self.iterable_factory(beatmap_files)
+        return self._iterable_factory(beatmap_files).__iter__()
+
+    def _iterable_factory(self, beatmap_files: list[Path]):
+        return BeatmapDatasetIterable(
+            beatmap_files,
+            self.args,
+            self.tokenizer,
+        )
 
 
 # Define a `worker_init_fn` that configures each dataset copy differently
@@ -391,26 +467,6 @@ def get_beatmap_files(name: str, data_path: str) -> list[PurePosixPath]:
     return beatmap_files
 
 
-class BeatmapDatasetIterableFactory:
-    __slots__ = ("seq_len", "stride", "seq_func", "win_func")
-
-    def __init__(self, seq_len, stride, seq_func, win_func):
-        self.seq_len = seq_len
-        self.stride = stride
-        self.seq_func = seq_func
-        self.win_func = win_func
-
-    def __call__(self, *args, **kwargs):
-        beatmap_files = args[0]
-        return BeatmapDatasetIterable(
-            beatmap_files=beatmap_files,
-            seq_len=self.seq_len,
-            stride=self.stride,
-            seq_func=self.seq_func,
-            win_func=self.win_func,
-        )
-
-
 class CachedDataset(Dataset):
     __slots__ = "cached_data"
 
@@ -426,20 +482,13 @@ class CachedDataset(Dataset):
 
 def cache_dataset(
         out_path: str,
-        dataset_path: str,
-        start: int,
-        end: int,
-        iterable_factory: Callable,
-        cycle_length=1,
+        args: DictConfig,
+        tokenizer: Tokenizer,
         beatmap_files: Optional[list[str]] = None,
 ):
     dataset = BeatmapDataset(
-        dataset_path=dataset_path,
-        start=start,
-        end=end,
-        iterable_factory=iterable_factory,
-        cycle_length=cycle_length,
-        shuffle=False,
+        args=args.data,
+        tokenizer=tokenizer,
         beatmap_files=beatmap_files,
     )
 
@@ -476,56 +525,40 @@ def get_cached_data_loader(
 
 
 def get_data_loader(
-        dataset_path: str,
-        start: int,
-        end: int,
-        iterable_factory: Callable,
-        cycle_length=1,
-        batch_size: int = 1,
-        num_workers: int = 0,
-        shuffle: bool = False,
+        args: DictConfig,
+        tokenizer: Tokenizer,
         pin_memory: bool = False,
         drop_last: bool = False,
         beatmap_files: Optional[list[str]] = None,
+        num_processes: int = 1,
 ) -> DataLoader:
     dataset = BeatmapDataset(
-        dataset_path=dataset_path,
-        start=start,
-        end=end,
-        iterable_factory=iterable_factory,
-        cycle_length=cycle_length,
-        shuffle=shuffle,
+        args=args.data,
+        tokenizer=tokenizer,
         beatmap_files=beatmap_files,
     )
+
+    batch_size = args.optim.batch_size // args.optim.grad_acc // num_processes
 
     dataloader = DataLoader(
         dataset,
         batch_size=batch_size,
         worker_init_fn=worker_init_fn,
-        num_workers=num_workers,
+        num_workers=args.dataloader.num_workers,
         pin_memory=pin_memory,
         drop_last=drop_last,
-        persistent_workers=num_workers > 0,
+        persistent_workers=args.dataloader.num_workers > 0,
     )
 
     return dataloader
 
 
+@hydra.main(config_path="../configs/diffusion", config_name="v1", version_base="1.1")
 def main(args):
+    tokenizer = Tokenizer(args)
     dataloader = get_data_loader(
-        dataset_path=args.data_path,
-        start=0,
-        end=16291,
-        iterable_factory=BeatmapDatasetIterableFactory(
-            128,
-            16,
-            load_and_process_beatmap,
-            window_and_relative_time,
-        ),
-        cycle_length=1,
-        batch_size=args.batch_size,
-        num_workers=args.num_workers,
-        shuffle=False,
+        args=args,
+        tokenizer=tokenizer,
         pin_memory=False,
         drop_last=True,
     )
@@ -533,21 +566,18 @@ def main(args):
     if args.mode == "plotfirst":
         import matplotlib.pyplot as plt
 
-        for (x, o, c), y in dataloader:
+        for (x, c), y in dataloader:
             x = torch.swapaxes(x, 1, 2)  # (N, T, C)
             c = torch.swapaxes(c, 1, 2)  # (N, T, E)
-            print(x.shape, o.shape, c.shape, y.shape)
-            batch_pos_emb = position_sequence_embedding((x + 1) / 2 * playfield_size, 128)
+            print(x.shape, c.shape, y.shape)
+            batch_pos_emb = position_sequence_embedding(x * 512, 128)
             print(batch_pos_emb.shape)
-            batch_offset_emb = offset_sequence_embedding(o / 10, 128)
-            print(batch_offset_emb.shape)
             print(y)
 
-            for j in range(args.batch_size):
-                fig, axs = plt.subplots(3, figsize=(5, 20))
+            for j in range(args.optim.batch_size):
+                fig, axs = plt.subplots(2, figsize=(5, 5))
                 axs[0].imshow(batch_pos_emb[j])
-                axs[1].imshow(batch_offset_emb[j])
-                axs[2].imshow(c[j])
+                axs[1].imshow(c[j])
                 print(y[j])
                 plt.show()
             break
@@ -557,12 +587,4 @@ def main(args):
 
 
 if __name__ == "__main__":
-    import argparse
-
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--data-path", type=str, required=True)
-    parser.add_argument("--mode", type=str, required=True)
-    parser.add_argument("--batch-size", type=int, default=1)
-    parser.add_argument("--num-workers", type=int, default=0)
-    args = parser.parse_args()
-    main(args)
+    main()
