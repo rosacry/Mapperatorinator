@@ -160,6 +160,6 @@ def positionalencoding2d(d_model, height, width):
 if __name__ == "__main__":
     import matplotlib.pyplot as plt
 
-    pe = positionalencoding(128, torch.tensor([-50, 50]))
-    plt.imshow(pe)
+    pe = position_sequence_embedding(256 * torch.tensor([[[-1, -1], [-0.9, -0.9], [-0.8, -0.8], [-0.7, -0.7], [-0.6, -0.6], [-0.5, -0.5], [-0.4, -0.4], [-0.3, -0.3], [-0.2, -0.2], [-0.1, -0.1], [-0.0, -0.0], [1, 1], [1, -1], [-1, 1]]]), 128)
+    plt.imshow(pe.squeeze(0), aspect="auto", interpolation="none")
     plt.show()

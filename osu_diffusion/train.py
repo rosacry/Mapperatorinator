@@ -9,9 +9,7 @@ from omegaconf import DictConfig
 from torch.optim import Optimizer
 from torch.optim.lr_scheduler import LRScheduler, LinearLR, CosineAnnealingLR, SequentialLR
 
-# the first flag below was False when we tested this script but True makes A100 training a lot faster:
-torch.backends.cuda.matmul.allow_tf32 = True
-torch.backends.cudnn.allow_tf32 = True
+from tokenizer import Tokenizer
 from collections import OrderedDict
 from copy import deepcopy
 from time import time
@@ -19,12 +17,11 @@ from time import time
 from models import DiT_models
 from diffusion import create_diffusion
 
-from data_loading import (
-    get_data_loader,
-    feature_size,
-    window_and_relative_time,
-    load_and_process_beatmap, BeatmapDatasetIterableFactory,
-)
+from data_loading import get_data_loader
+
+# the first flag below was False when we tested this script but True makes A100 training a lot faster:
+torch.backends.cuda.matmul.allow_tf32 = True
+torch.backends.cudnn.allow_tf32 = True
 
 
 #################################################################################
@@ -121,10 +118,10 @@ def main(args):
     set_seed(args.seed)
 
     # Create model:
-    model = DiT_models[args.model](
-        num_classes=args.data.num_classes,
-        context_size=feature_size - 3 + 128,
-        class_dropout_prob=0.2,
+    tokenizer = Tokenizer(args)
+    model = DiT_models[args.model.model](
+        context_size=args.model.context_size,
+        class_size=tokenizer.num_tokens,
     ).to(device)
     # Note that parameter initialization is done within the DiT constructor
     ema: torch.nn.Module = deepcopy(model).to(device)  # Create an EMA of the model for use after training
@@ -132,9 +129,9 @@ def main(args):
 
     diffusion = create_diffusion(
         timestep_respacing="",
-        noise_schedule=args.noise_schedule,
-        use_l1=args.l1_loss,
-        diffusion_steps=args.diffusion_steps,
+        noise_schedule=args.model.noise_schedule,
+        use_l1=args.model.l1_loss,
+        diffusion_steps=args.model.diffusion_steps,
     )  # default: 1000 steps, linear noise schedule
     print(f"DiT Parameters: {sum(p.numel() for p in model.parameters()):,}")
 
@@ -143,21 +140,10 @@ def main(args):
     scheduler = get_scheduler(optimizer, args, accelerator)
 
     # Setup data:
-    batch_size = args.optim.batch_size // args.optim.grad_acc // accelerator.num_processes
     loader = get_data_loader(
-        dataset_path=args.data.train_dataset_path,
-        start=args.data.start,
-        end=args.data.end,
-        iterable_factory=BeatmapDatasetIterableFactory(
-            args.data.seq_len,
-            args.data.stride,
-            load_and_process_beatmap,
-            window_and_relative_time,
-        ),
-        cycle_length=batch_size // 2,
-        batch_size=batch_size,
-        num_workers=args.dataloader.num_workers,
-        shuffle=True,
+        args,
+        tokenizer,
+        num_processes=accelerator.num_processes,
         pin_memory=True,
         drop_last=True,
     )
@@ -176,6 +162,7 @@ def main(args):
         model, optimizer, loader, scheduler
     )
     accelerator.register_for_checkpointing(ema)
+    accelerator.register_for_checkpointing(tokenizer)
 
     # Load checkpoint
     if args.checkpoint_path:
@@ -197,13 +184,14 @@ def main(args):
         print(f"Beginning epoch {epoch}...")
         optimizer.zero_grad(set_to_none=True)
 
-        for (x, o, c), y in loader:
+        for (x, c), y in loader:
             with accelerator.accumulate(model):
                 if train_steps > args.optim.total_steps:
                     break
 
-                t = torch.randint(0, diffusion.num_timesteps, (x.shape[0],), device=device)
-                model_kwargs = dict(o=o, c=c, y=y)
+                t = torch.randint(0, args.model.max_diffusion_step, (x.shape[0],), device=device)
+
+                model_kwargs = dict(c=c, y=y)
                 loss_dict = diffusion.training_losses(model, x, t, model_kwargs)
                 loss = loss_dict["loss"].mean()
                 accelerator.backward(loss)
@@ -225,10 +213,11 @@ def main(args):
                         end_time = time()
                         steps_per_sec = log_steps / (end_time - start_time)
                         avg_loss = running_loss / log_steps
+                        learning_rate = optimizer.param_groups[0]["lr"]
                         print(
-                            f"(step={train_steps:07d}) Train Loss: {avg_loss:.4f}, Train Steps/Sec: {steps_per_sec:.2f}",
+                            f"(step={train_steps:07d}) Train Loss: {avg_loss:.4f}, Train Steps/Sec: {steps_per_sec:.2f}, LR: {learning_rate:.5f}",
                         )
-                        accelerator.log({"train_loss": avg_loss, "steps_per_sec": steps_per_sec}, train_steps)
+                        accelerator.log({"train_loss": avg_loss, "steps_per_sec": steps_per_sec, "learning_rate": learning_rate}, train_steps)
                         # Reset monitoring variables:
                         running_loss = 0
                         log_steps = 0

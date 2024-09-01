@@ -4,7 +4,6 @@ import numpy as np
 import torch
 import torch.nn as nn
 
-from positional_embedding import offset_sequence_embedding
 from positional_embedding import position_sequence_embedding
 from positional_embedding import timestep_embedding
 
@@ -43,34 +42,16 @@ class LabelEmbedder(nn.Module):
     Embeds class labels into vector representations. Also handles label dropout for classifier-free guidance.
     """
 
-    def __init__(self, num_classes, hidden_size, dropout_prob):
+    def __init__(self, class_size, hidden_size):
         super().__init__()
-        use_cfg_embedding = dropout_prob > 0
-        self.embedding_table = nn.Embedding(
-            num_classes + use_cfg_embedding,
-            hidden_size,
+        self.class_embedding = nn.Sequential(
+            nn.Linear(class_size, hidden_size),
+            nn.SiLU(),
+            nn.Linear(hidden_size, hidden_size),
         )
-        self.num_classes = num_classes
-        self.dropout_prob = dropout_prob
 
-    def token_drop(self, labels, force_drop_ids=None):
-        """
-        Drops labels to enable classifier-free guidance.
-        """
-        if force_drop_ids is None:
-            drop_ids = (
-                torch.rand(labels.shape[0], device=labels.device) < self.dropout_prob
-            )
-        else:
-            drop_ids = force_drop_ids == 1
-        labels = torch.where(drop_ids, self.num_classes, labels)
-        return labels
-
-    def forward(self, labels, train, force_drop_ids=None):
-        use_dropout = self.dropout_prob > 0
-        if (train and use_dropout) or (force_drop_ids is not None):
-            labels = self.token_drop(labels, force_drop_ids)
-        embeddings = self.embedding_table(labels)
+    def forward(self, labels):
+        embeddings = self.class_embedding(labels)
         return embeddings
 
 
@@ -212,27 +193,21 @@ class FirstLayer(nn.Module):
         self.mlp = nn.Sequential(
             nn.Linear(
                 in_channels * frequency_embedding_size
-                + frequency_embedding_size
                 + context_size,
                 hidden_size,
                 bias=True,
             ),
         )
         self.frequency_embedding_size = frequency_embedding_size
-        self.playfield_size = nn.Parameter(
-            torch.tensor((512, 384), dtype=torch.float32),
-            requires_grad=False,
-        )
 
-    def forward(self, x, o, c):
+    def forward(self, x, c):
         x_freq = position_sequence_embedding(
-            (x + 1) / 2 * self.playfield_size,
+            x * 512,
             self.frequency_embedding_size,
         )
-        o_freq = offset_sequence_embedding(o / 10, self.frequency_embedding_size)
-        xoc = torch.concatenate((x_freq, o_freq, c), -1)
-        xoc_emb = self.mlp(xoc)
-        return xoc_emb
+        xc_emb = torch.concatenate((x_freq, c), -1)
+        xc_emb = self.mlp(xc_emb)
+        return xc_emb
 
 
 class DiT(nn.Module):
@@ -248,8 +223,7 @@ class DiT(nn.Module):
         depth=28,
         num_heads=16,
         mlp_ratio=4.0,
-        class_dropout_prob=0.1,
-        num_classes=1000,
+        class_size=256,
         learn_sigma=True,
     ):
         super().__init__()
@@ -259,9 +233,9 @@ class DiT(nn.Module):
         self.out_channels = in_channels * 2 if learn_sigma else in_channels
         self.num_heads = num_heads
 
-        self.xoc_embedder = FirstLayer(hidden_size, context_size, in_channels)
+        self.context_embedder = FirstLayer(hidden_size, context_size, in_channels)
         self.t_embedder = TimestepEmbedder(hidden_size)
-        self.y_embedder = LabelEmbedder(num_classes, hidden_size, class_dropout_prob)
+        self.y_embedder = LabelEmbedder(class_size, hidden_size)
 
         self.blocks = nn.ModuleList(
             [
@@ -283,10 +257,11 @@ class DiT(nn.Module):
         self.apply(_basic_init)
 
         # Initialize position embedding MLP:
-        nn.init.normal_(self.xoc_embedder.mlp[0].weight, std=0.02)
+        nn.init.normal_(self.context_embedder.mlp[0].weight, std=0.02)
 
         # Initialize label embedding table:
-        nn.init.normal_(self.y_embedder.embedding_table.weight, std=0.02)
+        nn.init.normal_(self.y_embedder.class_embedding[0].weight, std=0.02)
+        nn.init.normal_(self.y_embedder.class_embedding[2].weight, std=0.02)
 
         # Initialize timestep embedding MLP:
         nn.init.normal_(self.t_embedder.mlp[0].weight, std=0.02)
@@ -303,20 +278,19 @@ class DiT(nn.Module):
         nn.init.constant_(self.final_layer.linear.weight, 0)
         nn.init.constant_(self.final_layer.linear.bias, 0)
 
-    def forward(self, x, t, o, c, y, attn_mask=None):
+    def forward(self, x, t, c, y, attn_mask=None):
         """
         Forward pass of DiT.
         x: (N, C, T) tensor of sequence inputs
         t: (N) tensor of diffusion timesteps
-        o: (N, T) tensor of sequence offsets in milliseconds
         c: (N, E, T) tensor of sequence context
-        y: (N) tensor of class labels
+        y: (N, C) tensor of class labels
         """
         x = torch.swapaxes(x, 1, 2)  # (N, T, C)
         c = torch.swapaxes(c, 1, 2)  # (N, T, E)
-        x = self.xoc_embedder(x, o, c)  # (N, T, D), where T = seq_len
+        x = self.context_embedder(x, c)  # (N, T, D), where T = seq_len
         t = self.t_embedder(t)  # (N, D)
-        y = self.y_embedder(y, self.training)  # (N, D)
+        y = self.y_embedder(y)  # (N, D)
         b = t + y  # (N, D)
         for block in self.blocks:
             x = block(x, b, attn_mask)  # (N, T, D)
@@ -324,14 +298,14 @@ class DiT(nn.Module):
         x = torch.swapaxes(x, 1, 2)  # (N, out_channels, T)
         return x
 
-    def forward_with_cfg(self, x, t, o, c, y, cfg_scale, attn_mask=None):
+    def forward_with_cfg(self, x, t, c, y, cfg_scale, attn_mask=None):
         """
         Forward pass of DiT, but also batches the unconditional forward pass for classifier-free guidance.
         """
         # https://github.com/openai/glide-text2im/blob/main/notebooks/text2im.ipynb
         half = x[: len(x) // 2]
         combined = torch.cat([half, half], dim=0)
-        model_out = self.forward(combined, t, o, c, y, attn_mask)
+        model_out = self.forward(combined, t, c, y, attn_mask)
         # For exact reproducibility reasons, we apply classifier-free guidance on only
         # three channels by default. The standard approach to cfg applies it to all channels.
         # This can be done by uncommenting the following line and commenting-out the line following that.
