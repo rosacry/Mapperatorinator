@@ -423,6 +423,10 @@ class BeatmapDatasetIterable:
             sequence["mapper_token"] = self.tokenizer.encode_mapper(sequence["beatmap_id"]) \
                 if random.random() >= self.args.mapper_dropout_prob else self.tokenizer.mapper_unk
 
+        if self.args.cs_token_index >= 0:
+            sequence["circle_size_token"] = self.tokenizer.encode_cs(sequence["circle_size"]) \
+                if random.random() >= self.args.cs_dropout_prob else self.tokenizer.cs_unk
+
         if self.args.add_descriptors:
             sequence["descriptor_tokens"] = self.tokenizer.encode_descriptor(sequence["beatmap_id"]) \
                 if random.random() >= self.args.descriptor_dropout_prob else [self.tokenizer.descriptor_unk]
@@ -451,14 +455,20 @@ class BeatmapDatasetIterable:
                     sequence["other_mapper_token"] = self.tokenizer.encode_mapper(sequence["other_beatmap_id"]) \
                         if random.random() >= self.args.mapper_dropout_prob else self.tokenizer.mapper_unk
 
+                if self.args.cs_token_index >= 0:
+                    sequence["other_circle_size_token"] = self.tokenizer.encode_cs(sequence["other_circle_size"]) \
+                        if random.random() >= self.args.cs_dropout_prob else self.tokenizer.cs_unk
+
                 if self.args.add_descriptors:
                     sequence["other_descriptor_tokens"] = self.tokenizer.encode_descriptor(sequence["other_beatmap_id"]) \
                         if random.random() >= self.args.descriptor_dropout_prob else [self.tokenizer.descriptor_unk]
 
                 del sequence["other_difficulty"]
+                del sequence["other_circle_size"]
                 del sequence["other_beatmap_idx"]
 
         del sequence["difficulty"]
+        del sequence["circle_size"]
         del sequence["beatmap_id"]
         # We keep beatmap_idx because it is a model input
 
@@ -536,6 +546,9 @@ class BeatmapDatasetIterable:
                 if "other_mapper_token" in sequence:
                     input_tokens[si + self.args.mapper_token_index] = sequence["other_mapper_token"]
                     del sequence["other_mapper_token"]
+                if "other_circle_size_token" in sequence:
+                    input_tokens[si + self.args.cs_token_index] = sequence["other_circle_size_token"]
+                    del sequence["other_circle_size_token"]
 
                 si += self.args.special_token_len
 
@@ -561,6 +574,9 @@ class BeatmapDatasetIterable:
         if "mapper_token" in sequence:
             input_tokens[si + self.args.mapper_token_index] = sequence["mapper_token"]
             del sequence["mapper_token"]
+        if "circle_size_token" in sequence:
+            input_tokens[si + self.args.cs_token_index] = sequence["circle_size_token"]
+            del sequence["circle_size_token"]
 
         si += self.args.special_token_len
 
@@ -730,7 +746,8 @@ class BeatmapDatasetIterable:
             "context_type": context_type,
             "beatmap_id": osu_beatmap.beatmap_id,
             "beatmap_idx": self._get_idx(metadata, beatmap_name),
-            "difficulty": self._get_difficulty(metadata, beatmap_name, speed > 1)
+            "difficulty": self._get_difficulty(metadata, beatmap_name, speed > 1),
+            "circle_size": osu_beatmap.circle_size,
         }
 
         other_events = None
@@ -744,6 +761,7 @@ class BeatmapDatasetIterable:
             extra_data["other_beatmap_id"] = other_beatmap.beatmap_id
             extra_data["other_beatmap_idx"] = self._get_idx(metadata, other_name)
             extra_data["other_difficulty"] = self._get_difficulty(metadata, other_name, speed > 1)
+            extra_data["other_circle_size"] = other_beatmap.circle_size
         elif context_type == ContextType.NO_HS:
             other_events = remove_events_of_type(events, [EventType.HITSOUND, EventType.VOLUME])
         elif context_type == ContextType.TIMING:
