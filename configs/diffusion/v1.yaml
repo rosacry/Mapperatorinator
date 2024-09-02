@@ -43,13 +43,13 @@ dataloader:             # Dataloader settings
 
 optim:                  # Optimizer settings
   name: adamw
-  base_lr: 5e-4         # Learning rate
+  base_lr: 2e-4         # Learning rate
   batch_size: 256       # Global batch size
-  total_steps: 100000
+  total_steps: 400000
   warmup_steps: 10000
   lr_scheduler: cosine
   weight_decay: 0.0
-  grad_acc: 1
+  grad_acc: 2
   final_cosine: 1e-5
 
 checkpoint:             # Checkpoint settings
