@@ -65,7 +65,6 @@ class Pipeline(object):
         ])
 
         self.timeshift_bias = args.timeshift_bias
-        self.head_token = tokenizer.encode(Event(EventType.SLIDER_HEAD))
         self.time_range = range(tokenizer.event_start[EventType.TIME_SHIFT], tokenizer.event_end[EventType.TIME_SHIFT])
 
     def generate(
@@ -75,7 +74,8 @@ class Pipeline(object):
             beatmap_id: int = -1,
             difficulty: float = -1,
             mapper_id: int = -1,
-            descriptors=None,
+            descriptors: list[str] = None,
+            circle_size: float = -1,
             other_beatmap_path: str = '',
             context_type: ContextType = None,
     ) -> list[Event]:
@@ -88,6 +88,7 @@ class Pipeline(object):
             difficulty: The desired difficulty in star rating.
             mapper_id: Mapper ID for the style of beatmap.
             descriptors: List of descriptors for the style of beatmap.
+            circle_size: Circle size of the beatmap.
             other_beatmap_path: Path to the beatmap file to use as context.
             context_type: Type of context to use for inference.
 
@@ -95,32 +96,41 @@ class Pipeline(object):
             events: List of Event object lists.
             event_times: Corresponding event times of Event object lists in miliseconds.
         """
-        if descriptors is None or len(descriptors) == 0:
-            descriptors = ["unknown"] if self.add_descriptors else []
 
         events = []
         event_times = []
 
-        idx_dict = self.tokenizer.beatmap_idx
+        # Prepare special tokens
         beatmap_idx = torch.tensor([self.tokenizer.num_classes], dtype=torch.long, device=self.device)
         if self.need_beatmap_idx:
-            if beatmap_id in idx_dict:
-                beatmap_idx = torch.tensor([idx_dict[beatmap_id]], dtype=torch.long, device=self.device)
-            else:
-                print(f"Beatmap ID {beatmap_id} not found in dataset, using default style.")
+            beatmap_idx = torch.tensor([self.tokenizer.beatmap_idx[beatmap_id]], dtype=torch.long, device=self.device)
 
-        # Prepare special tokens
+        if self.add_descriptors:
+            if descriptors is not None and len(descriptors) > 0:
+                for descriptor in descriptors:
+                    if descriptor not in self.tokenizer.descriptor_idx:
+                        print(f"Descriptor class {descriptor} not found. Skipping.")
+                descriptors = [descriptor for descriptor in descriptors if descriptor in self.tokenizer.descriptor_idx]
+            if descriptors is None or len(descriptors) == 0:
+                descriptors = ["unknown"]
+        else:
+            descriptors = []
+
         cond_tokens = torch.empty((1, self.special_token_len + len(descriptors)), dtype=torch.long, device=self.device)
 
         if self.style_token_index >= 0:
             style_token = self.tokenizer.encode_style(beatmap_id) if beatmap_id != -1 else self.tokenizer.style_unk
             cond_tokens[:, self.style_token_index] = style_token
+            if beatmap_id != -1 and beatmap_id not in self.tokenizer.beatmap_idx:
+                print(f"Beatmap class {beatmap_id} not found. Using default.")
         if self.diff_token_index >= 0:
             diff_token = self.tokenizer.encode_diff(difficulty) if difficulty != -1 else self.tokenizer.diff_unk
             cond_tokens[:, self.diff_token_index] = diff_token
         if self.mapper_token_index >= 0:
             mapper_token = self.tokenizer.encode_mapper_id(mapper_id) if mapper_id != -1 else self.tokenizer.mapper_unk
             cond_tokens[:, self.mapper_token_index] = mapper_token
+            if mapper_id != -1 and mapper_id not in self.tokenizer.mapper_idx:
+                print(f"Mapper class {mapper_id} not found. Using default.")
         for i, descriptor in enumerate(descriptors):
             cond_tokens[:, self.special_token_len + i] = self.tokenizer.encode_descriptor_name(descriptor)
 

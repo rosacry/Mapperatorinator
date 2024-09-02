@@ -6,6 +6,7 @@ from accelerate.utils import set_seed
 from omegaconf import DictConfig
 from slider import Beatmap
 
+import osu_diffusion
 import routed_pickle
 from diffusion_pipeline import DiffisionPipeline
 from osuT5.osuT5.inference import Preprocessor, Pipeline, Postprocessor
@@ -31,6 +32,7 @@ def get_args_from_beatmap(args: DictConfig, tokenizer: Tokenizer):
         raise FileNotFoundError(f"Beatmap file {beatmap_path} not found.")
 
     beatmap = Beatmap.from_path(beatmap_path)
+    print(f"Using metadata from beatmap: {beatmap.display_name}")
     args.audio_path = beatmap_path.parent / beatmap.audio_filename
     args.output_path = beatmap_path.parent
     args.bpm = beatmap.bpm_max()
@@ -38,27 +40,40 @@ def get_args_from_beatmap(args: DictConfig, tokenizer: Tokenizer):
     args.slider_multiplier = beatmap.slider_multiplier
     args.title = beatmap.title
     args.artist = beatmap.artist
-    args.beatmap_id = beatmap.beatmap_id if args.beatmap_id == -1 else args.beatmap_id
-    args.style_id = beatmap.beatmap_id if args.style_id == -1 else args.style_id
-    args.difficulty = float(beatmap.stars()) if args.difficulty == -1 else args.difficulty
-    args.mapper_id = tokenizer.mapper_idx.get(beatmap.beatmap_id, -1) if args.mapper_id == -1 else args.mapper_id
-    args.descriptors = tokenizer.beatmap_descriptors.get(beatmap.beatmap_id, []) if len(args.descriptors) == 0 else args.descriptors
+    if args.beatmap_id == -1 and tokenizer.num_classes > 0:
+        args.beatmap_id = beatmap.beatmap_id
+        print(f"Using beatmap ID {args.beatmap_id}")
+    if args.difficulty == -1 and tokenizer.num_diff_classes > 0:
+        args.difficulty = float(beatmap.stars())
+        print(f"Using difficulty {args.difficulty}")
+    if args.mapper_id == -1 and beatmap.beatmap_id in tokenizer.mapper_idx:
+        args.mapper_id = tokenizer.mapper_idx[beatmap.beatmap_id]
+        print(f"Using mapper ID {args.mapper_id}")
+    if len(args.descriptors) == 0 and beatmap.beatmap_id in tokenizer.beatmap_descriptors:
+        args.descriptors = tokenizer.beatmap_descriptors[beatmap.beatmap_id]
+        print(f"Using descriptors {args.descriptors}")
+    if args.circle_size == -1 and tokenizer.num_cs_classes > 0:
+        args.circle_size = beatmap.circle_size
+        print(f"Using circle size {args.circle_size}")
     args.other_beatmap_path = args.beatmap_path
 
 
 def find_model(ckpt_path, args: DictConfig, device):
-    assert Path(ckpt_path).exists(), f"Could not find DiT checkpoint at {ckpt_path}"
-    checkpoint = torch.load(ckpt_path, map_location=lambda storage, loc: storage, weights_only=False)
-    if "ema" in checkpoint:  # supports checkpoints from train.py
-        checkpoint = checkpoint["ema"]
+    ckpt_path = Path(ckpt_path)
+    assert ckpt_path.exists(), f"Could not find DiT checkpoint at {ckpt_path}"
 
+    tokenizer_state = torch.load(ckpt_path / "custom_checkpoint_1.pkl", pickle_module=routed_pickle, weights_only=False)
+    tokenizer = osu_diffusion.tokenizer.Tokenizer()
+    tokenizer.load_state_dict(tokenizer_state)
+
+    ema_state = torch.load(ckpt_path / "custom_checkpoint_0.pkl", pickle_module=routed_pickle, weights_only=False)
     model = DiT_models[args.diffusion.model](
-        num_classes=args.diffusion.num_classes,
-        context_size=19 - 3 + 128,
+        context_size=args.model.context_size,
+        class_size=tokenizer.num_tokens,
     ).to(device)
-    model.load_state_dict(checkpoint)
+    model.load_state_dict(ema_state)
     model.eval()  # important!
-    return model
+    return model, tokenizer
 
 
 @hydra.main(config_path="configs", config_name="inference_v1", version_base="1.1")
@@ -100,6 +115,7 @@ def main(args: DictConfig):
         difficulty=args.difficulty,
         mapper_id=args.mapper_id,
         descriptors=args.descriptors,
+        circle_size=args.circle_size,
         other_beatmap_path=args.other_beatmap_path,
         context_type=args.context_type,
     )
@@ -116,14 +132,23 @@ def main(args: DictConfig):
         events = postprocessor.resnap_events(events, timing)
 
     if args.generate_positions:
-        model = find_model(args.diff_ckpt, args, device)
+        model, diff_tokenizer = find_model(args.diff_ckpt, args, device)
+        refine_model, _ = find_model(args.diff_refine_ckpt, args, device) if len(args.diff_refine_ckpt) > 0 else None
 
         if args.compile:
             model.forward = torch.compile(model.forward, mode="reduce-overhead", fullgraph=True)
 
-        refine_model = find_model(args.diff_refine_ckpt, args, device) if len(args.diff_refine_ckpt) > 0 else None
-        diffusion_pipeline = DiffisionPipeline(args)
-        events = diffusion_pipeline.generate(model, events, refine_model)
+        diffusion_pipeline = DiffisionPipeline(args, diff_tokenizer)
+        events = diffusion_pipeline.generate(
+            model=model,
+            events=events,
+            beatmap_id=args.beatmap_id,
+            difficulty=args.difficulty,
+            mapper_id=args.mapper_id,
+            descriptors=args.descriptors,
+            circle_size=args.circle_size,
+            refine_model=refine_model
+        )
 
     postprocessor.generate(events, timing)
 

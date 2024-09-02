@@ -24,14 +24,17 @@ data:                  # Data settings
   num_classes: 64821
   num_diff_classes: 24  # Number of difficulty classes
   max_diff: 12          # Maximum difficulty of difficulty classes
+  num_cs_classes: 21     # Number of circle size classes
   class_dropout_prob: 0.2
   diff_dropout_prob: 0.2
   mapper_dropout_prob: 0.2
+  cs_dropout_prob: 0.2
   descriptor_dropout_prob: 0.2
   special_token_len: 0
   diff_token_index: -1
   style_token_index: -1
   mapper_token_index: -1
+  cs_token_index: -1
   add_descriptors: false
   add_empty_sequences: true
   add_empty_sequences_at_step: -1

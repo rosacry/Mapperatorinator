@@ -34,6 +34,7 @@ class Tokenizer:
         "beatmap_descriptors",
         "descriptor_idx",
         "num_descriptor_classes",
+        "num_cs_classes",
     ]
 
     def __init__(self, args: DictConfig = None):
@@ -57,6 +58,7 @@ class Tokenizer:
         self.beatmap_descriptors: dict[int, list[int]] = {}  # beatmap_id -> [descriptor_idx]
         self.descriptor_idx: dict[str, int] = {}  # descriptor_name -> descriptor_idx
         self.num_descriptor_classes = 0
+        self.num_cs_classes = 0
 
         if args is not None:
             for cts in args.data.context_types:
@@ -90,6 +92,10 @@ class Tokenizer:
             if args.data.mapper_token_index >= 0:
                 self._init_mapper_idx(args)
                 self.input_event_ranges.append(EventRange(EventType.MAPPER, 0, self.num_mapper_classes))
+
+            if args.data.cs_token_index >= 0:
+                self.num_cs_classes = args.data.num_cs_classes
+                self.input_event_ranges.append(EventRange(EventType.CS, 0, self.num_cs_classes))
 
             if args.data.add_descriptors:
                 self._init_descriptor_idx(args)
@@ -263,6 +269,19 @@ class Tokenizer:
     def mapper_unk(self) -> int:
         """Gets the unknown mapper value token id."""
         return self.encode(Event(type=EventType.MAPPER, value=self.num_mapper_classes))
+
+    def encode_cs_event(self, cs: float) -> Event:
+        """Converts circle size value into event."""
+        return Event(type=EventType.CS, value=np.clip(int(cs * (self.num_cs_classes - 1) / 10), 0, self.num_cs_classes - 1))
+
+    def encode_cs(self, cs: float) -> int:
+        """Converts circle size value into token id."""
+        return self.encode(self.encode_cs_event(cs))
+
+    @property
+    def cs_unk(self) -> int:
+        """Gets the unknown circle size value token id."""
+        return self.encode(Event(type=EventType.CS, value=self.num_cs_classes))
 
     def encode_descriptor_events(self, beatmap_id: int) -> list[Event]:
         """Converts beatmap id into descriptor events."""

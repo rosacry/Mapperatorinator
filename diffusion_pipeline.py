@@ -5,7 +5,7 @@ import torch
 from omegaconf import DictConfig
 from tqdm import tqdm
 
-from osu_diffusion import timestep_embedding
+from osu_diffusion import timestep_embedding, Tokenizer
 from osu_diffusion import repeat_type
 from osu_diffusion import create_diffusion
 from osu_diffusion import DiT
@@ -21,46 +21,101 @@ def get_beatmap_idx(path) -> dict[int, int]:
 
 
 class DiffisionPipeline(object):
-    def __init__(self, args: DictConfig):
+    def __init__(self, args: DictConfig, tokenizer: Tokenizer):
         """Model inference stage that generates positions for distance events."""
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        self.diffusion_steps = args.diffusion.diffusion_steps
+        self.tokenizer = tokenizer
+        self.diffusion_steps = args.diffusion.model.diffusion_steps
+        self.noise_schedule = args.diffusion.model.noise_schedule
         self.timesteps = args.timesteps
         self.cfg_scale = args.cfg_scale
         self.seq_len = args.diffusion.seq_len
-        self.num_classes = args.diffusion.num_classes
-        self.beatmap_idx = get_beatmap_idx(args.beatmap_idx)
-        self.style_id = args.style_id
         self.refine_iters = args.refine_iters
         self.random_init = args.random_init
 
-        if self.style_id in self.beatmap_idx:
-            self.class_label = self.beatmap_idx[self.style_id]
-        else:
-            print(f"Beatmap ID {self.style_id} not found in dataset, using default style.")
-            self.class_label = self.num_classes
+    def get_class_vector(
+            self,
+            beatmap_id: int = -1,
+            difficulty: float = -1,
+            mapper_id: int = -1,
+            descriptors: list[str] = None,
+            circle_size: float = -1,
+    ) -> torch.Tensor:
+        """Get class vector for the given beatmap."""
+        class_vector = torch.zeros(self.tokenizer.num_tokens)
+        if self.tokenizer.num_classes > 0:
+            if beatmap_id != -1:
+                class_vector[self.tokenizer.encode_style(beatmap_id)] = 1
+                if beatmap_id not in self.tokenizer.beatmap_idx:
+                    print(f"Beatmap class {beatmap_id} not found. Using default.")
+            else:
+                class_vector[self.tokenizer.style_unk] = 1
+        if self.tokenizer.num_diff_classes > 0:
+            if difficulty != -1:
+                class_vector[self.tokenizer.encode_diff(difficulty)] = 1
+            else:
+                class_vector[self.tokenizer.diff_unk] = 1
+        if self.tokenizer.num_mapper_classes > 0:
+            if mapper_id != -1:
+                class_vector[self.tokenizer.encode_mapper(mapper_id)] = 1
+                if mapper_id not in self.tokenizer.mapper_idx:
+                    print(f"Mapper class {mapper_id} not found. Using default.")
+            else:
+                class_vector[self.tokenizer.mapper_unk] = 1
+        if self.tokenizer.num_descriptor_classes > 0:
+            if descriptors is not None and len(descriptors) > 0:
+                if all(descriptor not in self.tokenizer.descriptor_idx for descriptor in descriptors):
+                    print("Descriptor classes not found. Using default.")
+                    class_vector[self.tokenizer.descriptor_unk] = 1
+                else:
+                    for descriptor in descriptors:
+                        if descriptor in self.tokenizer.descriptor_idx:
+                            class_vector[self.tokenizer.encode_descriptor_name(descriptor)] = 1
+                        else:
+                            print(f"Descriptor class {descriptor} not found. Skipping.")
+            else:
+                class_vector[self.tokenizer.descriptor_unk] = 1
+        if self.tokenizer.num_cs_classes > 0:
+            if circle_size != -1:
+                class_vector[self.tokenizer.encode_cs(circle_size)] = 1
+            else:
+                class_vector[self.tokenizer.cs_unk] = 1
+        return class_vector
 
-    def generate(self, model: DiT, events: list[Event], refine_model: DiT = None) -> list[Event]:
+    def generate(
+            self,
+            model: DiT,
+            events: list[Event],
+            beatmap_id: int = -1,
+            difficulty: float = -1,
+            mapper_id: int = -1,
+            descriptors: list[str] = None,
+            circle_size: float = -1,
+            refine_model: DiT = None
+    ) -> list[Event]:
         """Generate position events for distance events in the Event list.
 
         Args:
             model: Trained model to use for inference.
             events: List of Event objects with distance events.
+            beatmap_id: Beatmap ID for class vector.
+            difficulty: Difficulty for class vector.
+            mapper_id: Mapper ID for class vector.
+            descriptors: List of descriptors for class vector.
+            circle_size: Circle size for class vector.
             refine_model: Optional model to refine the generated positions.
 
         Returns:
             events: List of Event objects with position events.
         """
 
-        seq_x, seq_o, seq_c, seq_len, seq_indices = self.events_to_sequence(events)
-
-        seq_o = seq_o - seq_o[0]  # Normalize to relative time
+        seq_x, seq_c, seq_len, seq_indices = self.events_to_sequence(events)
         print(f"seq len {seq_len}")
 
         diffusion = create_diffusion(
             timestep_respacing=self.timesteps,
             diffusion_steps=self.diffusion_steps,
-            noise_schedule="squaredcos_cap_v2",
+            noise_schedule=self.noise_schedule,
         )
 
         # Create banded matrix attention mask for increased sequence length
@@ -68,28 +123,30 @@ class DiffisionPipeline(object):
         for i in range(seq_len):
             attn_mask[max(0, i - self.seq_len): min(seq_len, i + self.seq_len), i] = False
 
-        class_labels = [self.class_label]
+        class_vector = self.get_class_vector(beatmap_id, difficulty, mapper_id, descriptors, circle_size)
+        unk_class_vector = self.get_class_vector(-1, difficulty, -1, None, circle_size)
+        class_labels = [class_vector]
 
         # Create sampling noise:
         n = len(class_labels)
         z = seq_x.repeat(n, 1, 1).to(self.device)
-        o = seq_o.repeat(n, 1).to(self.device)
         c = seq_c.repeat(n, 1, 1).to(self.device)
         y = torch.tensor(class_labels, device=self.device)
 
         # Setup classifier-free guidance:
         z = torch.cat([z, z], 0)
-        o = torch.cat([o, o], 0)
         c = torch.cat([c, c], 0)
-        y_null = torch.tensor([self.num_classes] * n, device=self.device)
+        y_null = torch.tensor([unk_class_vector] * n, device=self.device)
         y = torch.cat([y, y_null], 0)
-        model_kwargs = dict(o=o, c=c, y=y, cfg_scale=self.cfg_scale, attn_mask=attn_mask)
+        model_kwargs = dict(c=c, y=y, cfg_scale=self.cfg_scale, attn_mask=attn_mask)
 
         if self.random_init:
             z = torch.randn(*z.shape, device=z.device)
 
         def to_positions(samples):
             samples, _ = samples.chunk(2, dim=0)  # Remove null class samples
+            samples += 1
+            samples /= 2
             samples *= torch.tensor((512, 384), device=self.device).repeat(n, 1).unsqueeze(2)
             return samples.cpu()
 
@@ -122,7 +179,7 @@ class DiffisionPipeline(object):
         return self.events_with_pos(events, positions.squeeze(0), seq_indices)
 
     @staticmethod
-    def events_to_sequence(events: list[Event]) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, int, dict[int, int]]:
+    def events_to_sequence(events: list[Event]) -> tuple[torch.Tensor, torch.Tensor, int, dict[int, int]]:
         # Calculate the time of every event and interpolate time for control point events
         event_times = []
         update_event_times(events, event_times)
@@ -205,18 +262,19 @@ class DiffisionPipeline(object):
 
         seq = torch.stack(data_chunks, 0)
         seq = torch.swapaxes(seq, 0, 1)
-        seq_x = seq[:2, :] / torch.tensor((512, 384)).unsqueeze(1)
+        seq_x = seq[:2, :] / torch.tensor((512, 384)).unsqueeze(1) * 2 - 1
         seq_o = seq[2, :]
         seq_d = seq[3, :]
         seq_c = torch.concatenate(
             [
+                timestep_embedding(seq_o * 0.1, 128).T,
                 timestep_embedding(seq_d, 128).T,
                 seq[4:, :],
             ],
             0,
         )
 
-        return seq_x, seq_o, seq_c, seq.shape[1], seq_indices
+        return seq_x, seq_c, seq.shape[1], seq_indices
 
     @staticmethod
     def events_with_pos(events: list[Event], sampled_seq: torch.Tensor, seq_indices: dict[int, int]) -> list[Event]:
