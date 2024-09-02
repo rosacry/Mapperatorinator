@@ -177,6 +177,7 @@ def main(args):
     log_steps = 0
     running_loss = 0
     epoch = 0
+    grad_l2 = 0
     start_time = time()
 
     print(f"Training for {args.optim.total_steps} steps...")
@@ -196,6 +197,9 @@ def main(args):
                 loss = loss_dict["loss"].mean()
                 accelerator.backward(loss)
 
+                if accelerator.sync_gradients:
+                    grad_l2 = sum(p.grad.detach().data.norm(2).item() ** 2 for p in model.parameters()) ** 0.5
+
                 optimizer.step()
                 scheduler.step()
                 optimizer.zero_grad(set_to_none=True)
@@ -214,10 +218,13 @@ def main(args):
                         steps_per_sec = log_steps / (end_time - start_time)
                         avg_loss = running_loss / log_steps
                         learning_rate = optimizer.param_groups[0]["lr"]
-                        print(
-                            f"(step={train_steps:07d}) Train Loss: {avg_loss:.4f}, Train Steps/Sec: {steps_per_sec:.2f}, LR: {learning_rate:.6f}",
+                        weights_l2 = (
+                                sum(p.detach().norm(2).item() ** 2 for p in model.parameters() if p.requires_grad) ** 0.5
                         )
-                        accelerator.log({"train_loss": avg_loss, "steps_per_sec": steps_per_sec, "learning_rate": learning_rate}, train_steps)
+                        print(
+                            f"(step={train_steps:07d}) Train Loss: {avg_loss:.4f}, Train Steps/Sec: {steps_per_sec:.2f}, LR: {learning_rate:.6f}, Weights L2: {weights_l2:.4f}, Grad L2: {grad_l2:.4f}",
+                        )
+                        accelerator.log({"train_loss": avg_loss, "steps_per_sec": steps_per_sec, "learning_rate": learning_rate, "weights_l2": weights_l2, "grad_l2": grad_l2}, train_steps)
                         # Reset monitoring variables:
                         running_loss = 0
                         log_steps = 0
