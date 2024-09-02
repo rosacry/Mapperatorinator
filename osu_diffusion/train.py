@@ -215,7 +215,7 @@ def main(args):
                         avg_loss = running_loss / log_steps
                         learning_rate = optimizer.param_groups[0]["lr"]
                         print(
-                            f"(step={train_steps:07d}) Train Loss: {avg_loss:.4f}, Train Steps/Sec: {steps_per_sec:.2f}, LR: {learning_rate:.5f}",
+                            f"(step={train_steps:07d}) Train Loss: {avg_loss:.4f}, Train Steps/Sec: {steps_per_sec:.2f}, LR: {learning_rate:.6f}",
                         )
                         accelerator.log({"train_loss": avg_loss, "steps_per_sec": steps_per_sec, "learning_rate": learning_rate}, train_steps)
                         # Reset monitoring variables:
