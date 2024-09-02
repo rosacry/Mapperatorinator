@@ -40,6 +40,7 @@ class Pipeline(object):
         self.diff_token_index = args.osut5.data.diff_token_index
         self.style_token_index = args.osut5.data.style_token_index
         self.mapper_token_index = args.osut5.data.mapper_token_index
+        self.cs_token_index = args.osut5.data.cs_token_index
         self.add_descriptors = args.osut5.data.add_descriptors
         self.max_pre_token_len = args.osut5.data.max_pre_token_len
         self.add_pre_tokens = args.osut5.data.add_pre_tokens
@@ -131,6 +132,9 @@ class Pipeline(object):
             cond_tokens[:, self.mapper_token_index] = mapper_token
             if mapper_id != -1 and mapper_id not in self.tokenizer.mapper_idx:
                 print(f"Mapper class {mapper_id} not found. Using default.")
+        if self.cs_token_index >= 0:
+            cs_token = self.tokenizer.encode_cs(circle_size) if circle_size != -1 else self.tokenizer.cs_unk
+            cond_tokens[:, self.cs_token_index] = cs_token
         for i, descriptor in enumerate(descriptors):
             cond_tokens[:, self.special_token_len + i] = self.tokenizer.encode_descriptor_name(descriptor)
 
@@ -144,6 +148,9 @@ class Pipeline(object):
             uncond_tokens[:, self.diff_token_index] = diff_token
         if self.mapper_token_index >= 0:
             uncond_tokens[:, self.mapper_token_index] = self.tokenizer.mapper_unk
+        if self.cs_token_index >= 0:
+            cs_token = self.tokenizer.encode_cs(circle_size) if circle_size != -1 else self.tokenizer.cs_unk
+            uncond_tokens[:, self.cs_token_index] = cs_token
         if self.add_descriptors:
             uncond_tokens[:, self.special_token_len] = self.tokenizer.descriptor_unk
 
