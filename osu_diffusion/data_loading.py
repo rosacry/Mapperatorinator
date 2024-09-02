@@ -193,7 +193,7 @@ def split_and_process_sequence_no_augment(
     seq_o = seq[2, :]
     seq_c = torch.concatenate(
         [
-            offset_sequence_embedding(seq_o * 0.1, 128).T,
+            timestep_embedding(seq_o * 0.1, 128).T,
             timestep_embedding(seq_d, 128).T,
             seq[3:, :],
         ],
