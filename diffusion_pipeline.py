@@ -27,9 +27,9 @@ class DiffisionPipeline(object):
         self.tokenizer = tokenizer
         self.diffusion_steps = args.diffusion.model.diffusion_steps
         self.noise_schedule = args.diffusion.model.noise_schedule
+        self.seq_len = args.diffusion.data.seq_len
         self.timesteps = args.timesteps
-        self.cfg_scale = args.cfg_scale
-        self.seq_len = args.diffusion.seq_len
+        self.cfg_scale = args.diff_cfg_scale
         self.refine_iters = args.refine_iters
         self.random_init = args.random_init
 
@@ -125,18 +125,17 @@ class DiffisionPipeline(object):
 
         class_vector = self.get_class_vector(beatmap_id, difficulty, mapper_id, descriptors, circle_size)
         unk_class_vector = self.get_class_vector(-1, difficulty, -1, None, circle_size)
-        class_labels = [class_vector]
 
         # Create sampling noise:
-        n = len(class_labels)
+        n = 1
         z = seq_x.repeat(n, 1, 1).to(self.device)
         c = seq_c.repeat(n, 1, 1).to(self.device)
-        y = torch.tensor(class_labels, device=self.device)
+        y = class_vector.repeat(n, 1).to(self.device)
+        y_null = unk_class_vector.repeat(n, 1).to(self.device)
 
         # Setup classifier-free guidance:
         z = torch.cat([z, z], 0)
         c = torch.cat([c, c], 0)
-        y_null = torch.tensor([unk_class_vector] * n, device=self.device)
         y = torch.cat([y, y_null], 0)
         model_kwargs = dict(c=c, y=y, cfg_scale=self.cfg_scale, attn_mask=attn_mask)
 

@@ -24,10 +24,9 @@ from slider.curve import Perfect
 from torch.utils.data import DataLoader, Dataset
 from torch.utils.data import IterableDataset
 
-from positional_embedding import offset_sequence_embedding
-from positional_embedding import position_sequence_embedding
-from positional_embedding import timestep_embedding
-from tokenizer import Tokenizer
+from .positional_embedding import position_sequence_embedding
+from .positional_embedding import timestep_embedding
+from .tokenizer import Tokenizer
 
 playfield_size = torch.tensor((512, 384))
 feature_size = 19
