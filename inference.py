@@ -40,10 +40,10 @@ def get_args_from_beatmap(args: DictConfig, tokenizer: Tokenizer):
     args.slider_multiplier = beatmap.slider_multiplier
     args.title = beatmap.title
     args.artist = beatmap.artist
-    if args.beatmap_id == -1 and tokenizer.num_classes > 0:
+    if args.beatmap_id == -1 and (args.osut5.data.style_token_index >= 0 or args.diffusion.data.beatmap_class):
         args.beatmap_id = beatmap.beatmap_id
         print(f"Using beatmap ID {args.beatmap_id}")
-    if args.difficulty == -1 and tokenizer.num_diff_classes > 0:
+    if args.difficulty == -1 and (args.osut5.data.diff_token_index >= 0 or args.diffusion.data.difficulty_class):
         args.difficulty = float(beatmap.stars())
         print(f"Using difficulty {args.difficulty}")
     if args.mapper_id == -1 and beatmap.beatmap_id in tokenizer.mapper_idx:
@@ -52,7 +52,7 @@ def get_args_from_beatmap(args: DictConfig, tokenizer: Tokenizer):
     if len(args.descriptors) == 0 and beatmap.beatmap_id in tokenizer.beatmap_descriptors:
         args.descriptors = tokenizer.beatmap_descriptors[beatmap.beatmap_id]
         print(f"Using descriptors {args.descriptors}")
-    if args.circle_size == -1 and tokenizer.num_cs_classes > 0:
+    if args.circle_size == -1 and (args.osut5.data.cs_token_index >= 0 or args.diffusion.data.circle_size_class):
         args.circle_size = beatmap.circle_size
         print(f"Using circle size {args.circle_size}")
     args.other_beatmap_path = args.beatmap_path
@@ -67,8 +67,8 @@ def find_model(ckpt_path, args: DictConfig, device):
     tokenizer.load_state_dict(tokenizer_state)
 
     ema_state = torch.load(ckpt_path / "custom_checkpoint_0.pkl", pickle_module=routed_pickle, weights_only=False)
-    model = DiT_models[args.diffusion.model](
-        context_size=args.model.context_size,
+    model = DiT_models[args.diffusion.model.model](
+        context_size=args.diffusion.model.context_size,
         class_size=tokenizer.num_tokens,
     ).to(device)
     model.load_state_dict(ema_state)
@@ -133,7 +133,7 @@ def main(args: DictConfig):
 
     if args.generate_positions:
         model, diff_tokenizer = find_model(args.diff_ckpt, args, device)
-        refine_model, _ = find_model(args.diff_refine_ckpt, args, device) if len(args.diff_refine_ckpt) > 0 else None
+        refine_model = find_model(args.diff_refine_ckpt, args, device)[0] if len(args.diff_refine_ckpt) > 0 else None
 
         if args.compile:
             model.forward = torch.compile(model.forward, mode="reduce-overhead", fullgraph=True)
