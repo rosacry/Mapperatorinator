@@ -436,12 +436,13 @@ class Pipeline(object):
 
     def _rescale_positions(self, events: list[Event]) -> list[Event]:
         new_events = []
+        offset = self.position_precision // 2 if self.position_precision > 1 else 0
         for event in events:
             if event.type == EventType.POS_X or event.type == EventType.POS_Y:
                 new_events.append(Event(type=event.type, value=event.value * self.position_precision))
             elif event.type == EventType.POS:
-                new_events.append(Event(type=EventType.POS_X, value=((event.value % self.x_count) + self.x_min) * self.position_precision))
-                new_events.append(Event(type=EventType.POS_Y, value=((event.value // self.x_count) + self.y_min) * self.position_precision))
+                new_events.append(Event(type=EventType.POS_X, value=((event.value % self.x_count) + self.x_min) * self.position_precision + offset))
+                new_events.append(Event(type=EventType.POS_Y, value=((event.value // self.x_count) + self.y_min) * self.position_precision + offset))
             else:
                 new_events.append(event)
 
