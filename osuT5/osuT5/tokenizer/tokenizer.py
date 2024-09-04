@@ -294,6 +294,10 @@ class Tokenizer:
     def encode_descriptor_name(self, descriptor: str) -> int:
         """Converts descriptor into token id."""
         descriptor_idx = self.descriptor_idx.get(descriptor, self.num_descriptor_classes)
+        return self.encode_descriptor_idx(descriptor_idx)
+
+    def encode_descriptor_idx(self, descriptor_idx: int) -> int:
+        """Converts descriptor idx into token id."""
         return self.encode(Event(type=EventType.DESCRIPTOR, value=descriptor_idx))
 
     @property

@@ -91,7 +91,8 @@ class DiffisionPipeline(object):
             mapper_id: int = -1,
             descriptors: list[str] = None,
             circle_size: float = -1,
-            refine_model: DiT = None
+            refine_model: DiT = None,
+            negative_descriptors: list[str] = None,
     ) -> list[Event]:
         """Generate position events for distance events in the Event list.
 
@@ -104,6 +105,7 @@ class DiffisionPipeline(object):
             descriptors: List of descriptors for class vector.
             circle_size: Circle size for class vector.
             refine_model: Optional model to refine the generated positions.
+            negative_descriptors: List of descriptors for negative class vector.
 
         Returns:
             events: List of Event objects with position events.
@@ -124,7 +126,7 @@ class DiffisionPipeline(object):
             attn_mask[max(0, i - self.seq_len): min(seq_len, i + self.seq_len), i] = False
 
         class_vector = self.get_class_vector(beatmap_id, difficulty, mapper_id, descriptors, circle_size)
-        unk_class_vector = self.get_class_vector(-1, difficulty, -1, None, circle_size)
+        unk_class_vector = self.get_class_vector(-1, difficulty, -1, negative_descriptors, circle_size)
 
         # Create sampling noise:
         n = 1

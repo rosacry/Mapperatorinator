@@ -11,6 +11,10 @@ context_type: none        # Context type of other beatmap
 temperature: 0.9        # Sampling temperature
 top_p: 0.95              # Top-p sampling threshold
 timeshift_bias: -1.5        # Logit bias for sampling timeshift tokens
+descriptors: ['clean']
+negative_descriptors: ['messy', 'improvisation']
+cfg_scale: 2
+diff_cfg_scale: 2
 
 # Diffusion settings
 random_init: false
