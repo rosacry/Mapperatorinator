@@ -118,6 +118,7 @@ def main(args: DictConfig):
         circle_size=args.circle_size,
         other_beatmap_path=args.other_beatmap_path,
         context_type=args.context_type,
+        negative_descriptors=args.negative_descriptors,
     )
 
     # Generate timing and resnap timing events
@@ -147,7 +148,8 @@ def main(args: DictConfig):
             mapper_id=args.mapper_id,
             descriptors=args.descriptors,
             circle_size=args.circle_size,
-            refine_model=refine_model
+            refine_model=refine_model,
+            negative_descriptors=args.negative_descriptors,
         )
 
     postprocessor.generate(events, timing)
