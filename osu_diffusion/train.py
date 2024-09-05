@@ -197,8 +197,12 @@ def main(args):
                 loss = loss_dict["loss"].mean()
                 accelerator.backward(loss)
 
-                if accelerator.sync_gradients:
-                    grad_l2 = sum(p.grad.detach().data.norm(2).item() ** 2 for p in model.parameters()) ** 0.5
+                if accelerator.sync_gradients and args.optim.grad_clip > 0:
+                    grad_l2 += accelerator.clip_grad_norm_(
+                        parameters=model.parameters(),
+                        max_norm=args.optim.grad_clip,
+                        norm_type=2,
+                    ).item()
 
                 optimizer.step()
                 scheduler.step()
@@ -217,6 +221,7 @@ def main(args):
                         end_time = time()
                         steps_per_sec = log_steps / (end_time - start_time)
                         avg_loss = running_loss / log_steps
+                        grad_l2 /= log_steps
                         learning_rate = optimizer.param_groups[0]["lr"]
                         weights_l2 = (
                                 sum(p.detach().norm(2).item() ** 2 for p in model.parameters() if p.requires_grad) ** 0.5
@@ -228,6 +233,7 @@ def main(args):
                         # Reset monitoring variables:
                         running_loss = 0
                         log_steps = 0
+                        grad_l2 = 0
                         start_time = time()
 
                     # Save DiT checkpoint:
