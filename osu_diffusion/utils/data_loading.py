@@ -32,8 +32,8 @@ feature_size = 19
 
 def create_datapoint(time: timedelta, pos: Position, datatype: int) -> torch.Tensor:
     features = torch.zeros(19)
-    features[0] = pos.x
-    features[1] = pos.y
+    features[0] = max(-256, min(768, pos.x))
+    features[1] = max(-256, min(640, pos.y))
     features[2] = time.total_seconds() * 1000
     features[datatype + 3] = 1
 
@@ -64,7 +64,7 @@ def append_control_points(
 
 
 def get_data(hitobj: HitObject) -> torch.Tensor:
-    if isinstance(hitobj, Slider) and len(hitobj.curve.points) < 100:
+    if isinstance(hitobj, Slider) and len(hitobj.curve.points) < max(16, min(128, int(hitobj.length * 0.5))):
         datapoints = [
             create_datapoint(
                 hitobj.time,
