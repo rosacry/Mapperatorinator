@@ -11,16 +11,12 @@ import matplotlib.pyplot as plt
 import torch
 import tqdm
 from matplotlib import animation
-
-from data_loading import beatmap_to_sequence
-from data_loading import feature_size
-from data_loading import get_beatmap_idx
-from data_loading import split_and_process_sequence
-from diffusion import create_diffusion
-from export.create_beatmap import create_beatmap
-from export.create_beatmap import plot_beatmap
-from models import DiT_models
 from slider import Beatmap
+
+from utils.data_loading import beatmap_to_sequence, feature_size, get_beatmap_idx, split_and_process_sequence
+from utils.diffusion import create_diffusion
+from utils.export.create_beatmap import create_beatmap, plot_beatmap
+from utils.models import DiT_models
 
 torch.backends.cuda.matmul.allow_tf32 = True
 torch.backends.cudnn.allow_tf32 = True

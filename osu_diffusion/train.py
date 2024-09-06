@@ -9,15 +9,14 @@ from omegaconf import DictConfig
 from torch.optim import Optimizer
 from torch.optim.lr_scheduler import LRScheduler, LinearLR, CosineAnnealingLR, SequentialLR
 
-from tokenizer import Tokenizer
+from osu_diffusion.utils.tokenizer import Tokenizer
 from collections import OrderedDict
 from copy import deepcopy
 from time import time
 
-from models import DiT_models
-from diffusion import create_diffusion
-
-from data_loading import get_data_loader
+from utils.models import DiT_models
+from utils.diffusion import create_diffusion
+from utils.data_loading import get_data_loader
 
 # the first flag below was False when we tested this script but True makes A100 training a lot faster:
 torch.backends.cuda.matmul.allow_tf32 = True
