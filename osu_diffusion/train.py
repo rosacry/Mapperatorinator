@@ -9,11 +9,11 @@ from omegaconf import DictConfig
 from torch.optim import Optimizer
 from torch.optim.lr_scheduler import LRScheduler, LinearLR, CosineAnnealingLR, SequentialLR
 
-from osu_diffusion.utils.tokenizer import Tokenizer
 from collections import OrderedDict
 from copy import deepcopy
 from time import time
 
+from utils.tokenizer import Tokenizer
 from utils.models import DiT_models
 from utils.diffusion import create_diffusion
 from utils.data_loading import get_data_loader
