@@ -155,8 +155,13 @@ def calc_distances(seq: torch.Tensor) -> torch.Tensor:
 def split_and_process_sequence(
         seq: torch.Tensor,
         double_time: bool = False,
+        distance_std: float = 0.0,
 ) -> tuple[tuple[torch.Tensor, torch.Tensor], int]:
     seq_d = calc_distances(seq)
+
+    # Augment distances to add noise
+    if distance_std > 0:
+        seq_d *= torch.pow(2, torch.normal(0, distance_std, seq_d.shape))
 
     # Augment and normalize positions for diffusion
     seq_x = random_flip(seq[:2, :]) / playfield_size.unsqueeze(1) * 2 - 1
@@ -198,11 +203,6 @@ def split_and_process_sequence_no_augment(
     )
 
     return (seq_x, seq_c), seq.shape[1]
-
-
-def load_and_process_beatmap(beatmap: Beatmap):
-    seq = beatmap_to_sequence(beatmap)
-    return split_and_process_sequence(seq)
 
 
 def window_split_sequence(seq, s, e):
@@ -322,7 +322,7 @@ class BeatmapDatasetIterable:
                 metadata,
                 double_time
             )
-            self.current_seq, self.current_seq_len = split_and_process_sequence(beatmap_to_sequence(beatmap), double_time)
+            self.current_seq, self.current_seq_len = split_and_process_sequence(beatmap_to_sequence(beatmap), double_time, self.args.distance_std)
             self.seq_index = random.randint(0, self.stride - 1)
             self.index += 1
 
