@@ -63,7 +63,7 @@ def find_model(ckpt_path, args: DictConfig, device):
     assert ckpt_path.exists(), f"Could not find DiT checkpoint at {ckpt_path}"
 
     tokenizer_state = torch.load(ckpt_path / "custom_checkpoint_1.pkl", pickle_module=routed_pickle, weights_only=False)
-    tokenizer = osu_diffusion.tokenizer.Tokenizer()
+    tokenizer = osu_diffusion.utils.tokenizer.Tokenizer()
     tokenizer.load_state_dict(tokenizer_state)
 
     ema_state = torch.load(ckpt_path / "custom_checkpoint_0.pkl", pickle_module=routed_pickle, weights_only=False)
