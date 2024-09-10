@@ -421,6 +421,8 @@ class Postprocessor(object):
             counter = 0
             last_measure_time = time
 
+        counter = 0
+
         for marker in markers:
             time = marker.time
             redline = self.timing_point_at(timedelta(milliseconds=time - 1), timing)
@@ -453,6 +455,16 @@ class Postprocessor(object):
                     4, 2, 0, 100, None, False)
                 tp_change = TimingPointsChange(tp, mpb=True, uninherited=True)
                 timing = tp_change.add_change(timing, True)
+                counter = 0
+
+            counter += 1
+            if marker.is_measure:
+                # Add a redline in case the measure counter is out of sync
+                if redline.meter != counter:
+                    tp = TimingPoint(timedelta(milliseconds=time), redline.ms_per_beat, redline.meter, 2, 0, 100, None, False)
+                    tp_change = TimingPointsChange(tp, mpb=True, uninherited=True)
+                    timing = tp_change.add_change(timing, True)
+                counter = 0
 
         return timing
 
