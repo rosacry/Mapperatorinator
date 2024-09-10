@@ -295,6 +295,9 @@ class Pipeline(object):
                         next_event.type == EventType.TIME_SHIFT and
                         next_event.value * MILISECONDS_PER_STEP > self.lookahead_max_time):
                     break
+                if (next_event.type == EventType.BEAT or next_event.type == EventType.MEASURE) and context_tokens.shape[1] > 1 and input_ids.shape[1] > prompt_length + 1:
+                    # Ensure the beat or measure token matches the timing of the context
+                    input_ids[0, -2] = self._get_beat_time_token_from_context(context_tokens[0], input_ids[0, prompt_length - post_tokens.shape[1]:-2])
 
             # Trim prompt and EOS tokens
             predicted_tokens = input_ids[:, prompt_length:-1]
@@ -445,3 +448,24 @@ class Pipeline(object):
                 new_events.append(event)
 
         return new_events
+
+    def _get_beat_time_token_from_context(self, context_tokens, generated_tokens):
+        beat_tokens = [self.tokenizer.event_start[EventType.BEAT], self.tokenizer.event_start[EventType.MEASURE]]
+        context_tokens = context_tokens.cpu()
+        generated_tokens = generated_tokens.cpu()
+
+        # Search generated tokens in reverse order for the latest time shift token followed by a beat or measure token
+        latest_time = -1000
+        found_beat = False
+        for i in range(len(generated_tokens) - 1, -1, -1):
+            token = generated_tokens[i]
+            if token in self.time_range and found_beat:
+                latest_time = token
+                break
+            elif token in beat_tokens:
+                found_beat = True
+
+        # Search context tokens in order for the first time shift token after latest_time which is followed by a beat or measure token
+        for i, token in enumerate(context_tokens[:-1]):
+            if token in self.time_range and token > latest_time + 1 and context_tokens[i + 1] in beat_tokens:
+                return token
