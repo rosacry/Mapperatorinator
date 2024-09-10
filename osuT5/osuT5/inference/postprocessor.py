@@ -229,6 +229,7 @@ class Postprocessor(object):
                     continue
 
                 slides = max(int(round(total_duration / span_duration)), 1)
+                span_duration = total_duration / slides
                 slider_path = SliderPath(self.curve_type_shorthand[curve_type], np.array([(ho_info[0], ho_info[1])] + [(cp[1], cp[2]) for cp in anchor_info], dtype=float))
                 length = slider_path.get_distance()
 
