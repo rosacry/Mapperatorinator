@@ -376,7 +376,7 @@ class Postprocessor(object):
         time = 0
         for event in events:
             if event.type == EventType.TIME_SHIFT:
-                time = event.value
+                time = int(event.value)
             elif event.type == EventType.BEAT:
                 markers.append(self.Marker(time, False))
             elif event.type == EventType.MEASURE:
