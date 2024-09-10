@@ -10,7 +10,7 @@ import osu_diffusion
 import routed_pickle
 from diffusion_pipeline import DiffisionPipeline
 from osuT5.osuT5.inference import Preprocessor, Pipeline, Postprocessor
-from osuT5.osuT5.tokenizer import Tokenizer, ContextType, EventType
+from osuT5.osuT5.tokenizer import Tokenizer, ContextType
 from osuT5.osuT5.utils import get_model
 from osu_diffusion import DiT_models
 
