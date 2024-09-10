@@ -26,6 +26,7 @@ title: ''               # Song title
 artist: ''              # Song artist
 creator: 'osuT5'        # Beatmap creator
 version: 'osuT5'        # Beatmap version
+background: ''          # File name of background image
 
 # Diffusion settings
 generate_positions: false      # Use diffusion to generate object positions

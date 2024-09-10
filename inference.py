@@ -22,6 +22,22 @@ def prepare_args(args: DictConfig):
     set_seed(args.seed)
 
 
+def get_background(path: Path) -> str:
+    with open(path, encoding='utf-8-sig') as file:
+        data = file.read()
+        data = data.lstrip()
+        lines = iter(data.splitlines())
+        in_events = False
+        for line in lines:
+            if line == "[Events]":
+                in_events = True
+            elif in_events and line.startswith("["):
+                break
+            elif in_events and line.startswith("0"):
+                return line.split("\"")[1]
+    return ""
+
+
 def get_args_from_beatmap(args: DictConfig, tokenizer: Tokenizer):
     if args.beatmap_path is None or args.beatmap_path == "":
         return
@@ -55,6 +71,10 @@ def get_args_from_beatmap(args: DictConfig, tokenizer: Tokenizer):
     if args.circle_size == -1 and (args.osut5.data.cs_token_index >= 0 or args.diffusion.data.circle_size_class):
         args.circle_size = beatmap.circle_size
         print(f"Using circle size {args.circle_size}")
+    if args.background == "":
+        args.background = get_background(beatmap_path)
+        if args.background != "":
+            print(f"Using background \"{args.background}\"")
     args.other_beatmap_path = args.beatmap_path
 
 
