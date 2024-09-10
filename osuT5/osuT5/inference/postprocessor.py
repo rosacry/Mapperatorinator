@@ -26,6 +26,7 @@ STEPS_PER_MILLISECOND = 0.1
 class BeatmapConfig:
     # General
     audio_filename: str = ""
+    preview_time: int = -1
 
     # Metadata
     title: str = ""
@@ -103,6 +104,7 @@ class Postprocessor(object):
             creator=str(args.creator),
             version=str(args.version),
             background_line=f"0,0,\"{args.background}\",0,0\n" if args.background else "",
+            preview_time=args.preview_time,
         )
         self.offset = args.offset
         self.beat_length = 60000 / args.bpm

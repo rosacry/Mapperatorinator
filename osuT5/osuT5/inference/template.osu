@@ -3,7 +3,7 @@ osu file format v14
 [General]
 AudioFilename: $audio_filename
 AudioLeadIn: 0
-PreviewTime: -1
+PreviewTime: $preview_time
 Countdown: 0
 SampleSet: Soft
 StackLeniency: 0.7

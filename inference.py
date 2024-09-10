@@ -75,6 +75,10 @@ def get_args_from_beatmap(args: DictConfig, tokenizer: Tokenizer):
         args.background = get_background(beatmap_path)
         if args.background != "":
             print(f"Using background \"{args.background}\"")
+    if args.preview_time == -1:
+        args.preview_time = beatmap.preview_time
+        if args.preview_time != -1:
+            print(f"Using preview time {args.preview_time}")
     args.other_beatmap_path = args.beatmap_path
 
 
