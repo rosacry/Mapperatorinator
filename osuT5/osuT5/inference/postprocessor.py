@@ -421,7 +421,7 @@ class Postprocessor(object):
                 else:
                     # We need to create a new redline
                     tp = TimingPoint(timedelta(milliseconds=last_measure_time), 100, counter, 2, 0, 100, None, False)
-                    tp_change = TimingPointsChange(tp, meter=True)
+                    tp_change = TimingPointsChange(tp, meter=True, uninherited=True)
                     timing = tp_change.add_change(timing, True)
 
             counter = 0
