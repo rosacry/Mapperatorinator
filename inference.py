@@ -66,7 +66,7 @@ def get_args_from_beatmap(args: DictConfig, tokenizer: Tokenizer):
         args.mapper_id = tokenizer.mapper_idx[beatmap.beatmap_id]
         print(f"Using mapper ID {args.mapper_id}")
     if len(args.descriptors) == 0 and beatmap.beatmap_id in tokenizer.beatmap_descriptors:
-        args.descriptors = tokenizer.beatmap_descriptors[beatmap.beatmap_id]
+        args.descriptors = [tokenizer.descriptor_name(idx) for idx in tokenizer.beatmap_descriptors[beatmap.beatmap_id]]
         print(f"Using descriptors {args.descriptors}")
     if args.circle_size == -1 and (args.osut5.data.cs_token_index >= 0 or args.diffusion.data.circle_size_class):
         args.circle_size = beatmap.circle_size
