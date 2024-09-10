@@ -305,6 +305,13 @@ class Tokenizer:
         """Gets the unknown descriptor value token id."""
         return self.encode(Event(type=EventType.DESCRIPTOR, value=self.num_descriptor_classes))
 
+    def descriptor_name(self, descriptor_idx: int) -> str:
+        """Converts descriptor idx into descriptor."""
+        for descriptor_name, idx in self.descriptor_idx.items():
+            if idx == descriptor_idx:
+                return descriptor_name
+        return "unknown"
+
     def _init_beatmap_idx(self, args: DictConfig) -> None:
         """Initializes and caches the beatmap index."""
         if args is None or "train_dataset_path" not in args.data:
