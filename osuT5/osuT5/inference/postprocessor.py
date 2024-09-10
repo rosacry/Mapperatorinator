@@ -42,6 +42,9 @@ class BeatmapConfig:
     approach_rate: float = 9
     slider_multiplier: float = 1.8
 
+    # Events
+    background_line: str = ""
+
 
 def calculate_coordinates(last_pos, dist, num_samples, playfield_size):
     # Generate a set of angles
@@ -99,6 +102,7 @@ class Postprocessor(object):
             slider_multiplier=float(args.slider_multiplier),
             creator=str(args.creator),
             version=str(args.version),
+            background_line=f"0,0,\"{args.background}\",0,0\n" if args.background else "",
         )
         self.offset = args.offset
         self.beat_length = 60000 / args.bpm
