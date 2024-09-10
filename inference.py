@@ -10,7 +10,7 @@ import osu_diffusion
 import routed_pickle
 from diffusion_pipeline import DiffisionPipeline
 from osuT5.osuT5.inference import Preprocessor, Pipeline, Postprocessor
-from osuT5.osuT5.tokenizer import Tokenizer, ContextType
+from osuT5.osuT5.tokenizer import Tokenizer, ContextType, EventType
 from osuT5.osuT5.utils import get_model
 from osu_diffusion import DiT_models
 
@@ -43,7 +43,7 @@ def get_args_from_beatmap(args: DictConfig, tokenizer: Tokenizer):
     if args.beatmap_id == -1 and (args.osut5.data.style_token_index >= 0 or args.diffusion.data.beatmap_class):
         args.beatmap_id = beatmap.beatmap_id
         print(f"Using beatmap ID {args.beatmap_id}")
-    if args.difficulty == -1 and (args.osut5.data.diff_token_index >= 0 or args.diffusion.data.difficulty_class):
+    if args.difficulty == -1 and len(beatmap.hit_objects(stacking=False)) > 0 and (args.osut5.data.diff_token_index >= 0 or args.diffusion.data.difficulty_class):
         args.difficulty = float(beatmap.stars())
         print(f"Using difficulty {args.difficulty}")
     if args.mapper_id == -1 and beatmap.beatmap_id in tokenizer.mapper_idx:
