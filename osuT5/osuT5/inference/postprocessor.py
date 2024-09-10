@@ -192,7 +192,7 @@ class Postprocessor(object):
 
             elif hit_type == EventType.SPINNER_END and len(ho_info) == 2:
                 hit_object_strings.append(
-                    f"{256},{192},{int(round(ho_info[0]))},{8 | ho_info[1]},{hitsounds},{int(round(time))},{sampleset}:{addition}:0:0:"
+                    f"{256},{192},{int(round(ho_info[0]))},{8 | 4},{hitsounds},{int(round(time))},{sampleset}:{addition}:0:0:"
                 )
                 timing = self.set_volume(timedelta(milliseconds=int(round(time))), volume, timing)
                 ho_info = []
