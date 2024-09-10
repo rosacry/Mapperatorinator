@@ -456,7 +456,7 @@ class Postprocessor(object):
 
         return timing
 
-    def resnap(self, time: float, timing: list[TimingPoint], snap_divisor: int, floor: bool=True) -> float:
+    def resnap(self, time: float, timing: list[TimingPoint], snap_divisor: int, floor: bool = True) -> float:
         """Resnap a time to the nearest beat divisor."""
         before_tp = self.timing_point_at(timedelta(milliseconds=time), timing)
         before_tp = before_tp if before_tp.parent is None else before_tp.parent
@@ -465,7 +465,7 @@ class Postprocessor(object):
         after_time = after_tp.offset.total_seconds() * 1000 if after_tp is not None else None
 
         d = before_tp.ms_per_beat / snap_divisor
-        remainder = (time - before_tp.offset.total_seconds() * 1000) % d
+        remainder = (time - before_time) % d
 
         if remainder < d / 2:
             new_time = time - remainder
@@ -475,7 +475,7 @@ class Postprocessor(object):
         if after_time is not None and new_time > before_time + 10 and new_time >= after_time - 10:
             new_time = after_time
 
-        return math.floor(new_time) if floor else new_time
+        return math.floor(new_time + 1e-4) if floor else new_time
 
     def check_ms_per_beat(self, mpb_new: float, markers: list[Postprocessor.Marker], redline: TimingPoint):
         mpb_old = redline.ms_per_beat
