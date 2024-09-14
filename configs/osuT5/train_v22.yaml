@@ -1,0 +1,42 @@
+defaults:
+  - train
+  - _self_
+  - model: whisper_base
+
+compile: true          # PyTorch 2.0 optimization
+precision: 'bf16'         # Enable mixed precision (no/fp16/bf16/fp8)
+
+data:                  # Data settings
+  train_dataset_path: "/workspace/datasets/ORS16291"
+  test_dataset_path: "/workspace/datasets/ORS16291"
+  special_token_len: 3
+  diff_token_index: 0
+  mapper_token_index: 1
+  cs_token_index: 2
+  add_descriptors: true
+  timing_random_offset: 2
+  src_seq_len: 1024
+  tgt_seq_len: 1536
+  rhythm_weight: 3.0    # Weight of rhythm tokens in the loss calculation
+  context_types: ["none", "timing", "no_hs", "gd"]      # List of context types to include in the dataset
+  context_weights: [3, 1, 1, 1]    # List of weights for each context type. Determines how often each context type is sampled
+  descriptors_path: "../../../datasets/beatmap_descriptors.csv"   # Path to file with all beatmap descriptors
+  mappers_path: "../../../datasets/beatmap_users.json"       # Path to file with all beatmap mappers
+  add_timing: true      # Model beatmap timing
+  add_hitsounds: true   # Model beatmap hitsounds
+  add_pre_tokens: false
+  per_track: true
+  add_distances: true   # Model hit object distances
+  add_positions: true
+  position_precision: 32  # Precision of hit object coordinates
+  position_split_axes: false  # Split hit object X and Y coordinates into separate tokens
+  dt_augment_prob: 0.7   # Probability of augmenting the dataset with DT
+  dt_augment_range: [1.25, 1.5]  # Range of DT augmentation
+
+dataloader:             # Dataloader settings
+  num_workers: 8
+
+optim:                  # Optimizer settings
+  base_lr: 1e-2         # Should not be scaled with the number of devices present
+  batch_size: 128
+  grad_acc: 8
