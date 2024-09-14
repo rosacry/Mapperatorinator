@@ -683,6 +683,10 @@ class BeatmapDatasetIterable:
     def _get_idx(metadata: dict, beatmap_name: str):
         return metadata["Beatmaps"][beatmap_name]["Index"]
 
+    def _get_speed_augment(self):
+        mi, ma = self.args.dt_augment_range
+        return random.random() * (ma - mi) + mi if random.random() < self.args.dt_augment_prob else 1.0
+
     def _get_next_beatmaps(self) -> dict:
         for beatmap_path in self.beatmap_files:
             metadata = self._load_metadata(beatmap_path.parents[1])
@@ -693,9 +697,7 @@ class BeatmapDatasetIterable:
             if self.args.min_difficulty > 0 and self._get_difficulty(metadata, beatmap_path.stem) < self.args.min_difficulty:
                 continue
 
-            double_time = random.random() < self.args.dt_augment_prob
-            speed = 1.5 if double_time else 1.0
-
+            speed = self._get_speed_augment()
             audio_path = beatmap_path.parents[1] / list(beatmap_path.parents[1].glob('audio.*'))[0]
             audio_samples = load_audio_file(audio_path, self.args.sample_rate, speed)
 
@@ -713,9 +715,7 @@ class BeatmapDatasetIterable:
                                                     < self.args.min_difficulty for beatmap_name in metadata["Beatmaps"]):
                 continue
 
-            double_time = random.random() < self.args.dt_augment_prob
-            speed = 1.5 if double_time else 1.0
-
+            speed = self._get_speed_augment()
             audio_path = track_path / list(track_path.glob('audio.*'))[0]
             audio_samples = load_audio_file(audio_path, self.args.sample_rate, speed)
 

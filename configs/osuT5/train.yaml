@@ -60,6 +60,7 @@ data:                  # Data settings
   position_split_axes: true  # Split hit object X and Y coordinates into separate tokens
   position_range: [-256, 768, -256, 640]  # Range of hit object coordinates
   dt_augment_prob: 0.0   # Probability of augmenting the dataset with DT
+  dt_augment_range: [1.5, 1.5]  # Range of DT augmentation
 
 
 dataloader:             # Dataloader settings
