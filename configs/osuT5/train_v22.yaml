@@ -16,7 +16,7 @@ data:                  # Data settings
   add_descriptors: true
   timing_random_offset: 2
   src_seq_len: 1024
-  tgt_seq_len: 1536
+  tgt_seq_len: 2048
   rhythm_weight: 3.0    # Weight of rhythm tokens in the loss calculation
   context_types: ["none", "timing", "no_hs", "gd"]      # List of context types to include in the dataset
   context_weights: [3, 1, 1, 1]    # List of weights for each context type. Determines how often each context type is sampled
