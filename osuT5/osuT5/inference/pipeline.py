@@ -67,6 +67,7 @@ class Pipeline(object):
 
         self.timeshift_bias = args.timeshift_bias
         self.time_range = range(tokenizer.event_start[EventType.TIME_SHIFT], tokenizer.event_end[EventType.TIME_SHIFT])
+        self.types_first = args.osut5.data.types_first
 
     def get_class_vector(
             self,
@@ -176,7 +177,7 @@ class Pipeline(object):
             other_beatmap = Beatmap.from_path(other_beatmap_path)
 
             if self.add_gd_context or context_type == ContextType.GD:
-                other_events = self.parser.parse(other_beatmap)
+                other_events, other_event_times = self.parser.parse(other_beatmap)
                 other_beatmap_id = other_beatmap.beatmap_id
 
                 other_cond_tokens = self.get_class_vector(
@@ -187,12 +188,10 @@ class Pipeline(object):
                     other_beatmap.circle_size,
                 )
             elif context_type == ContextType.NO_HS:
-                other_events = self.parser.parse(other_beatmap)
-                other_events = remove_events_of_type(other_events, [EventType.HITSOUND, EventType.VOLUME])
+                other_events, other_event_times = self.parser.parse(other_beatmap)
+                other_events, other_event_times = remove_events_of_type(other_events, other_event_times, [EventType.HITSOUND, EventType.VOLUME])
             elif context_type == ContextType.TIMING:
-                other_events = self.parser.parse_timing(other_beatmap)
-
-        other_events, other_event_times = self._prepare_events(other_events)
+                other_events, other_event_times = self.parser.parse_timing(other_beatmap)
 
         # Prepare context type indicator tokens
         context_sos = torch.tensor([[self.tokenizer.context_sos[context_type]]], dtype=torch.long, device=self.device)\
@@ -294,6 +293,9 @@ class Pipeline(object):
                 if (sequence_index != len(sequences) - 1 and
                         next_event.type == EventType.TIME_SHIFT and
                         next_event.value * MILISECONDS_PER_STEP > self.lookahead_max_time):
+                    # If the type token comes before the timeshift token we should remove the type token too
+                    if self.types_first:
+                        input_ids = input_ids[:, :-1]
                     break
                 if (next_event.type == EventType.BEAT or next_event.type == EventType.MEASURE) and context_tokens.shape[1] > 1 and input_ids.shape[1] > prompt_length + 1:
                     # Ensure the beat or measure token matches the timing of the context
@@ -315,29 +317,6 @@ class Pipeline(object):
             events = self._rescale_positions(events)
 
         return events
-
-    def _prepare_events(self, events: list[Event]) -> tuple[list[Event], list[float]]:
-        """Pre-process raw list of events for inference. Calculates event times and removes redundant time shifts."""
-        ct = 0
-        event_times = []
-        for event in events:
-            if event.type == EventType.TIME_SHIFT:
-                ct = event.value
-            event_times.append(ct)
-
-        # Loop through the events in reverse to remove any time shifts that occur before anchor events
-        delete_next_time_shift = False
-        for i in range(len(events) - 1, -1, -1):
-            if events[i].type == EventType.TIME_SHIFT and delete_next_time_shift:
-                delete_next_time_shift = False
-                del events[i]
-                del event_times[i]
-                continue
-            elif events[i].type in [EventType.BEZIER_ANCHOR, EventType.PERFECT_ANCHOR, EventType.CATMULL_ANCHOR,
-                                    EventType.RED_ANCHOR]:
-                delete_next_time_shift = True
-
-        return events, event_times
 
     def _get_events_time_range(self, events: list[Event], event_times: list[float], start_time: float, end_time: float):
         # Look from the end of the list
@@ -456,16 +435,16 @@ class Pipeline(object):
 
         # Search generated tokens in reverse order for the latest time shift token followed by a beat or measure token
         latest_time = -1000
-        found_beat = False
+        beat_offset = -1 if self.types_first else 1
         for i in range(len(generated_tokens) - 1, -1, -1):
             token = generated_tokens[i]
-            if token in self.time_range and found_beat:
+            if (token in self.time_range and
+                    0 <= i + beat_offset < len(generated_tokens) and generated_tokens[i + beat_offset] in beat_tokens):
                 latest_time = token
                 break
-            elif token in beat_tokens:
-                found_beat = True
 
         # Search context tokens in order for the first time shift token after latest_time which is followed by a beat or measure token
-        for i, token in enumerate(context_tokens[:-1]):
-            if token in self.time_range and token > latest_time + 1 and context_tokens[i + 1] in beat_tokens:
+        for i, token in enumerate(context_tokens):
+            if (token in self.time_range and token > latest_time + 1 and
+                    0 <= i + beat_offset < len(context_tokens) and context_tokens[i + beat_offset] in beat_tokens):
                 return token

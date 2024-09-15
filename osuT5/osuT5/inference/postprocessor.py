@@ -47,6 +47,19 @@ class BeatmapConfig:
     background_line: str = ""
 
 
+@dataclasses.dataclass
+class Group:
+    event_type: EventType = None
+    time: int = 0
+    x: float = 256
+    y: float = 192
+    new_combo: bool = False
+    hitsounds: list[int] = dataclasses.field(default_factory=list)
+    samplesets: list[int] = dataclasses.field(default_factory=list)
+    additions: list[int] = dataclasses.field(default_factory=list)
+    volumes: list[int] = dataclasses.field(default_factory=list)
+
+
 def calculate_coordinates(last_pos, dist, num_samples, playfield_size):
     # Generate a set of angles
     angles = np.linspace(0, 2*np.pi, num_samples)
@@ -110,6 +123,66 @@ class Postprocessor(object):
         self.beat_length = 60000 / args.bpm
         self.slider_multiplier = self.beatmap_config.slider_multiplier
         self.timing_leniency = args.timing_leniency
+        self.types_first = args.osut5.data.types_first
+        self.has_pos = args.osut5.data.add_positions
+
+    def get_groups(self, events: list[Event]) -> list[Group]:
+        type_events = [
+            EventType.CIRCLE,
+            EventType.SPINNER,
+            EventType.SPINNER_END,
+            EventType.SLIDER_HEAD,
+            EventType.BEZIER_ANCHOR,
+            EventType.PERFECT_ANCHOR,
+            EventType.CATMULL_ANCHOR,
+            EventType.RED_ANCHOR,
+            EventType.LAST_ANCHOR,
+            EventType.SLIDER_END,
+            EventType.BEAT,
+            EventType.MEASURE,
+        ]
+
+        groups = []
+        group = Group()
+        last_x, last_y = 256, 192
+        for event in events:
+            if event.type == EventType.TIME_SHIFT:
+                group.time = event.value
+            elif event.type == EventType.DISTANCE:
+                # Find a point which is dist away from the last point but still within the playfield
+                coordinates = calculate_coordinates((last_x, last_y), event.value, 500, (512, 384))
+                pos = coordinates[np.random.randint(len(coordinates))]
+                group.x, group.y = pos
+                last_x, last_y = pos
+            elif event.type == EventType.POS_X:
+                group.x = event.value
+                last_x = event.value
+            elif event.type == EventType.POS_Y:
+                group.y = event.value
+                last_y = event.value
+            elif event.type == EventType.NEW_COMBO:
+                group.new_combo = True
+            elif event.type == EventType.HITSOUND:
+                group.hitsounds.append((event.value % 8) * 2)
+                group.samplesets.append(((event.value // 8) % 3) + 1)
+                group.additions.append(((event.value // 24) % 3) + 1)
+            elif event.type == EventType.VOLUME:
+                group.volumes.append(event.value)
+            elif event.type in type_events:
+                if self.types_first:
+                    if group.event_type is not None:
+                        groups.append(group)
+                        group = Group()
+                    group.event_type = event.type
+                else:
+                    group.event_type = event.type
+                    groups.append(group)
+                    group = Group()
+
+        if group.event_type is not None:
+            groups.append(group)
+
+        return groups
 
     def generate(self, events: list[Event], timing: list[TimingPoint] = None):
         """Generate a beatmap file.
@@ -123,126 +196,74 @@ class Postprocessor(object):
         """
 
         hit_object_strings = []
-        time = 0
-        dist = 0
-        x = 256
-        y = 192
-        has_pos = False
-        new_combo = 0
-        hitsounds = 0
-        sampleset = 0
-        addition = 0
-        volume = 100
-        ho_info = []
+        spinner_start = None
+        slider_head = None
         anchor_info = []
-        node_samples = []
+        last_anchor = None
 
         if timing is None:
             timing = [TimingPoint(
                 timedelta(milliseconds=self.offset), self.beat_length, 4, 2, 0, 100, None, False
             )]
 
+        groups = self.get_groups(events)
+
         # Convert to .osu format
-        for event in events:
-            hit_type = event.type
-
-            if hit_type == EventType.TIME_SHIFT:
-                time = event.value
-                continue
-            elif hit_type == EventType.DISTANCE:
-                # Find a point which is dist away from the last point but still within the playfield
-                dist = event.value
-                coordinates = calculate_coordinates((x, y), dist, 500, (512, 384))
-                pos = coordinates[np.random.randint(len(coordinates))]
-                x, y = pos
-                continue
-            elif hit_type == EventType.POS_X:
-                x = event.value
-                has_pos = True
-                continue
-            elif hit_type == EventType.POS_Y:
-                y = event.value
-                has_pos = True
-                continue
-            elif hit_type == EventType.NEW_COMBO:
-                new_combo = 4
-                continue
-            elif hit_type == EventType.HITSOUND:
-                hitsounds = (event.value % 8) * 2
-                sampleset = ((event.value // 8) % 3) + 1
-                addition = ((event.value // 24) % 3) + 1
-                continue
-            elif hit_type == EventType.VOLUME:
-                volume = event.value
-
-                # Populate slider hitsounds if a slider is being created
-                if len(ho_info) == 9:
-                    if ho_info[8] is None:
-                        # First hitsounds after the head should be the slider body hitsounds
-                        ho_info[5] = hitsounds
-                        ho_info[6] = sampleset
-                        ho_info[7] = addition
-                        ho_info[8] = volume
-                    else:
-                        # Subsequent hitsounds should be the slider node samples
-                        node_samples.append((hitsounds, sampleset, addition, volume))
-                continue
+        for group in groups:
+            hit_type = group.event_type
 
             if hit_type == EventType.CIRCLE:
-                hit_object_strings.append(f"{int(round(x))},{int(round(y))},{int(round(time))},{1 | new_combo},{hitsounds},{sampleset}:{addition}:0:0:")
-                timing = self.set_volume(timedelta(milliseconds=int(round(time))), volume, timing)
-                ho_info = []
+                hit_object_strings.append(f"{int(round(group.x))},{int(round(group.y))},{int(round(group.time))},{5 if group.new_combo else 1},{group.hitsounds[0]},{group.samplesets[0]}:{group.additions[0]}:0:0:")
+                timing = self.set_volume(timedelta(milliseconds=int(round(group.time))), group.volumes[0], timing)
 
             elif hit_type == EventType.SPINNER:
-                ho_info = [time, new_combo]
+                spinner_start = group
 
-            elif hit_type == EventType.SPINNER_END and len(ho_info) == 2:
+            elif hit_type == EventType.SPINNER_END and spinner_start is not None:
                 hit_object_strings.append(
-                    f"{256},{192},{int(round(ho_info[0]))},{8 | 4},{hitsounds},{int(round(time))},{sampleset}:{addition}:0:0:"
+                    f"{256},{192},{int(round(spinner_start.time))},{12},{group.hitsounds[0]},{int(round(group.time))},{group.samplesets[0]}:{group.additions[0]}:0:0:"
                 )
-                timing = self.set_volume(timedelta(milliseconds=int(round(time))), volume, timing)
-                ho_info = []
+                timing = self.set_volume(timedelta(milliseconds=int(round(group.time))), group.volumes[0], timing)
+                spinner_start = None
 
             elif hit_type == EventType.SLIDER_HEAD:
-                ho_info = [x, y, time, new_combo, None, None, None, None, None]
-                anchor_info = []
-                node_samples = [(hitsounds, sampleset, addition, volume)]
+                slider_head = group
 
             elif hit_type == EventType.BEZIER_ANCHOR:
-                anchor_info.append(('B', x, y))
+                anchor_info.append(('B', group.x, group.y))
 
             elif hit_type == EventType.PERFECT_ANCHOR:
-                anchor_info.append(('P', x, y))
+                anchor_info.append(('P', group.x, group.y))
 
             elif hit_type == EventType.CATMULL_ANCHOR:
-                anchor_info.append(('C', x, y))
+                anchor_info.append(('C', group.x, group.y))
 
             elif hit_type == EventType.RED_ANCHOR:
-                anchor_info.append(('B', x, y))
-                anchor_info.append(('B', x, y))
+                anchor_info.append(('B', group.x, group.y))
+                anchor_info.append(('B', group.x, group.y))
 
-            elif hit_type == EventType.LAST_ANCHOR and len(ho_info) == 9:
-                ho_info[4] = time
-                anchor_info.append(('B', x, y))
+            elif hit_type == EventType.LAST_ANCHOR:
+                anchor_info.append(('B', group.x, group.y))
+                last_anchor = group
 
-            elif hit_type == EventType.SLIDER_END and len(ho_info) == 9 and ho_info[4] is not None and len(anchor_info) > 0:
-                slider_start_time = int(round(ho_info[2]))
+            elif hit_type == EventType.SLIDER_END and slider_head is not None and last_anchor is not None:
+                slider_start_time = int(round(slider_head.time))
                 curve_type = anchor_info[0][0]
-                span_duration = ho_info[4] - ho_info[2]
-                total_duration = time - ho_info[2]
+                span_duration = last_anchor.time - slider_head.time
+                total_duration = group.time - slider_head.time
 
                 if total_duration == 0 or span_duration == 0:
                     continue
 
                 slides = max(int(round(total_duration / span_duration)), 1)
                 span_duration = total_duration / slides
-                slider_path = SliderPath(self.curve_type_shorthand[curve_type], np.array([(ho_info[0], ho_info[1])] + [(cp[1], cp[2]) for cp in anchor_info], dtype=float))
+                slider_path = SliderPath(self.curve_type_shorthand[curve_type], np.array([(slider_head.x, slider_head.y)] + [(cp[1], cp[2]) for cp in anchor_info], dtype=float))
                 length = slider_path.get_distance()
 
                 req_length = length * position_to_progress(
                     slider_path,
-                    np.array((x, y)),
-                ) if has_pos else length - dist
+                    np.array((group.x, group.y)),
+                ) if self.has_pos else length - np.linalg.norm(np.array((group.x, group.y)) - np.array((last_anchor.x, last_anchor.y)))
 
                 if req_length < 1e-4:
                     continue
@@ -251,39 +272,42 @@ class Postprocessor(object):
                 redline = tp if tp.parent is None else tp.parent
                 last_sv = 1 if tp.parent is None else -100 / tp.ms_per_beat
 
-                sv, adjusted_length = self.get_human_sv_and_length(req_length, length, span_duration, last_sv, redline, ho_info[3] == 4)
+                sv, adjusted_length = self.get_human_sv_and_length(req_length, length, span_duration, last_sv, redline, slider_head.new_combo)
 
                 # If the adjusted length is too long, scale the control points to fit the length
                 if adjusted_length > length + 1e-4:
                     scale = adjusted_length / length
-                    anchor_info = [(cp[0], (cp[1] - ho_info[0]) * scale + ho_info[0], (cp[2] - ho_info[1]) * scale + ho_info[1]) for cp in anchor_info]
+                    anchor_info = [(cp[0], (cp[1] - slider_head.x) * scale + slider_head.x, (cp[2] - slider_head.y) * scale + slider_head.y) for cp in anchor_info]
 
                 if sv != last_sv:
                     timing = self.set_sv(timedelta(milliseconds=slider_start_time), sv, timing)
 
+                node_hitsounds = slider_head.hitsounds + last_anchor.hitsounds[1:] + group.hitsounds
+                node_samplesets = slider_head.samplesets + last_anchor.samplesets[1:] + group.samplesets
+                node_additions = slider_head.additions + last_anchor.additions[1:] + group.additions
+                node_volumes = slider_head.volumes + last_anchor.volumes[1:] + group.volumes
+
                 control_points = "|".join(f"{int(round(cp[1]))}:{int(round(cp[2]))}" for cp in anchor_info)
-                node_hitsounds = "|".join(str(ns[0]) for ns in node_samples)
-                node_sampleset = "|".join(f"{ns[1]}:{ns[2]}" for ns in node_samples)
+                node_hitsounds = "|".join(map(str, node_hitsounds))
+                node_sampleset = "|".join(f"{s}:{a}" for s, a in zip(node_samplesets, node_additions))
 
                 hit_object_strings.append(
-                    f"{int(round(ho_info[0]))},{int(round(ho_info[1]))},{slider_start_time},{2 | ho_info[3]},{ho_info[5]},{curve_type}|{control_points},{slides},{adjusted_length},{node_hitsounds},{node_sampleset},{ho_info[6]}:{ho_info[7]}:0:0:"
+                    f"{int(round(slider_head.x))},{int(round(slider_head.y))},{slider_start_time},{6 if slider_head.new_combo else 2},{last_anchor.hitsounds[0]},{curve_type}|{control_points},{slides},{adjusted_length},{node_hitsounds},{node_sampleset},{last_anchor.samplesets[0]}:{last_anchor.additions[0]}:0:0:"
                 )
 
                 # Set volume for each node sample
-                for i in range(min(slides + 1, len(node_samples))):
-                    t = int(round(ho_info[2] + span_duration * i))
-                    node_volume = node_samples[i][3]
+                for i in range(min(slides + 1, len(node_volumes))):
+                    t = int(round(slider_head.time + span_duration * i))
+                    node_volume = node_volumes[i]
                     timing = self.set_volume(timedelta(milliseconds=t), node_volume, timing)
 
-                    if ho_info[8] != node_volume and i < slides and span_duration > 6:
+                    if last_anchor.volumes[0] != node_volume and i < slides and span_duration > 6:
                         # Add a volume change after each node sample to make sure the body volume is maintained
-                        timing = self.set_volume(timedelta(milliseconds=t + 6), ho_info[8], timing)
+                        timing = self.set_volume(timedelta(milliseconds=t + 6), last_anchor.volumes[0], timing)
 
-                ho_info = []
+                slider_head = None
+                last_anchor = None
                 anchor_info = []
-                node_samples = []
-
-            new_combo = 0
 
         # Write .osu file
         with open(OSU_TEMPLATE_PATH, "r") as tf:
@@ -379,14 +403,11 @@ class Postprocessor(object):
         """Generate timing points from a list of Event objects."""
 
         markers: list[Postprocessor.Marker] = []
-        time = 0
-        for event in events:
-            if event.type == EventType.TIME_SHIFT:
-                time = int(event.value)
-            elif event.type == EventType.BEAT:
-                markers.append(self.Marker(time, False))
-            elif event.type == EventType.MEASURE:
-                markers.append(self.Marker(time, True))
+        step = 1 if self.types_first else -1
+        for i, event in enumerate(events):
+            if ((event.type == EventType.BEAT or event.type == EventType.MEASURE) and
+                    i + step < len(events) and events[i + step].type == EventType.TIME_SHIFT):
+                markers.append(self.Marker(int(events[i + step].value), event.type == EventType.MEASURE))
 
         if len(markers) == 0:
             return []
