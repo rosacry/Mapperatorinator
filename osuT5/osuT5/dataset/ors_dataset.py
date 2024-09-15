@@ -655,9 +655,11 @@ class BeatmapDatasetIterable:
         with open(metadata_file) as f:
             return json.load(f)
 
-    @staticmethod
-    def _get_difficulty(metadata: dict, beatmap_name: str, double_time: bool = False):
-        if double_time:
+    def _get_difficulty(self, metadata: dict, beatmap_name: str, speed: float = 1.0, beatmap: Beatmap = None) -> float:
+        if beatmap is not None and (all(e == 1.5 for e in self.args.dt_augment_range) or speed not in [1.0, 1.5]):
+            return beatmap.stars(speed_scale=speed)
+
+        if speed == 1.5:
             return metadata["Beatmaps"][beatmap_name]["StandardStarRating"]["64"]
         return metadata["Beatmaps"][beatmap_name]["StandardStarRating"]["0"]
 
@@ -728,7 +730,7 @@ class BeatmapDatasetIterable:
             "context_type": context_type,
             "beatmap_id": osu_beatmap.beatmap_id,
             "beatmap_idx": self._get_idx(metadata, beatmap_name),
-            "difficulty": self._get_difficulty(metadata, beatmap_name, speed > 1),
+            "difficulty": self._get_difficulty(metadata, beatmap_name, speed, osu_beatmap),
             "circle_size": osu_beatmap.circle_size,
         }
 
@@ -742,7 +744,7 @@ class BeatmapDatasetIterable:
 
             extra_data["other_beatmap_id"] = other_beatmap.beatmap_id
             extra_data["other_beatmap_idx"] = self._get_idx(metadata, other_name)
-            extra_data["other_difficulty"] = self._get_difficulty(metadata, other_name, speed > 1)
+            extra_data["other_difficulty"] = self._get_difficulty(metadata, other_name, speed, other_beatmap)
             extra_data["other_circle_size"] = other_beatmap.circle_size
         elif context_type == ContextType.NO_HS:
             other_events, other_event_times = remove_events_of_type(events, event_times, [EventType.HITSOUND, EventType.VOLUME])
