@@ -1,4 +1,4 @@
-FROM nvcr.io/nvidia/pytorch:24.07-py3
+FROM pytorch/pytorch:2.4.0-cuda12.4-cudnn9-devel
 
 RUN apt-get -y update && apt-get -y upgrade && apt-get install -y --no-install-recommends ffmpeg && rm -rf /var/lib/apt/lists/*
 RUN pip install accelerate pydub nnAudio PyYAML transformers hydra-core tensorboard slider==0.8.1 torch_tb_profiler wandb ninja
