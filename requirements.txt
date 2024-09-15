@@ -5,7 +5,7 @@ PyYAML
 transformers
 hydra-core
 tensorboard
-slider==0.8.1
+slider @ git+https://github.com/OliBomby/slider.git@gedagedigedagedaoh
 torch_tb_profiler
 wandb
 matplotlib
