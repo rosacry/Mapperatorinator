@@ -257,7 +257,9 @@ class BeatmapDatasetIterable:
             frames: npt.NDArray,
             frame_times: npt.NDArray,
             events: list[Event],
+            event_times: list[int],
             other_events: Optional[list[Event]] = None,
+            other_event_times: Optional[list[int]] = None,
             extra_data: Optional[dict] = None,
     ) -> list[dict[str, int | npt.NDArray | list[Event]]]:
         """Create frame and token sequences for training/testing.
@@ -270,29 +272,26 @@ class BeatmapDatasetIterable:
             A list of source and target sequences.
         """
 
-        def get_event_indices(events2: list[Event]) -> tuple[list[int], list[int]]:
+        def get_event_indices(events2: list[Event], event_times2: list[int]) -> tuple[list[int], list[int]]:
             # Corresponding start event index for every audio frame.
             start_indices = []
             event_index = 0
-            event_time = -np.inf
 
             for current_time in frame_times:
-                while event_time < current_time and event_index < len(events2):
-                    if events2[event_index].type == EventType.TIME_SHIFT:
-                        event_time = events2[event_index].value
+                while event_index < len(events2) and event_times2[event_index] < current_time:
                     event_index += 1
-                start_indices.append(event_index - 1)
+                start_indices.append(event_index)
 
             # Corresponding end event index for every audio frame.
             end_indices = start_indices[1:] + [len(events2)]
 
             return start_indices, end_indices
 
-        event_start_indices, event_end_indices = get_event_indices(events)
+        event_start_indices, event_end_indices = get_event_indices(events, event_times)
 
         other_event_start_indices, other_event_end_indices = None, None
         if other_events is not None:
-            other_event_start_indices, other_event_end_indices = get_event_indices(other_events)
+            other_event_start_indices, other_event_end_indices = get_event_indices(other_events, other_event_times)
 
         sequences = []
         n_frames = len(frames)
@@ -335,10 +334,9 @@ class BeatmapDatasetIterable:
 
         return sequences
 
-    def _trim_time_shifts(self, sequence: dict) -> dict:
+    def _normalize_time_shifts(self, sequence: dict) -> dict:
         """Make all time shifts in the sequence relative to the start time of the sequence,
-        and normalize time values,
-        and remove any time shifts for anchor events.
+        and normalize time values.
 
         Args:
             sequence: The input sequence.
@@ -347,34 +345,18 @@ class BeatmapDatasetIterable:
             The same sequence with trimmed time shifts.
         """
 
-        def process(events: list[Event], start_time, offset=-1) -> list[Event] | tuple[list[Event], int]:
+        def process(events: list[Event], start_time) -> list[Event] | tuple[list[Event], int]:
             for i, event in enumerate(events):
                 if event.type == EventType.TIME_SHIFT:
                     # We cant modify the event objects themselves because that will affect subsequent sequences
                     events[i] = Event(EventType.TIME_SHIFT, int((event.value - start_time) * STEPS_PER_MILLISECOND))
-
-            # Loop through the events in reverse to remove any time shifts that occur before anchor events
-            delete_next_time_shift = False
-            for i in range(len(events) - 1, -1, -1):
-                if events[i].type == EventType.TIME_SHIFT and delete_next_time_shift:
-                    delete_next_time_shift = False
-                    del events[i]
-                    if i < offset:
-                        offset -= 1
-                    continue
-                elif events[i].type in [EventType.BEZIER_ANCHOR, EventType.PERFECT_ANCHOR, EventType.CATMULL_ANCHOR,
-                                        EventType.RED_ANCHOR]:
-                    delete_next_time_shift = True
-
-            if offset >= 0:
-                return events, offset
 
             return events
 
         start_time = sequence["time"]
         del sequence["time"]
 
-        sequence["events"], sequence["labels_offset"] = process(sequence["events"], start_time, sequence["labels_offset"])
+        sequence["events"] = process(sequence["events"], start_time)
 
         if "pre_events" in sequence:
             sequence["pre_events"] = process(sequence["pre_events"], start_time)
@@ -741,7 +723,7 @@ class BeatmapDatasetIterable:
         frames, frame_times = self._get_frames(audio_samples)
 
         osu_beatmap = Beatmap.from_path(beatmap_path)
-        events = self.parser.parse(osu_beatmap, speed)
+        events, event_times = self.parser.parse(osu_beatmap, speed)
         extra_data = {
             "context_type": context_type,
             "beatmap_id": osu_beatmap.beatmap_id,
@@ -750,22 +732,22 @@ class BeatmapDatasetIterable:
             "circle_size": osu_beatmap.circle_size,
         }
 
-        other_events = None
+        other_events, other_event_times = None, None
         if self.args.add_gd_context or context_type == ContextType.GD:
             other_beatmaps = [k for k in metadata["Beatmaps"] if k != beatmap_name]
             other_name = random.choice(other_beatmaps)
             other_beatmap_path = (beatmap_path.parent / other_name).with_suffix(".osu")
             other_beatmap = Beatmap.from_path(other_beatmap_path)
-            other_events = self.parser.parse(other_beatmap, speed)
+            other_events, other_event_times = self.parser.parse(other_beatmap, speed)
 
             extra_data["other_beatmap_id"] = other_beatmap.beatmap_id
             extra_data["other_beatmap_idx"] = self._get_idx(metadata, other_name)
             extra_data["other_difficulty"] = self._get_difficulty(metadata, other_name, speed > 1)
             extra_data["other_circle_size"] = other_beatmap.circle_size
         elif context_type == ContextType.NO_HS:
-            other_events = remove_events_of_type(events, [EventType.HITSOUND, EventType.VOLUME])
+            other_events, other_event_times = remove_events_of_type(events, event_times, [EventType.HITSOUND, EventType.VOLUME])
         elif context_type == ContextType.TIMING:
-            other_events = self.parser.parse_timing(osu_beatmap, speed)
+            other_events, other_event_times = self.parser.parse_timing(osu_beatmap, speed)
 
         if self.sample_weights is not None:
             # Get the weight for the current beatmap
@@ -775,13 +757,15 @@ class BeatmapDatasetIterable:
             frames,
             frame_times,
             events,
+            event_times,
             other_events,
+            other_event_times,
             extra_data,
         )
 
         for sequence in sequences:
             self.maybe_change_dataset()
-            sequence = self._trim_time_shifts(sequence)
+            sequence = self._normalize_time_shifts(sequence)
             sequence = self._tokenize_sequence(sequence)
             sequence = self._pad_frame_sequence(sequence)
             sequence = self._pad_and_split_token_sequence(sequence)

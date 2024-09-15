@@ -15,6 +15,7 @@ from .data_utils import merge_events, speed_events
 
 class OsuParser:
     def __init__(self, args: DictConfig, tokenizer: Tokenizer) -> None:
+        self.types_first = args.data.types_first
         self.add_timing = args.data.add_timing
         self.add_hitsounds = args.data.add_hitsounds
         self.add_distances = args.data.add_distances
@@ -33,7 +34,7 @@ class OsuParser:
             self.dist_min = dist_range.min_value
             self.dist_max = dist_range.max_value
 
-    def parse(self, beatmap: Beatmap, speed: float = 1.0) -> list[Event]:
+    def parse(self, beatmap: Beatmap, speed: float = 1.0) -> tuple[list[Event], list[int]]:
         # noinspection PyUnresolvedReferences
         """Parse an .osu beatmap.
 
@@ -46,6 +47,7 @@ class OsuParser:
 
         Returns:
             events: List of Event object lists.
+            event_times: List of event times.
 
         Example::
             >>> beatmap = [
@@ -67,26 +69,29 @@ class OsuParser:
         hit_objects = beatmap.hit_objects(stacking=False)
         last_pos = np.array((256, 192))
         events = []
+        event_times = []
 
         for hit_object in hit_objects:
             if isinstance(hit_object, Circle):
-                last_pos = self._parse_circle(hit_object, events, last_pos, beatmap)
+                last_pos = self._parse_circle(hit_object, events, event_times, last_pos, beatmap)
             elif isinstance(hit_object, Slider):
-                last_pos = self._parse_slider(hit_object, events, last_pos, beatmap)
+                last_pos = self._parse_slider(hit_object, events, event_times, last_pos, beatmap)
             elif isinstance(hit_object, Spinner):
-                last_pos = self._parse_spinner(hit_object, events, beatmap)
+                last_pos = self._parse_spinner(hit_object, events, event_times, beatmap)
 
         if self.add_timing:
-            events = merge_events(self.parse_timing(beatmap), events)
+            timing_events, timing_times = self.parse_timing(beatmap)
+            events, event_times = merge_events(timing_events, timing_times, events, event_times)
 
         if speed != 1.0:
-            events = speed_events(events, speed)
+            events, event_times = speed_events(events, event_times, speed)
 
-        return events
+        return events, event_times
 
-    def parse_timing(self, beatmap: Beatmap, speed: float = 1.0) -> list[Event]:
+    def parse_timing(self, beatmap: Beatmap, speed: float = 1.0) -> tuple[list[Event], list[int]]:
         """Extract all timing information from a beatmap."""
         events = []
+        event_times = []
         last_ho = beatmap.hit_objects(stacking=False)[-1]
         last_time = last_ho.end_time if hasattr(last_ho, "end_time") else last_ho.time
 
@@ -99,8 +104,10 @@ class OsuParser:
             next_time = next_tp.offset - timedelta(milliseconds=10) if next_tp else last_time
             time = tp.offset
             measure_counter = 0
+            beat_delta = timedelta(milliseconds=tp.ms_per_beat)
             while time <= next_time:
-                self._add_time_event(time, beatmap, events, add_snap=False)
+                self._add_time_event(time, beatmap, events, event_times, add_snap=False)
+                event_times.append(int(time.total_seconds() * 1000))
 
                 if measure_counter % tp.meter == 0:
                     events.append(Event(EventType.MEASURE))
@@ -108,12 +115,12 @@ class OsuParser:
                     events.append(Event(EventType.BEAT))
 
                 measure_counter += 1
-                time += timedelta(milliseconds=tp.ms_per_beat)
+                time += beat_delta
 
         if speed != 1.0:
-            events = speed_events(events, speed)
+            events, event_times = speed_events(events, event_times, speed)
 
-        return events
+        return events, event_times
 
     @staticmethod
     def uninherited_point_at(time: timedelta, beatmap: Beatmap):
@@ -125,7 +132,7 @@ class OsuParser:
         hs_query = time + timedelta(milliseconds=5)
         return beatmap.timing_point_at(hs_query)
 
-    def _add_time_event(self, time: timedelta, beatmap: Beatmap, events: list[Event], add_snap: bool = True) -> None:
+    def _add_time_event(self, time: timedelta, beatmap: Beatmap, events: list[Event], event_times: list[int], add_snap: bool = True) -> None:
         """Add a snapping event to the event list.
 
         Args:
@@ -136,6 +143,7 @@ class OsuParser:
         """
         time_ms = int(time.total_seconds() * 1000)
         events.append(Event(EventType.TIME_SHIFT, time_ms))
+        event_times.append(time_ms)
 
         if not add_snap or not self.add_timing:
             return
@@ -150,8 +158,9 @@ class OsuParser:
                 break
 
         events.append(Event(EventType.SNAPPING, snapping))
+        event_times.append(time_ms)
 
-    def _add_hitsound_event(self, time: timedelta, hitsound: int, addition: str, beatmap: Beatmap, events: list[Event]) -> None:
+    def _add_hitsound_event(self, time: timedelta, group_time: int, hitsound: int, addition: str, beatmap: Beatmap, events: list[Event], event_times: list[int]) -> None:
         if not self.add_hitsounds:
             return
 
@@ -169,6 +178,8 @@ class OsuParser:
 
         events.append(Event(EventType.HITSOUND, hitsound_idx))
         events.append(Event(EventType.VOLUME, tp.volume))
+        event_times.append(group_time)
+        event_times.append(group_time)
 
     def _clip_dist(self, dist: int) -> int:
         """Clip distance to valid range."""
@@ -179,22 +190,65 @@ class OsuParser:
         p = pos / self.position_precision
         return int(np.clip(p[0], self.x_min, self.x_max)), int(np.clip(p[1], self.y_min, self.y_max))
 
-    def _add_position_event(self, pos: npt.NDArray, last_pos: npt.NDArray, events: list[Event]) -> npt.NDArray:
+    def _add_position_event(self, pos: npt.NDArray, last_pos: npt.NDArray, time: timedelta, events: list[Event], event_times: list[int]) -> npt.NDArray:
+        time_ms = int(time.total_seconds() * 1000)
         if self.add_distances:
             dist = self._clip_dist(np.linalg.norm(pos - last_pos))
             events.append(Event(EventType.DISTANCE, dist))
+            event_times.append(time_ms)
 
         if self.add_positions:
             p = self._scale_clip_pos(pos)
             if self.position_split_axes:
                 events.append(Event(EventType.POS_X, p[0]))
                 events.append(Event(EventType.POS_Y, p[1]))
+                event_times.append(time_ms)
+                event_times.append(time_ms)
             else:
                 events.append(Event(EventType.POS, (p[0] - self.x_min) + (p[1] - self.y_min) * self.x_count))
+                event_times.append(time_ms)
 
         return pos
 
-    def _parse_circle(self, circle: Circle, events: list[Event], last_pos: npt.NDArray, beatmap: Beatmap) -> npt.NDArray:
+    def _add_group(
+            self,
+            event_type: EventType,
+            time: timedelta,
+            events: list[Event],
+            event_times: list[int],
+            beatmap: Beatmap,
+            *,
+            time_event: bool = False,
+            pos: npt.NDArray = None,
+            last_pos: npt.NDArray = None,
+            new_combo: bool = False,
+            hitsound_ref_times: list[timedelta] = None,
+            hitsounds: list[int] = None,
+            additions: list[str] = None,
+    ) -> npt.NDArray:
+        """Add a group of events to the event list."""
+        time_ms = int(time.total_seconds() * 1000) if time is not None else None
+
+        if self.types_first:
+            events.append(Event(event_type))
+            event_times.append(time_ms)
+        if time_event:
+            self._add_time_event(time, beatmap, events, event_times)
+        if pos is not None:
+            last_pos = self._add_position_event(pos, last_pos, time, events, event_times)
+        if new_combo:
+            events.append(Event(EventType.NEW_COMBO))
+            event_times.append(time_ms)
+        if hitsound_ref_times is not None:
+            for i, ref_time in enumerate(hitsound_ref_times):
+                self._add_hitsound_event(ref_time, time_ms, hitsounds[i], additions[i], beatmap, events, event_times)
+        if not self.types_first:
+            events.append(Event(event_type))
+            event_times.append(time_ms)
+
+        return last_pos
+
+    def _parse_circle(self, circle: Circle, events: list[Event], event_times: list[int], last_pos: npt.NDArray, beatmap: Beatmap) -> npt.NDArray:
         """Parse a circle hit object.
 
         Args:
@@ -205,18 +259,22 @@ class OsuParser:
         Returns:
             pos: Position of the circle.
         """
-        pos = np.array(circle.position)
+        return self._add_group(
+            EventType.CIRCLE,
+            circle.time,
+            events,
+            event_times,
+            beatmap,
+            time_event=True,
+            pos=np.array(circle.position),
+            last_pos=last_pos,
+            new_combo=circle.new_combo,
+            hitsound_ref_times=[circle.time],
+            hitsounds=[circle.hitsound],
+            additions=[circle.addition],
+        )
 
-        self._add_time_event(circle.time, beatmap, events)
-        last_pos = self._add_position_event(pos, last_pos, events)
-        if circle.new_combo:
-            events.append(Event(EventType.NEW_COMBO))
-        self._add_hitsound_event(circle.time, circle.hitsound, circle.addition, beatmap, events)
-        events.append(Event(EventType.CIRCLE))
-
-        return last_pos
-
-    def _parse_slider(self, slider: Slider, events: list[Event], last_pos: npt.NDArray, beatmap: Beatmap) -> npt.NDArray:
+    def _parse_slider(self, slider: Slider, events: list[Event], event_times: list[int], last_pos: npt.NDArray, beatmap: Beatmap) -> npt.NDArray:
         """Parse a slider hit object.
 
         Args:
@@ -231,34 +289,40 @@ class OsuParser:
         if len(slider.curve.points) >= 100:
             return last_pos
 
-        pos = np.array(slider.position)
-
-        self._add_time_event(slider.time, beatmap, events)
-        last_pos = self._add_position_event(pos, last_pos, events)
-        if slider.new_combo:
-            events.append(Event(EventType.NEW_COMBO))
-        self._add_hitsound_event(slider.time, slider.edge_sounds[0] if len(slider.edge_sounds) > 0 else 0,
-                                 slider.edge_additions[0] if len(slider.edge_additions) > 0 else '0:0', beatmap, events)
-        events.append(Event(EventType.SLIDER_HEAD))
+        last_pos = self._add_group(
+            EventType.SLIDER_HEAD,
+            slider.time,
+            events,
+            event_times,
+            beatmap,
+            time_event=True,
+            pos=np.array(slider.position),
+            last_pos=last_pos,
+            new_combo=slider.new_combo,
+            hitsound_ref_times=[slider.time],
+            hitsounds=[slider.edge_sounds[0] if len(slider.edge_sounds) > 0 else 0],
+            additions=[slider.edge_additions[0] if len(slider.edge_additions) > 0 else '0:0'],
+        )
 
         duration: timedelta = (slider.end_time - slider.time) / slider.repeat
         control_point_count = len(slider.curve.points)
 
         def append_control_points(event_type: EventType, last_pos: npt.NDArray = last_pos) -> npt.NDArray:
             for i in range(1, control_point_count - 1):
-                last_pos = add_anchor_time_dist(i, last_pos)
-                events.append(Event(event_type))
+                last_pos = add_anchor(event_type, i, last_pos)
 
             return last_pos
 
-        def add_anchor_time_dist(i: int, last_pos: npt.NDArray, add_snap: bool = False) -> npt.NDArray:
-            time = slider.time + i / (control_point_count - 1) * duration
-            pos = np.array(slider.curve.points[i])
-
-            self._add_time_event(time, beatmap, events, add_snap)
-            last_pos = self._add_position_event(pos, last_pos, events)
-
-            return last_pos
+        def add_anchor(event_type: EventType, i: int, last_pos: npt.NDArray) -> npt.NDArray:
+            return self._add_group(
+                event_type,
+                slider.time + i / (control_point_count - 1) * duration,
+                events,
+                event_times,
+                beatmap,
+                pos=np.array(slider.curve.points[i]),
+                last_pos=last_pos,
+            )
 
         if isinstance(slider.curve, Linear):
             last_pos = append_control_points(EventType.RED_ANCHOR, last_pos)
@@ -269,33 +333,40 @@ class OsuParser:
         elif isinstance(slider.curve, MultiBezier):
             for i in range(1, control_point_count - 1):
                 if slider.curve.points[i] == slider.curve.points[i + 1]:
-                    last_pos = add_anchor_time_dist(i, last_pos)
-                    events.append(Event(EventType.RED_ANCHOR))
+                    last_pos = add_anchor(EventType.RED_ANCHOR, i, last_pos)
                 elif slider.curve.points[i] != slider.curve.points[i - 1]:
-                    last_pos = add_anchor_time_dist(i, last_pos)
-                    events.append(Event(EventType.BEZIER_ANCHOR))
-
-        last_pos = add_anchor_time_dist(control_point_count - 1, last_pos, True)
+                    last_pos = add_anchor(EventType.BEZIER_ANCHOR, i, last_pos)
 
         # Add body hitsounds and remaining edge hitsounds
-        self._add_hitsound_event(slider.time + timedelta(milliseconds=1), slider.hitsound, slider.addition, beatmap, events)
-        for i in range(1, slider.repeat):
-            self._add_hitsound_event(slider.time + i * duration, slider.edge_sounds[i] if len(slider.edge_sounds) > i else 0,
-                                     slider.edge_additions[i] if len(slider.edge_additions) > i else '0:0', beatmap, events)
+        last_pos = self._add_group(
+            EventType.LAST_ANCHOR,
+            slider.time + duration,
+            events,
+            event_times,
+            beatmap,
+            time_event=True,
+            pos=np.array(slider.curve.points[-1]),
+            last_pos=last_pos,
+            hitsound_ref_times=[slider.time + timedelta(milliseconds=1)] + [slider.time + i * duration for i in range(1, slider.repeat)],
+            hitsounds=[slider.hitsound] + [slider.edge_sounds[i] if len(slider.edge_sounds) > i else 0 for i in range(1, slider.repeat)],
+            additions=[slider.addition] + [slider.edge_additions[i] if len(slider.edge_additions) > i else '0:0' for i in range(1, slider.repeat)],
+        )
 
-        events.append(Event(EventType.LAST_ANCHOR))
+        return self._add_group(
+            EventType.SLIDER_END,
+            slider.end_time,
+            events,
+            event_times,
+            beatmap,
+            time_event=True,
+            pos=np.array(slider.curve(1)),
+            last_pos=last_pos,
+            hitsound_ref_times=[slider.end_time],
+            hitsounds=[slider.edge_sounds[-1] if len(slider.edge_sounds) > 0 else 0],
+            additions=[slider.edge_additions[-1] if len(slider.edge_additions) > 0 else '0:0'],
+        )
 
-        pos = np.array(slider.curve(1))
-
-        self._add_time_event(slider.end_time, beatmap, events)
-        last_pos = self._add_position_event(pos, last_pos, events)
-        self._add_hitsound_event(slider.end_time, slider.edge_sounds[-1] if len(slider.edge_sounds) > 0 else 0,
-                                 slider.edge_additions[-1] if len(slider.edge_additions) > 0 else '0:0', beatmap, events)
-        events.append(Event(EventType.SLIDER_END))
-
-        return last_pos
-
-    def _parse_spinner(self, spinner: Spinner, events: list[Event], beatmap: Beatmap) -> npt.NDArray:
+    def _parse_spinner(self, spinner: Spinner, events: list[Event], event_times: list[int], beatmap: Beatmap) -> npt.NDArray:
         """Parse a spinner hit object.
 
         Args:
@@ -305,11 +376,25 @@ class OsuParser:
         Returns:
             pos: Last position of the spinner.
         """
-        self._add_time_event(spinner.time, beatmap, events)
-        events.append(Event(EventType.SPINNER))
+        self._add_group(
+            EventType.SPINNER,
+            spinner.time,
+            events,
+            event_times,
+            beatmap,
+            time_event=True,
+        )
 
-        self._add_time_event(spinner.end_time, beatmap, events)
-        self._add_hitsound_event(spinner.end_time, spinner.hitsound, spinner.addition, beatmap, events)
-        events.append(Event(EventType.SPINNER_END))
+        self._add_group(
+            EventType.SPINNER_END,
+            spinner.end_time,
+            events,
+            event_times,
+            beatmap,
+            time_event=True,
+            hitsound_ref_times=[spinner.end_time],
+            hitsounds=[spinner.hitsound],
+            additions=[spinner.addition],
+        )
 
         return np.array((256, 192))
