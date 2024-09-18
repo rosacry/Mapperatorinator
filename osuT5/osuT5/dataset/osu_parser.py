@@ -106,13 +106,15 @@ class OsuParser:
             measure_counter = 0
             beat_delta = timedelta(milliseconds=tp.ms_per_beat)
             while time <= next_time:
-                self._add_time_event(time, beatmap, events, event_times, add_snap=False)
-                event_times.append(int(time.total_seconds() * 1000))
-
-                if measure_counter % tp.meter == 0:
-                    events.append(Event(EventType.MEASURE))
-                else:
-                    events.append(Event(EventType.BEAT))
+                self._add_group(
+                    EventType.MEASURE if measure_counter % tp.meter == 0 else EventType.BEAT,
+                    time,
+                    events,
+                    event_times,
+                    beatmap,
+                    time_event=True,
+                    add_snap=False,
+                )
 
                 measure_counter += 1
                 time += beat_delta
@@ -219,6 +221,7 @@ class OsuParser:
             beatmap: Beatmap,
             *,
             time_event: bool = False,
+            add_snap=True,
             pos: npt.NDArray = None,
             last_pos: npt.NDArray = None,
             new_combo: bool = False,
@@ -233,7 +236,7 @@ class OsuParser:
             events.append(Event(event_type))
             event_times.append(time_ms)
         if time_event:
-            self._add_time_event(time, beatmap, events, event_times)
+            self._add_time_event(time, beatmap, events, event_times, add_snap)
         if pos is not None:
             last_pos = self._add_position_event(pos, last_pos, time, events, event_times)
         if new_combo:
