@@ -419,6 +419,7 @@ class Tokenizer:
             "beatmap_descriptors": self.beatmap_descriptors,
             "descriptor_idx": self.descriptor_idx,
             "num_descriptor_classes": self.num_descriptor_classes,
+            "num_cs_classes": self.num_cs_classes,
         }
 
     def load_state_dict(self, state_dict):
@@ -454,3 +455,5 @@ class Tokenizer:
             self.descriptor_idx = state_dict["descriptor_idx"]
         if "num_descriptor_classes" in state_dict:
             self.num_descriptor_classes = state_dict["num_descriptor_classes"]
+        if "num_cs_classes" in state_dict:
+            self.num_cs_classes = state_dict["num_cs_classes"]
