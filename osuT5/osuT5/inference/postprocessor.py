@@ -15,6 +15,7 @@ from slider import TimingPoint
 
 from .slider_path import SliderPath
 from .timing_points_change import TimingPointsChange, sort_timing_points
+from ..dataset.data_utils import get_groups
 from ..tokenizer import Event, EventType
 
 OSU_FILE_EXTENSION = ".osu"
@@ -45,19 +46,6 @@ class BeatmapConfig:
 
     # Events
     background_line: str = ""
-
-
-@dataclasses.dataclass
-class Group:
-    event_type: EventType = None
-    time: int = 0
-    x: float = 256
-    y: float = 192
-    new_combo: bool = False
-    hitsounds: list[int] = dataclasses.field(default_factory=list)
-    samplesets: list[int] = dataclasses.field(default_factory=list)
-    additions: list[int] = dataclasses.field(default_factory=list)
-    volumes: list[int] = dataclasses.field(default_factory=list)
 
 
 def calculate_coordinates(last_pos, dist, num_samples, playfield_size):
@@ -126,64 +114,6 @@ class Postprocessor(object):
         self.types_first = args.osut5.data.types_first
         self.has_pos = args.osut5.data.add_positions
 
-    def get_groups(self, events: list[Event]) -> list[Group]:
-        type_events = [
-            EventType.CIRCLE,
-            EventType.SPINNER,
-            EventType.SPINNER_END,
-            EventType.SLIDER_HEAD,
-            EventType.BEZIER_ANCHOR,
-            EventType.PERFECT_ANCHOR,
-            EventType.CATMULL_ANCHOR,
-            EventType.RED_ANCHOR,
-            EventType.LAST_ANCHOR,
-            EventType.SLIDER_END,
-            EventType.BEAT,
-            EventType.MEASURE,
-        ]
-
-        groups = []
-        group = Group()
-        last_x, last_y = 256, 192
-        for event in events:
-            if event.type == EventType.TIME_SHIFT:
-                group.time = event.value
-            elif event.type == EventType.DISTANCE:
-                # Find a point which is dist away from the last point but still within the playfield
-                coordinates = calculate_coordinates((last_x, last_y), event.value, 500, (512, 384))
-                pos = coordinates[np.random.randint(len(coordinates))]
-                group.x, group.y = pos
-                last_x, last_y = pos
-            elif event.type == EventType.POS_X:
-                group.x = event.value
-                last_x = event.value
-            elif event.type == EventType.POS_Y:
-                group.y = event.value
-                last_y = event.value
-            elif event.type == EventType.NEW_COMBO:
-                group.new_combo = True
-            elif event.type == EventType.HITSOUND:
-                group.hitsounds.append((event.value % 8) * 2)
-                group.samplesets.append(((event.value // 8) % 3) + 1)
-                group.additions.append(((event.value // 24) % 3) + 1)
-            elif event.type == EventType.VOLUME:
-                group.volumes.append(event.value)
-            elif event.type in type_events:
-                if self.types_first:
-                    if group.event_type is not None:
-                        groups.append(group)
-                        group = Group()
-                    group.event_type = event.type
-                else:
-                    group.event_type = event.type
-                    groups.append(group)
-                    group = Group()
-
-        if group.event_type is not None:
-            groups.append(group)
-
-        return groups
-
     def generate(self, events: list[Event], timing: list[TimingPoint] = None):
         """Generate a beatmap file.
 
@@ -206,11 +136,20 @@ class Postprocessor(object):
                 timedelta(milliseconds=self.offset), self.beat_length, 4, 2, 0, 100, None, False
             )]
 
-        groups = self.get_groups(events)
+        groups = get_groups(events, types_first=self.types_first)
+        last_x, last_y = 256, 192
 
         # Convert to .osu format
         for group in groups:
             hit_type = group.event_type
+
+            if group.distance is not None and group.x is None and group.y is None:
+                # Find a point which is dist away from the last point but still within the playfield
+                coordinates = calculate_coordinates((last_x, last_y), group.distance, 500, (512, 384))
+                group.x, group.y = coordinates[np.random.randint(len(coordinates))]
+
+            if hit_type in [EventType.CIRCLE, EventType.SLIDER_HEAD, EventType.BEZIER_ANCHOR, EventType.PERFECT_ANCHOR, EventType.CATMULL_ANCHOR, EventType.RED_ANCHOR, EventType.LAST_ANCHOR, EventType.SLIDER_END]:
+                last_x, last_y = group.x, group.y
 
             if hit_type == EventType.CIRCLE:
                 hit_object_strings.append(f"{int(round(group.x))},{int(round(group.y))},{int(round(group.time))},{5 if group.new_combo else 1},{group.hitsounds[0]},{group.samplesets[0]}:{group.additions[0]}:0:0:")
@@ -225,6 +164,7 @@ class Postprocessor(object):
                 )
                 timing = self.set_volume(timedelta(milliseconds=int(round(group.time))), group.volumes[0], timing)
                 spinner_start = None
+                last_x, last_y = 256, 192
 
             elif hit_type == EventType.SLIDER_HEAD:
                 slider_head = group
