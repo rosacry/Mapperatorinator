@@ -11,6 +11,7 @@ from osu_diffusion import create_diffusion
 from osu_diffusion import DiT
 from osuT5.osuT5.dataset import update_event_times
 from osuT5.osuT5.tokenizer import Event, EventType
+from osuT5.osuT5.dataset.data_utils import get_groups, get_group_indices
 
 
 def get_beatmap_idx(path) -> dict[int, int]:
@@ -32,6 +33,7 @@ class DiffisionPipeline(object):
         self.cfg_scale = args.diff_cfg_scale
         self.refine_iters = args.refine_iters
         self.random_init = args.random_init
+        self.types_first = args.osut5.data.types_first
 
     def get_class_vector(
             self,
@@ -179,8 +181,7 @@ class DiffisionPipeline(object):
         positions = to_positions(samples)
         return self.events_with_pos(events, positions.squeeze(0), seq_indices)
 
-    @staticmethod
-    def events_to_sequence(events: list[Event]) -> tuple[torch.Tensor, torch.Tensor, int, dict[int, int]]:
+    def events_to_sequence(self, events: list[Event]) -> tuple[torch.Tensor, torch.Tensor, int, dict[int, int]]:
         # Calculate the time of every event and interpolate time for control point events
         event_times = []
         update_event_times(events, event_times)
@@ -201,62 +202,60 @@ class DiffisionPipeline(object):
             EventType.SLIDER_END: 11,
         }
 
+        groups = get_groups(events, event_times=event_times, types_first=self.types_first)
+        group_indices = get_group_indices(events, self.types_first)
+
         seq_indices = {}
         indices = []
         data_chunks = []
-        distance = 0
-        new_combo = False
         head_time = 0
         last_anchor_time = 0
         last_pos = (256, 192)
-        pos = (256, 192)
-        distance_defined = False
-        for i, event in enumerate(events):
-            indices.append(i)
-            if event.type == EventType.DISTANCE:
-                distance = event.value
-                distance_defined = True
-            elif event.type == EventType.POS_X:
-                pos = (event.value, pos[1])
-            elif event.type == EventType.POS_Y:
-                pos = (pos[0], event.value)
-                if not distance_defined:
-                    distance = ((pos[0] - last_pos[0]) ** 2 + (pos[1] - last_pos[1]) ** 2) ** 0.5
-            elif event.type == EventType.NEW_COMBO:
-                new_combo = True
-            elif event.type in event_index:
-                time = event_times[i]
-                index = event_index[event.type]
+        for i, group in enumerate(groups):
+            indices.extend(group_indices[i])
 
-                # Handle NC index offset
-                if event.type in nc_types and new_combo:
-                    index += 1
-                    new_combo = False
+            if group.event_type not in event_index:
+                continue
 
-                # Add slider end repeats index offset
-                if event.type == EventType.SLIDER_END:
-                    span_duration = last_anchor_time - head_time
-                    total_duration = time - head_time
-                    repeats = max(int(round(total_duration / span_duration)), 1) if span_duration > 0 else 1
-                    index += repeat_type(repeats)
-                elif event.type == EventType.SLIDER_HEAD:
-                    head_time = time
-                elif event.type == EventType.LAST_ANCHOR:
-                    last_anchor_time = time
+            time = group.time
+            index = event_index[group.event_type]
 
-                features = torch.zeros(20)
-                features[0] = pos[0]
-                features[1] = pos[1]
-                features[2] = time
-                features[3] = distance
-                features[index + 4] = 1
-                data_chunks.append(features)
+            # Handle NC index offset
+            if group.event_type in nc_types and group.new_combo:
+                index += 1
 
-                for j in indices:
-                    seq_indices[j] = len(data_chunks) - 1
-                indices = []
+            # Add slider end repeats index offset
+            if group.event_type == EventType.SLIDER_END:
+                span_duration = last_anchor_time - head_time
+                total_duration = time - head_time
+                repeats = max(int(round(total_duration / span_duration)), 1) if span_duration > 0 else 1
+                index += repeat_type(repeats)
+            elif group.event_type == EventType.SLIDER_HEAD:
+                head_time = time
+            elif group.event_type == EventType.LAST_ANCHOR:
+                last_anchor_time = time
 
-                last_pos = pos
+            if not group.x or not group.y:
+                group.x, group.y = 256, 192
+
+            pos = (group.x, group.y)
+
+            if not group.distance:
+                group.distance = ((pos[0] - last_pos[0]) ** 2 + (pos[1] - last_pos[1]) ** 2) ** 0.5
+
+            features = torch.zeros(20)
+            features[0] = pos[0]
+            features[1] = pos[1]
+            features[2] = time
+            features[3] = group.distance
+            features[index + 4] = 1
+            data_chunks.append(features)
+
+            for j in indices:
+                seq_indices[j] = len(data_chunks) - 1
+            indices = []
+
+            last_pos = pos
 
         for j in indices:
             seq_indices[j] = len(data_chunks) - 1

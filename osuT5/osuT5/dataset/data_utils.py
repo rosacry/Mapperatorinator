@@ -1,3 +1,4 @@
+import dataclasses
 from pathlib import Path
 from typing import Optional
 
@@ -167,7 +168,7 @@ def merge_events(events1: list[Event], event_times1: list[int], events2: list[Ev
     return merged_events, merged_event_times
 
 
-def remove_events_of_type(events: list[Event], event_times: list[int], event_types: list[EventType]) -> list[Event]:
+def remove_events_of_type(events: list[Event], event_times: list[int], event_types: list[EventType]) -> tuple[list[Event], list[int]]:
     """Remove all events of a specific type from a list of events.
 
     Args:
@@ -208,3 +209,99 @@ def speed_events(events: list[Event], event_times: list[int], speed: float) -> t
         sped_event_times.append(int(t / speed))
 
     return sped_events, sped_event_times
+
+
+@dataclasses.dataclass
+class Group:
+    event_type: EventType = None
+    time: int = 0
+    distance: int = None
+    x: float = None
+    y: float = None
+    new_combo: bool = False
+    hitsounds: list[int] = dataclasses.field(default_factory=list)
+    samplesets: list[int] = dataclasses.field(default_factory=list)
+    additions: list[int] = dataclasses.field(default_factory=list)
+    volumes: list[int] = dataclasses.field(default_factory=list)
+
+
+type_events = [
+    EventType.CIRCLE,
+    EventType.SPINNER,
+    EventType.SPINNER_END,
+    EventType.SLIDER_HEAD,
+    EventType.BEZIER_ANCHOR,
+    EventType.PERFECT_ANCHOR,
+    EventType.CATMULL_ANCHOR,
+    EventType.RED_ANCHOR,
+    EventType.LAST_ANCHOR,
+    EventType.SLIDER_END,
+    EventType.BEAT,
+    EventType.MEASURE,
+]
+
+
+def get_groups(
+        events: list[Event],
+        *,
+        event_times: Optional[list[int]] = None,
+        types_first: bool = False
+) -> list[Group]:
+    groups = []
+    group = Group()
+    for i, event in enumerate(events):
+        if event.type == EventType.TIME_SHIFT:
+            group.time = event.value
+        elif event.type == EventType.DISTANCE:
+            group.distance = event.value
+        elif event.type == EventType.POS_X:
+            group.x = event.value
+        elif event.type == EventType.POS_Y:
+            group.y = event.value
+        elif event.type == EventType.NEW_COMBO:
+            group.new_combo = True
+        elif event.type == EventType.HITSOUND:
+            group.hitsounds.append((event.value % 8) * 2)
+            group.samplesets.append(((event.value // 8) % 3) + 1)
+            group.additions.append(((event.value // 24) % 3) + 1)
+        elif event.type == EventType.VOLUME:
+            group.volumes.append(event.value)
+        elif event.type in type_events:
+            if types_first:
+                if group.event_type is not None:
+                    groups.append(group)
+                    group = Group()
+                group.event_type = event.type
+                if event_times is not None:
+                    group.time = event_times[i]
+            else:
+                group.event_type = event.type
+                if event_times is not None:
+                    group.time = event_times[i]
+                groups.append(group)
+                group = Group()
+
+    if group.event_type is not None:
+        groups.append(group)
+
+    return groups
+
+
+def get_group_indices(events: list[Event], types_first: bool = False) -> list[list[int]]:
+    groups = []
+    indices = []
+    for i, event in enumerate(events):
+        indices.append(i)
+        if event.type in type_events:
+            if types_first:
+                if len(indices) > 1:
+                    groups.append(indices[:-1])
+                    indices = [indices[-1]]
+            else:
+                groups.append(indices)
+                indices = []
+
+    if len(indices) > 0:
+        groups.append(indices)
+
+    return groups
