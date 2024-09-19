@@ -101,6 +101,7 @@ class Postprocessor(object):
             title_unicode=str(args.title),
             artist_unicode=str(args.artist),
             audio_filename=pathlib.Path(args.audio_path).name,
+            circle_size=float(args.circle_size),
             slider_multiplier=float(args.slider_multiplier),
             creator=str(args.creator),
             version=str(args.version),
