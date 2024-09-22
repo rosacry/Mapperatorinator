@@ -34,6 +34,7 @@ class Pipeline(object):
         self.miliseconds_per_sequence = self.samples_per_sequence * MILISECONDS_PER_SECOND / self.sample_rate
         self.miliseconds_per_stride = self.sequence_stride * MILISECONDS_PER_SECOND / self.sample_rate
         self.lookahead_max_time = (1 - args.lookahead) * self.miliseconds_per_sequence
+        self.lookahead_time_range = range(tokenizer.encode(Event(EventType.TIME_SHIFT, int(self.lookahead_max_time / MILISECONDS_PER_STEP) + 1)), tokenizer.event_end[EventType.TIME_SHIFT])
         self.eos_time = (1 - args.osut5.data.lookahead) * self.miliseconds_per_sequence
         self.center_pad_decoder = args.osut5.data.center_pad_decoder
         self.special_token_len = args.osut5.data.special_token_len
@@ -67,6 +68,7 @@ class Pipeline(object):
 
         self.timeshift_bias = args.timeshift_bias
         self.time_range = range(tokenizer.event_start[EventType.TIME_SHIFT], tokenizer.event_end[EventType.TIME_SHIFT])
+        self.beat_range = [self.tokenizer.event_start[EventType.BEAT], self.tokenizer.event_start[EventType.MEASURE]]
         self.types_first = args.osut5.data.types_first
 
     def get_class_vector(
@@ -210,6 +212,7 @@ class Pipeline(object):
 
         # Start generation
         for sequence_index, frames in enumerate(tqdm(sequences)):
+            # noinspection PyUnresolvedReferences
             frames = frames.to(self.device).unsqueeze(0)
 
             # Get tokens of previous frame
@@ -289,23 +292,24 @@ class Pipeline(object):
                 if eos_in_sentence.all():
                     break
 
-                next_event = self.tokenizer.decode(next_tokens[0].item())
-                if (sequence_index != len(sequences) - 1 and
-                        next_event.type == EventType.TIME_SHIFT and
-                        next_event.value * MILISECONDS_PER_STEP > self.lookahead_max_time):
+                last_tokens = input_ids[0, -2:].cpu()
+                if sequence_index != len(sequences) - 1 and last_tokens[-1] in self.lookahead_time_range:
                     # If the type token comes before the timeshift token we should remove the type token too
                     if self.types_first:
                         input_ids = input_ids[:, :-1]
                     break
-                if (next_event.type == EventType.BEAT or next_event.type == EventType.MEASURE) and context_tokens.shape[1] > 1 and input_ids.shape[1] > prompt_length + 1:
-                    # Ensure the beat or measure token matches the timing of the context
-                    input_ids[0, -2] = self._get_beat_time_token_from_context(context_tokens[0], input_ids[0, prompt_length - post_tokens.shape[1]:-2])
+                # Ensure the beat or measure token matches the timing of the context
+                if context_tokens.shape[1] > 1 and input_ids.shape[1] > prompt_length + 1:
+                    beat_offset = -2 if self.types_first else -1
+                    time_offset = -1 if self.types_first else -2
+                    if last_tokens[beat_offset] in self.beat_range and last_tokens[time_offset] in self.time_range:
+                        input_ids[0, time_offset] = self._get_beat_time_token_from_context(context_tokens[0], input_ids[0, prompt_length - post_tokens.shape[1]:-2])
 
             # Trim prompt and EOS tokens
             predicted_tokens = input_ids[:, prompt_length:-1]
             result = self._decode(predicted_tokens[0], frame_time)
             events += result
-            self._update_event_times(events, event_times, frame_time + self.eos_time)
+            update_event_times(events, event_times, frame_time + self.eos_time, self.types_first)
 
             # Trim events which are in the lookahead window
             if sequence_index != len(sequences) - 1:
@@ -339,9 +343,6 @@ class Pipeline(object):
                 del event_times[i]
             else:
                 break
-
-    def _update_event_times(self, events: list[Event], event_times: list[float], end_time: float):
-        update_event_times(events, event_times, end_time)
 
     def _encode(self, events: list[Event], frame_time: float) -> torch.Tensor:
         tokens = torch.empty((1, len(events)), dtype=torch.long)
@@ -429,7 +430,6 @@ class Pipeline(object):
         return new_events
 
     def _get_beat_time_token_from_context(self, context_tokens, generated_tokens):
-        beat_tokens = [self.tokenizer.event_start[EventType.BEAT], self.tokenizer.event_start[EventType.MEASURE]]
         context_tokens = context_tokens.cpu()
         generated_tokens = generated_tokens.cpu()
 
@@ -439,12 +439,12 @@ class Pipeline(object):
         for i in range(len(generated_tokens) - 1, -1, -1):
             token = generated_tokens[i]
             if (token in self.time_range and
-                    0 <= i + beat_offset < len(generated_tokens) and generated_tokens[i + beat_offset] in beat_tokens):
+                    0 <= i + beat_offset < len(generated_tokens) and generated_tokens[i + beat_offset] in self.beat_range):
                 latest_time = token
                 break
 
         # Search context tokens in order for the first time shift token after latest_time which is followed by a beat or measure token
         for i, token in enumerate(context_tokens):
             if (token in self.time_range and token > latest_time + 1 and
-                    0 <= i + beat_offset < len(context_tokens) and context_tokens[i + beat_offset] in beat_tokens):
+                    0 <= i + beat_offset < len(context_tokens) and context_tokens[i + beat_offset] in self.beat_range):
                 return token
