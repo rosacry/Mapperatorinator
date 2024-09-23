@@ -184,7 +184,7 @@ class DiffisionPipeline(object):
     def events_to_sequence(self, events: list[Event]) -> tuple[torch.Tensor, torch.Tensor, int, dict[int, int]]:
         # Calculate the time of every event and interpolate time for control point events
         event_times = []
-        update_event_times(events, event_times)
+        update_event_times(events, event_times, types_first=self.types_first)
 
         # Calculate the number of repeats for each slider end event
         # Convert to vectorized form for osu-diffusion
