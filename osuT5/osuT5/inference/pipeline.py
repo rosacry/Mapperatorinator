@@ -303,7 +303,9 @@ class Pipeline(object):
                     beat_offset = -2 if self.types_first else -1
                     time_offset = -1 if self.types_first else -2
                     if last_tokens[beat_offset] in self.beat_range and last_tokens[time_offset] in self.time_range:
-                        input_ids[0, time_offset] = self._get_beat_time_token_from_context(context_tokens[0], input_ids[0, prompt_length - post_tokens.shape[1]:-2])
+                        context_time = self._get_beat_time_token_from_context(context_tokens[0], input_ids[0, prompt_length - post_tokens.shape[1]:-2])
+                        if context_time is not None:
+                            input_ids[0, time_offset] = context_time
 
             # Trim prompt and EOS tokens
             predicted_tokens = input_ids[:, prompt_length:-1]
