@@ -146,8 +146,14 @@ def test(args: DictConfig, accelerator: Accelerator, model, tokenizer, preprefix
 
             if len(args.data.context_types) > 0:
                 for cts in args.data.context_types:
-                    ct = ContextType(cts)
-                    ct_index = batch['decoder_input_ids'][:, 0] == tokenizer.context_sos[ct]
+                    if isinstance(cts, str):
+                        ct = [ContextType(cts)]
+                    else:
+                        ct = [ContextType(ctss) for ctss in cts["in"]]
+
+                    ct_index = torch.ones_like(batch['decoder_input_ids'][:, 0], dtype=torch.bool)
+                    for c in ct:
+                        ct_index &= torch.max(batch['decoder_input_ids'] == tokenizer.context_sos[c], dim=1).values
 
                     if not ct_index.any():
                         continue
@@ -159,10 +165,8 @@ def test(args: DictConfig, accelerator: Accelerator, model, tokenizer, preprefix
                     ct_rhythm_complexity = rhythm_complexity[ct_index] if rhythm_complexity is not None else None
                     ct_loss = calc_loss(loss_fn, ct_logits, ct_labels, ct_weights)
 
-                    if ct == ContextType.NONE:
-                        cts = ''
-
-                    gather_metrics(ct_loss, ct_preds, ct_labels, ct_rhythm_complexity, prefix=cts)
+                    c_prefix = '' if ct[-1] == ContextType.NONE else ct[-1].value
+                    gather_metrics(ct_loss, ct_preds, ct_labels, ct_rhythm_complexity, prefix=c_prefix)
             else:
                 gather_metrics(loss, preds, labels, rhythm_complexity)
 

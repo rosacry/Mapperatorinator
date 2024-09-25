@@ -61,12 +61,20 @@ class Tokenizer:
         self.num_cs_classes = 0
 
         if args is not None:
-            for cts in args.data.context_types:
+            def add_context_type(cts):
                 ct = ContextType(cts)
-                self.context_sos[ct] = self.offset
-                self.offset += 1
-                self.context_eos[ct] = self.offset
-                self.offset += 1
+                if ct not in self.context_sos:
+                    self.context_sos[ct] = self.offset
+                    self.offset += 1
+                    self.context_eos[ct] = self.offset
+                    self.offset += 1
+
+            for cts in args.data.context_types:
+                if isinstance(cts, str):
+                    add_context_type(cts)
+                else:
+                    for ctss in cts["in"] + [cts["out"]]:
+                        add_context_type(ctss)
 
             miliseconds_per_sequence = ((args.data.src_seq_len - 1) * args.model.spectrogram.hop_length *
                                         MILISECONDS_PER_SECOND / args.model.spectrogram.sample_rate)
@@ -116,6 +124,9 @@ class Tokenizer:
                     x_count = x_max - x_min + 1
                     y_count = y_max - y_min + 1
                     self.event_ranges.append(EventRange(EventType.POS, 0, x_count * y_count - 1))
+
+            if args.data.add_timing_points:
+                self.event_ranges.append(EventRange(EventType.TIMING_POINT, 0, 0))
 
         self.event_ranges: list[EventRange] = self.event_ranges + [
             EventRange(EventType.NEW_COMBO, 0, 0),

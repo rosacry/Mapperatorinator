@@ -17,6 +17,8 @@ class OsuParser:
     def __init__(self, args: DictConfig, tokenizer: Tokenizer) -> None:
         self.types_first = args.data.types_first
         self.add_timing = args.data.add_timing
+        self.add_snapping = args.data.add_snapping
+        self.add_timing_points = args.data.add_timing_points
         self.add_hitsounds = args.data.add_hitsounds
         self.add_distances = args.data.add_distances
         self.add_positions = args.data.add_positions
@@ -106,8 +108,15 @@ class OsuParser:
             measure_counter = 0
             beat_delta = timedelta(milliseconds=tp.ms_per_beat)
             while time <= next_time:
+                if self.add_timing_points and measure_counter == 0:
+                    event_type = EventType.TIMING_POINT
+                elif measure_counter % tp.meter == 0:
+                    event_type = EventType.MEASURE
+                else:
+                    event_type = EventType.BEAT
+
                 self._add_group(
-                    EventType.MEASURE if measure_counter % tp.meter == 0 else EventType.BEAT,
+                    event_type,
                     time,
                     events,
                     event_times,
@@ -147,7 +156,7 @@ class OsuParser:
         events.append(Event(EventType.TIME_SHIFT, time_ms))
         event_times.append(time_ms)
 
-        if not add_snap or not self.add_timing:
+        if not add_snap or not self.add_snapping:
             return
 
         tp = self.uninherited_point_at(time, beatmap)

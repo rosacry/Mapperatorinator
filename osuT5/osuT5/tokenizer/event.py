@@ -23,6 +23,7 @@ class EventType(Enum):
     SLIDER_END = "slider_end"
     BEAT = "beat"
     MEASURE = "measure"
+    TIMING_POINT = "timing_point"
     STYLE = "style"
     DIFFICULTY = "difficulty"
     MAPPER = "mapper"
@@ -38,6 +39,7 @@ class ContextType(Enum):
     TIMING = "timing"
     NO_HS = "no_hs"
     GD = "gd"
+    MAP = "map"
 
 
 @dataclasses.dataclass

@@ -212,8 +212,14 @@ def eval_model(
         # Calculate accuracy metrics
         if len(args.data.context_types) > 0:
             for cts in args.data.context_types:
-                ct = ContextType(cts)
-                ct_index = batch['decoder_input_ids'][:, 0] == tokenizer.context_sos[ct]
+                if isinstance(cts, str):
+                    ct = [ContextType(cts)]
+                else:
+                    ct = [ContextType(ctss) for ctss in cts["in"]]
+
+                ct_index = torch.ones_like(batch['decoder_input_ids'][:, 0], dtype=torch.bool)
+                for c in ct:
+                    ct_index &= torch.max(batch['decoder_input_ids'] == tokenizer.context_sos[c], dim=1).values
 
                 if not ct_index.any():
                     continue
@@ -226,7 +232,7 @@ def eval_model(
                 stats = get_stats(ct_loss, ct_preds, ct_labels, tokenizer, args)
 
                 if ct != ContextType.NONE:
-                    stats = add_prefix(cts, stats)
+                    stats = add_prefix(ct[-1].value, stats)
 
                 averager.update(stats)
         else:
