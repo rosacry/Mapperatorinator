@@ -53,6 +53,8 @@ data:                  # Data settings
   descriptors_path: ''   # Path to file with all beatmap descriptors
   mappers_path: ''       # Path to file with all beatmap mappers
   add_timing: false      # Model beatmap timing
+  add_snapping: false    # Model hit object snapping
+  add_timing_points: false  # Model beatmap timing with timing points
   add_hitsounds: false   # Model beatmap hitsounds
   add_distances: true   # Model hit object distances
   add_positions: false   # Model hit object coordinates

@@ -256,16 +256,13 @@ class BeatmapDatasetIterable:
             self,
             frames: npt.NDArray,
             frame_times: npt.NDArray,
-            events: list[Event],
-            event_times: list[int],
-            other_events: Optional[list[Event]] = None,
-            other_event_times: Optional[list[int]] = None,
+            out_context: dict,
+            in_context: list[dict],
             extra_data: Optional[dict] = None,
     ) -> list[dict[str, int | npt.NDArray | list[Event]]]:
         """Create frame and token sequences for training/testing.
 
         Args:
-            events: Events and time shifts.
             frames: Audio frames.
 
         Returns:
@@ -273,6 +270,9 @@ class BeatmapDatasetIterable:
         """
 
         def get_event_indices(events2: list[Event], event_times2: list[int]) -> tuple[list[int], list[int]]:
+            if len(events2) == 0:
+                return [], []
+
             # Corresponding start event index for every audio frame.
             start_indices = []
             event_index = 0
@@ -287,11 +287,9 @@ class BeatmapDatasetIterable:
 
             return start_indices, end_indices
 
-        event_start_indices, event_end_indices = get_event_indices(events, event_times)
-
-        other_event_start_indices, other_event_end_indices = None, None
-        if other_events is not None:
-            other_event_start_indices, other_event_end_indices = get_event_indices(other_events, other_event_times)
+        start_indices, end_indices = {}, {}
+        for context in in_context + [out_context]:
+            start_indices[context["extra"]["context_type"]], end_indices[context["extra"]["context_type"]] = get_event_indices(context["events"], context["event_times"])
 
         sequences = []
         n_frames = len(frames)
@@ -303,32 +301,33 @@ class BeatmapDatasetIterable:
             gen_start_frame = min(frame_start_idx + self.gen_start_frame, n_frames - 1)
             gen_end_frame = min(frame_start_idx + self.gen_end_frame, n_frames)
 
-            event_start_idx = event_start_indices[frame_start_idx]
-            gen_start_idx = event_start_indices[gen_start_frame]
-            gen_end_idx = event_end_indices[gen_end_frame - 1]
+            event_start_idx = start_indices[out_context["extra"]["context_type"]][frame_start_idx]
+            gen_start_idx = start_indices[out_context["extra"]["context_type"]][gen_start_frame]
 
             frame_pre_idx = max(frame_start_idx - self.frame_seq_len, 0)
-            target_pre_idx = event_start_indices[frame_pre_idx]
+
+            def slice_events(context, frame_start_idx, frame_end_idx):
+                if len(context["events"]) == 0:
+                    return []
+                context_type = context["extra"]["context_type"]
+                event_start_idx = start_indices[context_type][frame_start_idx]
+                event_end_idx = end_indices[context_type][frame_end_idx - 1]
+                return context["events"][event_start_idx:event_end_idx]
+
+            def slice_context(context, frame_start_idx, frame_end_idx):
+                return {"events": slice_events(context, frame_start_idx, frame_end_idx)} | context["extra"]
 
             # Create the sequence
             sequence = {
                 "time": frame_times[frame_start_idx],
                 "frames": frames[frame_start_idx:frame_end_idx],
-                "events": events[event_start_idx:gen_end_idx],
                 "labels_offset": gen_start_idx - event_start_idx,
-            }
-
-            # Add extra data to the sequence
-            if extra_data is not None:
-                sequence |= extra_data
+                "out_context": slice_context(out_context, frame_start_idx, gen_end_frame),
+                "in_context": [slice_context(context, frame_start_idx, frame_end_idx) for context in in_context],
+            } | extra_data
 
             if self.args.add_pre_tokens or self.args.add_pre_tokens_at_step >= 0:
-                sequence["pre_events"] = events[target_pre_idx:event_start_idx]
-
-            if other_events is not None:
-                other_target_start_idx = other_event_start_indices[frame_start_idx]
-                other_target_end_idx = other_event_end_indices[frame_end_idx - 1]
-                sequence["other_events"] = other_events[other_target_start_idx:other_target_end_idx]
+                sequence["pre_events"] = slice_events(out_context, frame_pre_idx, frame_start_idx)
 
             sequences.append(sequence)
 
@@ -356,13 +355,13 @@ class BeatmapDatasetIterable:
         start_time = sequence["time"]
         del sequence["time"]
 
-        sequence["events"] = process(sequence["events"], start_time)
+        sequence["out_context"]["events"] = process(sequence["out_context"]["events"], start_time)
 
         if "pre_events" in sequence:
             sequence["pre_events"] = process(sequence["pre_events"], start_time)
 
-        if "other_events" in sequence:
-            sequence["other_events"] = process(sequence["other_events"], start_time)
+        for context in sequence["in_context"]:
+            context["events"] = process(context["events"], start_time)
 
         return sequence
 
@@ -378,13 +377,32 @@ class BeatmapDatasetIterable:
         Returns:
             The same sequence with tokenized events.
         """
-        tokens = torch.empty(len(sequence["events"]) + 2, dtype=torch.long)
-        tokens[0] = self.tokenizer.sos_id
-        for i, event in enumerate(sequence["events"]):
-            tokens[i + 1] = self.tokenizer.encode(event)
-        tokens[-1] = self.tokenizer.eos_id
-        sequence["tokens"] = tokens
-        del sequence["events"]
+        for context in sequence["in_context"] + [sequence["out_context"]]:
+            tokens = torch.empty(len(context["events"]), dtype=torch.long)
+            for i, event in enumerate(context["events"]):
+                tokens[i] = self.tokenizer.encode(event)
+            context["tokens"] = tokens
+
+            if "beatmap_id" in context:
+                if self.args.style_token_index >= 0:
+                    context["beatmap_idx_token"] = self.tokenizer.encode_style_idx(context["beatmap_idx"]) \
+                        if random.random() >= self.args.class_dropout_prob else self.tokenizer.style_unk
+
+                if self.args.diff_token_index >= 0:
+                    context["difficulty_token"] = self.tokenizer.encode_diff(context["difficulty"]) \
+                        if random.random() >= self.args.diff_dropout_prob else self.tokenizer.diff_unk
+
+                if self.args.mapper_token_index >= 0:
+                    context["mapper_token"] = self.tokenizer.encode_mapper(context["beatmap_id"]) \
+                        if random.random() >= self.args.mapper_dropout_prob else self.tokenizer.mapper_unk
+
+                if self.args.cs_token_index >= 0:
+                    context["circle_size_token"] = self.tokenizer.encode_cs(context["circle_size"]) \
+                        if random.random() >= self.args.cs_dropout_prob else self.tokenizer.cs_unk
+
+                if self.args.add_descriptors:
+                    context["descriptor_tokens"] = self.tokenizer.encode_descriptor(context["beatmap_id"]) \
+                        if random.random() >= self.args.descriptor_dropout_prob else [self.tokenizer.descriptor_unk]
 
         if "pre_events" in sequence:
             pre_tokens = torch.empty(len(sequence["pre_events"]), dtype=torch.long)
@@ -393,65 +411,8 @@ class BeatmapDatasetIterable:
             sequence["pre_tokens"] = pre_tokens
             del sequence["pre_events"]
 
-        if self.args.style_token_index >= 0:
-            sequence["beatmap_idx_token"] = self.tokenizer.encode_style_idx(sequence["beatmap_idx"]) \
-                if random.random() >= self.args.class_dropout_prob else self.tokenizer.style_unk
-
-        if self.args.diff_token_index >= 0:
-            sequence["difficulty_token"] = self.tokenizer.encode_diff(sequence["difficulty"]) \
-                if random.random() >= self.args.diff_dropout_prob else self.tokenizer.diff_unk
-
-        if self.args.mapper_token_index >= 0:
-            sequence["mapper_token"] = self.tokenizer.encode_mapper(sequence["beatmap_id"]) \
-                if random.random() >= self.args.mapper_dropout_prob else self.tokenizer.mapper_unk
-
-        if self.args.cs_token_index >= 0:
-            sequence["circle_size_token"] = self.tokenizer.encode_cs(sequence["circle_size"]) \
-                if random.random() >= self.args.cs_dropout_prob else self.tokenizer.cs_unk
-
-        if self.args.add_descriptors:
-            sequence["descriptor_tokens"] = self.tokenizer.encode_descriptor(sequence["beatmap_id"]) \
-                if random.random() >= self.args.descriptor_dropout_prob else [self.tokenizer.descriptor_unk]
-
         sequence["beatmap_idx"] = sequence["beatmap_idx"] \
             if random.random() >= self.args.class_dropout_prob else self.tokenizer.num_classes
-
-        if "other_events" in sequence:
-            other_tokens = torch.empty(len(sequence["other_events"]), dtype=torch.long)
-            for i, event in enumerate(sequence["other_events"]):
-                other_tokens[i] = self.tokenizer.encode(event)
-
-            sequence["other_tokens"] = other_tokens
-            del sequence["other_events"]
-
-            if "other_beatmap_id" in sequence:
-                if self.args.style_token_index >= 0:
-                    sequence["other_beatmap_idx_token"] = self.tokenizer.encode_style_idx(sequence["other_beatmap_idx"]) \
-                        if random.random() >= self.args.class_dropout_prob else self.tokenizer.style_unk
-
-                if self.args.diff_token_index >= 0:
-                    sequence["other_difficulty_token"] = self.tokenizer.encode_diff(sequence["other_difficulty"]) \
-                        if random.random() >= self.args.diff_dropout_prob else self.tokenizer.diff_unk
-
-                if self.args.mapper_token_index >= 0:
-                    sequence["other_mapper_token"] = self.tokenizer.encode_mapper(sequence["other_beatmap_id"]) \
-                        if random.random() >= self.args.mapper_dropout_prob else self.tokenizer.mapper_unk
-
-                if self.args.cs_token_index >= 0:
-                    sequence["other_circle_size_token"] = self.tokenizer.encode_cs(sequence["other_circle_size"]) \
-                        if random.random() >= self.args.cs_dropout_prob else self.tokenizer.cs_unk
-
-                if self.args.add_descriptors:
-                    sequence["other_descriptor_tokens"] = self.tokenizer.encode_descriptor(sequence["other_beatmap_id"]) \
-                        if random.random() >= self.args.descriptor_dropout_prob else [self.tokenizer.descriptor_unk]
-
-                del sequence["other_difficulty"]
-                del sequence["other_circle_size"]
-                del sequence["other_beatmap_idx"]
-
-        del sequence["difficulty"]
-        del sequence["circle_size"]
-        del sequence["beatmap_id"]
         # We keep beatmap_idx because it is a model input
 
         return sequence
@@ -472,107 +433,94 @@ class BeatmapDatasetIterable:
         Returns:
             The same sequence with padded tokens.
         """
-        stl = self.args.special_token_len
+        # Count irreducable tokens for out context and SOS/EOS tokens
+        stl = self.args.special_token_len + 1
 
-        if "descriptor_tokens" in sequence:
-            stl += len(sequence["descriptor_tokens"])
+        if "descriptor_tokens" in sequence["out_context"]:
+            stl += len(sequence["out_context"]["descriptor_tokens"])
 
-        tokens = sequence["tokens"]
-        labels_offset = sequence["labels_offset"]
-        pre_tokens = sequence["pre_tokens"] if "pre_tokens" in sequence else torch.empty(0, dtype=tokens.dtype)
-        num_pre_tokens = len(pre_tokens) if self.args.add_pre_tokens else 0
+        # Count irreducable tokens for in contexts
+        for context in sequence["in_context"]:
+            if context["add_type"]:
+                stl += 2
+            if "beatmap_id" in context:
+                stl += self.args.special_token_len
+
+                if "descriptor_tokens" in context:
+                    stl += len(context["descriptor_tokens"])
+
+        # Count reducible tokens, pre_tokens and context tokens
+        num_tokens = len(sequence["out_context"]["tokens"])
+        num_pre_tokens = len(sequence["pre_tokens"]) if "pre_tokens" in sequence else 0
 
         if self.args.max_pre_token_len > 0:
             num_pre_tokens = min(num_pre_tokens, self.args.max_pre_token_len)
 
-        other_tokens = sequence["other_tokens"] if "other_tokens" in sequence else torch.empty(0, dtype=tokens.dtype)
-        num_other_tokens = len(other_tokens) if "other_tokens" in sequence else 0
+        num_other_tokens = sum(len(context["tokens"]) for context in sequence["in_context"])
 
-        ctl = 0 if sequence["context_type"] is None else 2
-        if "other_tokens" in sequence:
-            if "other_beatmap_id" in sequence:
-                ctl += self.args.special_token_len
-
-                if "other_descriptor_tokens" in sequence:
-                    ctl += len(sequence["other_descriptor_tokens"])
-
-        input_tokens = torch.full((self.args.tgt_seq_len,), self.tokenizer.pad_id, dtype=tokens.dtype,
-                                  device=tokens.device)
-        label_tokens = torch.full((self.args.tgt_seq_len,), LABEL_IGNORE_ID, dtype=tokens.dtype, device=tokens.device)
-
+        # Trim tokens to target sequence length
         if self.args.center_pad_decoder:
-            n = min(self.args.tgt_seq_len - self.pre_token_len, len(tokens) - 1)
-            m = min(self.pre_token_len - stl - ctl, num_pre_tokens)
-            o = min(self.pre_token_len - m - stl - ctl, num_other_tokens)
-            si = self.pre_token_len - m - stl - ctl - o
+            n = min(self.args.tgt_seq_len - self.pre_token_len - 1, num_tokens)
+            m = min(self.pre_token_len - stl + 1, num_pre_tokens)
+            o = min(self.pre_token_len - m - stl + 1, num_other_tokens)
+            si = self.pre_token_len - m - stl + 1 - o
         else:
-            # n + m + special_token_length + num_other_tokens + padding = tgt_seq_len
-            n = min(self.args.tgt_seq_len - stl - ctl - min(self.min_pre_token_len, num_pre_tokens),
-                    len(tokens) - 1)
-            m = min(self.args.tgt_seq_len - n - stl - ctl, num_pre_tokens)
-            o = min(self.args.tgt_seq_len - n - stl - ctl - m, num_other_tokens)
+            # n + m + stl + o + padding = tgt_seq_len
+            n = min(self.args.tgt_seq_len - stl - min(self.min_pre_token_len, num_pre_tokens), num_tokens)
+            m = min(self.args.tgt_seq_len - stl - n, num_pre_tokens)
+            o = min(self.args.tgt_seq_len - stl - n - m, num_other_tokens)
             si = 0
 
-        if sequence["context_type"] is not None:
-            input_tokens[si] = self.tokenizer.context_sos[sequence["context_type"]]
-            si += 1
+        input_tokens = torch.full((self.args.tgt_seq_len,), self.tokenizer.pad_id, dtype=torch.long)
+        label_tokens = torch.full((self.args.tgt_seq_len,), LABEL_IGNORE_ID, dtype=torch.long)
 
-        if "other_tokens" in sequence:
-            if "other_beatmap_id" in sequence:
-                if "other_beatmap_idx_token" in sequence:
-                    input_tokens[si + self.args.style_token_index] = sequence["other_beatmap_idx_token"]
-                    del sequence["other_beatmap_idx_token"]
-                if "other_difficulty_token" in sequence:
-                    input_tokens[si + self.args.diff_token_index] = sequence["other_difficulty_token"]
-                    del sequence["other_difficulty_token"]
-                if "other_mapper_token" in sequence:
-                    input_tokens[si + self.args.mapper_token_index] = sequence["other_mapper_token"]
-                    del sequence["other_mapper_token"]
-                if "other_circle_size_token" in sequence:
-                    input_tokens[si + self.args.cs_token_index] = sequence["other_circle_size_token"]
-                    del sequence["other_circle_size_token"]
+        def add_special_tokens(context, si):
+            if "beatmap_idx_token" in context:
+                input_tokens[si + self.args.style_token_index] = context["beatmap_idx_token"]
+            if "difficulty_token" in context:
+                input_tokens[si + self.args.diff_token_index] = context["difficulty_token"]
+            if "mapper_token" in context:
+                input_tokens[si + self.args.mapper_token_index] = context["mapper_token"]
+            if "circle_size_token" in context:
+                input_tokens[si + self.args.cs_token_index] = context["circle_size_token"]
 
-                si += self.args.special_token_len
+            si += self.args.special_token_len
 
-                if "other_descriptor_tokens" in sequence:
-                    for token in sequence["other_descriptor_tokens"]:
-                        input_tokens[si] = token
-                        si += 1
-                    del sequence["other_descriptor_tokens"]
+            if "descriptor_tokens" in context:
+                for token in context["descriptor_tokens"]:
+                    input_tokens[si] = token
+                    si += 1
+            return si
 
-            input_tokens[si:si + o] = other_tokens[:o]
-            si += o
-
-        if sequence["context_type"] is not None:
-            input_tokens[si] = self.tokenizer.context_eos[sequence["context_type"]]
-            si += 1
-
-        if "beatmap_idx_token" in sequence:
-            input_tokens[si + self.args.style_token_index] = sequence["beatmap_idx_token"]
-            del sequence["beatmap_idx_token"]
-        if "difficulty_token" in sequence:
-            input_tokens[si + self.args.diff_token_index] = sequence["difficulty_token"]
-            del sequence["difficulty_token"]
-        if "mapper_token" in sequence:
-            input_tokens[si + self.args.mapper_token_index] = sequence["mapper_token"]
-            del sequence["mapper_token"]
-        if "circle_size_token" in sequence:
-            input_tokens[si + self.args.cs_token_index] = sequence["circle_size_token"]
-            del sequence["circle_size_token"]
-
-        si += self.args.special_token_len
-
-        if "descriptor_tokens" in sequence:
-            for token in sequence["descriptor_tokens"]:
-                input_tokens[si] = token
+        for context in sequence["in_context"]:
+            if context["add_type"]:
+                input_tokens[si] = self.tokenizer.context_sos[context["context_type"]]
                 si += 1
-            del sequence["descriptor_tokens"]
+
+            if "beatmap_id" in context:
+                si = add_special_tokens(context, si)
+
+            num_other_tokens_to_add = min(len(context["tokens"]), o)
+            input_tokens[si:si + num_other_tokens_to_add] = context["tokens"][:num_other_tokens_to_add]
+            si += num_other_tokens_to_add
+            o -= num_other_tokens_to_add
+
+            if context["add_type"]:
+                input_tokens[si] = self.tokenizer.context_eos[context["context_type"]]
+                si += 1
+
+        si = add_special_tokens(sequence["out_context"], si)
 
         if m > 0:
-            input_tokens[si:si + m] = pre_tokens[-m:]
+            input_tokens[si:si + m] = sequence["pre_tokens"][-m:]
 
-        input_tokens[si + m:si + m + n] = tokens[:n]
-        label_tokens[si + m + labels_offset:si + m + n] = tokens[1 + labels_offset:1 + n]
+        tokens = sequence["out_context"]["tokens"]
+        labels_offset = sequence["labels_offset"]
+
+        input_tokens[si + m] = self.tokenizer.sos_id
+        input_tokens[si + m + 1:si + m + n + 1] = tokens[:n]
+        label_tokens[si + m + labels_offset:si + m + n] = tokens[labels_offset:n]
+        label_tokens[si + m + n] = self.tokenizer.eos_id
 
         # Randomize some input tokens
         def randomize_tokens(tokens):
@@ -594,17 +542,11 @@ class BeatmapDatasetIterable:
         sequence["decoder_attention_mask"] = input_tokens != self.tokenizer.pad_id
         sequence["labels"] = label_tokens
 
-        del sequence["context_type"]
-        del sequence["tokens"]
+        del sequence["out_context"]
+        del sequence["in_context"]
         del sequence["labels_offset"]
         if "pre_tokens" in sequence:
             del sequence["pre_tokens"]
-
-        if "other_tokens" in sequence:
-            del sequence["other_tokens"]
-
-        if "other_beatmap_id" in sequence:
-            del sequence["other_beatmap_id"]
 
         return sequence
 
@@ -713,55 +655,71 @@ class BeatmapDatasetIterable:
                     yield sample
 
     def _get_next_beatmap(self, audio_samples, beatmap_path: Path, metadata: dict, speed: float) -> dict:
-        context_type = None
+        context_info = None
         if len(self.args.context_types) > 0:
             # Randomly select a context type with probabilities of context_weights
-            context_type = ContextType(random.choices(self.args.context_types, weights=self.args.context_weights)[0])
+            context_info = random.choices(self.args.context_types, weights=self.args.context_weights)[0]
 
-            if context_type == ContextType.GD and len(metadata["Beatmaps"]) <= 1:
-                context_type = ContextType.NONE
+            if isinstance(context_info, str):
+                context_info = {"out": "map", "in": [context_info]}
+            if "gd" in context_info["in"] and len(metadata["Beatmaps"]) <= 1:
+                context_info["in"].remove("gd")
+            if len(context_info["in"]) == 0:
+                context_info["in"].append("none")
 
         beatmap_name = beatmap_path.stem
         frames, frame_times = self._get_frames(audio_samples)
-
         osu_beatmap = Beatmap.from_path(beatmap_path)
-        events, event_times = self.parser.parse(osu_beatmap, speed)
+
+        def add_special_data(data, beatmap, beatmap_name):
+            data["extra"]["beatmap_id"] = beatmap.beatmap_id
+            data["extra"]["beatmap_idx"] = self._get_idx(metadata, beatmap_name)
+            data["extra"]["difficulty"] = self._get_difficulty(metadata, beatmap_name, speed, beatmap)
+            data["extra"]["circle_size"] = beatmap.circle_size
+
+        def get_context(context, add_type=True, force_special_data=False):
+            data = {"extra": {"context_type": ContextType(context), "add_type": add_type}}
+            if context == "none":
+                data["events"], data["event_times"] = [], []
+            elif context == "timing":
+                data["events"], data["event_times"] = self.parser.parse_timing(osu_beatmap, speed)
+            elif context == "no_hs":
+                hs_events, hs_event_times = self.parser.parse(osu_beatmap, speed)
+                data["events"], data["event_times"] = remove_events_of_type(hs_events, hs_event_times, [EventType.HITSOUND, EventType.VOLUME])
+            elif context == "gd":
+                other_beatmaps = [k for k in metadata["Beatmaps"] if k != beatmap_name]
+                other_name = random.choice(other_beatmaps)
+                other_beatmap_path = (beatmap_path.parent / other_name).with_suffix(".osu")
+                other_beatmap = Beatmap.from_path(other_beatmap_path)
+                data["events"], data["event_times"] = self.parser.parse(other_beatmap, speed)
+                add_special_data(data, other_beatmap, other_name)
+            elif context == "map":
+                data["events"], data["event_times"] = self.parser.parse(osu_beatmap, speed)
+            if force_special_data:
+                add_special_data(data, osu_beatmap, beatmap_name)
+            return data
+
         extra_data = {
-            "context_type": context_type,
-            "beatmap_id": osu_beatmap.beatmap_id,
             "beatmap_idx": self._get_idx(metadata, beatmap_name),
-            "difficulty": self._get_difficulty(metadata, beatmap_name, speed, osu_beatmap),
-            "circle_size": osu_beatmap.circle_size,
         }
 
-        other_events, other_event_times = None, None
-        if self.args.add_gd_context or context_type == ContextType.GD:
-            other_beatmaps = [k for k in metadata["Beatmaps"] if k != beatmap_name]
-            other_name = random.choice(other_beatmaps)
-            other_beatmap_path = (beatmap_path.parent / other_name).with_suffix(".osu")
-            other_beatmap = Beatmap.from_path(other_beatmap_path)
-            other_events, other_event_times = self.parser.parse(other_beatmap, speed)
-
-            extra_data["other_beatmap_id"] = other_beatmap.beatmap_id
-            extra_data["other_beatmap_idx"] = self._get_idx(metadata, other_name)
-            extra_data["other_difficulty"] = self._get_difficulty(metadata, other_name, speed, other_beatmap)
-            extra_data["other_circle_size"] = other_beatmap.circle_size
-        elif context_type == ContextType.NO_HS:
-            other_events, other_event_times = remove_events_of_type(events, event_times, [EventType.HITSOUND, EventType.VOLUME])
-        elif context_type == ContextType.TIMING:
-            other_events, other_event_times = self.parser.parse_timing(osu_beatmap, speed)
-
         if self.sample_weights is not None:
-            # Get the weight for the current beatmap
             extra_data["sample_weights"] = self.sample_weights.get(osu_beatmap.beatmap_id, 1.0)
+
+        out_context = get_context(context_info["out"], force_special_data=True)
+
+        in_context = []
+        for context in context_info["in"]:
+            in_context.append(get_context(context))
+
+        if self.args.add_gd_context:
+            in_context.append(get_context("gd", False))
 
         sequences = self._create_sequences(
             frames,
             frame_times,
-            events,
-            event_times,
-            other_events,
-            other_event_times,
+            out_context,
+            in_context,
             extra_data,
         )
 

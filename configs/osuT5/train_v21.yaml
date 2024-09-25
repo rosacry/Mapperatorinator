@@ -22,6 +22,7 @@ data:                  # Data settings
   descriptors_path: "../../../datasets/beatmap_descriptors.csv"   # Path to file with all beatmap descriptors
   mappers_path: "../../../datasets/beatmap_users.json"       # Path to file with all beatmap mappers
   add_timing: true      # Model beatmap timing
+  add_snapping: true    # Model hit object snapping
   add_hitsounds: true   # Model beatmap hitsounds
   add_pre_tokens: false
   per_track: true
