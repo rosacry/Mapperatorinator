@@ -36,7 +36,7 @@ class Averager:
 
     def average(self):
         averaged_stats = {
-            key: (tot / self.counter[key]).item() if isinstance(tot, torch.Tensor) else tot / self.counter[key] for key, tot in self.total.items()
+            key: (tot / self.counter[key]).item() if isinstance(tot, torch.Tensor) else tot / self.counter[key] for key, tot in self.total.items() if self.counter[key] > 0
         }
         self.reset()
 
