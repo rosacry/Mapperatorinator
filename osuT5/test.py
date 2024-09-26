@@ -106,6 +106,7 @@ def test(args: DictConfig, accelerator: Accelerator, model, tokenizer, preprefix
                 for i, n in enumerate(precision_bins):  # type: int, int
                     accs = timing_diffs == n
                     precision_bin_totals[prefix][i] += np.sum(accs)
+                    # noinspection PyTypeChecker
                     precision_bin_counts[prefix][i] += len(accs)
 
                 # Bin labels by time and calculate accuracy
