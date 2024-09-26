@@ -231,7 +231,7 @@ def eval_model(
                 ct_loss = calc_loss(loss_fn, ct_logits, ct_labels, ct_weights)
                 stats = get_stats(ct_loss, ct_preds, ct_labels, tokenizer, args)
 
-                if ct != ContextType.NONE:
+                if ct[-1] != ContextType.NONE:
                     stats = add_prefix(ct[-1].value, stats)
 
                 averager.update(stats)
