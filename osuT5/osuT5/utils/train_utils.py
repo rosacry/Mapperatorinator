@@ -213,13 +213,11 @@ def eval_model(
         if len(args.data.context_types) > 0:
             for cts in args.data.context_types:
                 if isinstance(cts, str):
-                    ct = [ContextType(cts)]
-                else:
-                    ct = [ContextType(ctss) for ctss in cts["in"]]
+                    cts = {"out": "map", "in": [cts]}
 
                 ct_index = torch.ones_like(batch['decoder_input_ids'][:, 0], dtype=torch.bool)
-                for c in ct:
-                    ct_index &= torch.max(batch['decoder_input_ids'] == tokenizer.context_sos[c], dim=1).values
+                for c in cts["in"]:
+                    ct_index &= torch.max(batch['decoder_input_ids'] == tokenizer.context_sos[ContextType(c)], dim=1).values
 
                 if not ct_index.any():
                     continue
@@ -231,8 +229,7 @@ def eval_model(
                 ct_loss = calc_loss(loss_fn, ct_logits, ct_labels, ct_weights)
                 stats = get_stats(ct_loss, ct_preds, ct_labels, tokenizer, args)
 
-                if ct[-1] != ContextType.NONE:
-                    stats = add_prefix(ct[-1].value, stats)
+                stats = add_prefix(f"{'+'.join(cts['in'])}>{cts['out']}", stats)
 
                 averager.update(stats)
         else:

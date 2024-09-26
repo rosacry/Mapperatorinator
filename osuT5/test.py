@@ -63,11 +63,11 @@ def test(args: DictConfig, accelerator: Accelerator, model, tokenizer, preprefix
         precision_bin_totals = {}
         precision_bin_counts = {}
 
-        for batch_id, batch in enumerate(tqdm(test_dataloader), start=1):
+        for batch_id, batch in enumerate(tqdm(test_dataloader), start=1):  # type: int, dict[str, torch.Tensor]
             if batch_id == args.eval.steps * args.optim.grad_acc:
                 break
 
-            rhythm_complexity: Optional[np.ndarray] = None
+            rhythm_complexity: Optional[torch.Tensor] = None
             if "sample_weights" in batch:
                 rhythm_complexity = batch["sample_weights"]
 
@@ -103,7 +103,7 @@ def test(args: DictConfig, accelerator: Accelerator, model, tokenizer, preprefix
                 range_labels = labels[index]
                 range_preds = preds[index]
                 timing_diffs = (range_preds - range_labels).detach().cpu().numpy()
-                for i, n in enumerate(precision_bins):
+                for i, n in enumerate(precision_bins):  # type: int, int
                     accs = timing_diffs == n
                     precision_bin_totals[prefix][i] += np.sum(accs)
                     precision_bin_counts[prefix][i] += len(accs)
@@ -147,13 +147,11 @@ def test(args: DictConfig, accelerator: Accelerator, model, tokenizer, preprefix
             if len(args.data.context_types) > 0:
                 for cts in args.data.context_types:
                     if isinstance(cts, str):
-                        ct = [ContextType(cts)]
-                    else:
-                        ct = [ContextType(ctss) for ctss in cts["in"]]
+                        cts = {"out": "map", "in": [cts]}
 
                     ct_index = torch.ones_like(batch['decoder_input_ids'][:, 0], dtype=torch.bool)
-                    for c in ct:
-                        ct_index &= torch.max(batch['decoder_input_ids'] == tokenizer.context_sos[c], dim=1).values
+                    for c in cts["in"]:
+                        ct_index &= torch.max(batch['decoder_input_ids'] == tokenizer.context_sos[ContextType(c)], dim=1).values
 
                     if not ct_index.any():
                         continue
@@ -165,7 +163,7 @@ def test(args: DictConfig, accelerator: Accelerator, model, tokenizer, preprefix
                     ct_rhythm_complexity = rhythm_complexity[ct_index] if rhythm_complexity is not None else None
                     ct_loss = calc_loss(loss_fn, ct_logits, ct_labels, ct_weights)
 
-                    c_prefix = '' if ct[-1] == ContextType.NONE else ct[-1].value
+                    c_prefix = f"{'+'.join(cts['in'])}>{cts['out']}"
                     gather_metrics(ct_loss, ct_preds, ct_labels, ct_rhythm_complexity, prefix=c_prefix)
             else:
                 gather_metrics(loss, preds, labels, rhythm_complexity)
