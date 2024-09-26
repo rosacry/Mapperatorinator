@@ -662,6 +662,10 @@ class BeatmapDatasetIterable:
 
             if isinstance(context_info, str):
                 context_info = {"out": "map", "in": [context_info]}
+            else:
+                # It's important to copy the context_info because we will modify it, and we don't want to permanently change the config
+                context_info = context_info.copy()
+
             if "gd" in context_info["in"] and len(metadata["Beatmaps"]) <= 1:
                 context_info["in"].remove("gd")
             if len(context_info["in"]) == 0:
