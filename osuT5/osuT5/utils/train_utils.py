@@ -185,10 +185,18 @@ def eval_model(
     shared.last_log = time.time()
     averager = Averager()
 
+    time_range = range(tokenizer.event_start[EventType.TIME_SHIFT], tokenizer.event_end[EventType.TIME_SHIFT])
     class_weights = torch.ones(tokenizer.vocab_size_out)
-    class_weights[tokenizer.event_start[EventType.TIME_SHIFT]:tokenizer.event_end[EventType.TIME_SHIFT]] = args.data.rhythm_weight
+    class_weights[time_range] = args.data.rhythm_weight
     loss_fn = nn.CrossEntropyLoss(weight=class_weights, reduction="none", ignore_index=LABEL_IGNORE_ID)
     loss_fn = loss_fn.to(accelerator.device)
+
+    all_in_contexts = set()
+    for cts in args.data.context_types:
+        if isinstance(cts, str):
+            all_in_contexts.add(cts)
+        else:
+            all_in_contexts.update(cts["in"])
 
     for batch_id, batch in enumerate(dataloader, start=1):
         if batch_id == args.eval.steps * args.optim.grad_acc:
@@ -217,7 +225,11 @@ def eval_model(
 
                 ct_index = torch.ones_like(batch['decoder_input_ids'][:, 0], dtype=torch.bool)
                 for c in cts["in"]:
-                    ct_index &= torch.max(batch['decoder_input_ids'] == tokenizer.context_sos[ContextType(c)], dim=1).values
+                    ct_index &= torch.max(batch['decoder_input_ids'] ==
+                                          tokenizer.context_sos[ContextType(c)], dim=1).values
+                for c in all_in_contexts - set(cts["in"]):
+                    ct_index &= ~torch.max(batch['decoder_input_ids'] ==
+                                           tokenizer.context_sos[ContextType(c)], dim=1).values
 
                 if not ct_index.any():
                     continue
@@ -370,7 +382,8 @@ def train_profiling(
         "./profiler_logs", worker_name=f"worker_{accelerator.process_index}")
 
     if args.profile.early_stop:
-        stop_step = (args.profile.wait + args.profile.warmup + args.profile.active) * args.profile.repeat / args.optim.grad_acc
+        stop_step = ((args.profile.wait + args.profile.warmup + args.profile.active)
+                     * args.profile.repeat / args.optim.grad_acc)
         args.optim.total_steps = shared.current_train_step + stop_step
 
     def on_trace_ready(trace):

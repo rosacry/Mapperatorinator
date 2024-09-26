@@ -43,6 +43,13 @@ def test(args: DictConfig, accelerator: Accelerator, model, tokenizer, preprefix
     loss_fn = nn.CrossEntropyLoss(weight=class_weights, reduction="none", ignore_index=LABEL_IGNORE_ID)
     loss_fn = loss_fn.to(accelerator.device)
 
+    all_in_contexts = set()
+    for cts in args.data.context_types:
+        if isinstance(cts, str):
+            all_in_contexts.add(cts)
+        else:
+            all_in_contexts.update(cts["in"])
+
     with torch.no_grad():
         start_time = time.time()
         averager = Averager()
@@ -152,7 +159,11 @@ def test(args: DictConfig, accelerator: Accelerator, model, tokenizer, preprefix
 
                     ct_index = torch.ones_like(batch['decoder_input_ids'][:, 0], dtype=torch.bool)
                     for c in cts["in"]:
-                        ct_index &= torch.max(batch['decoder_input_ids'] == tokenizer.context_sos[ContextType(c)], dim=1).values
+                        ct_index &= torch.max(batch['decoder_input_ids'] ==
+                                              tokenizer.context_sos[ContextType(c)], dim=1).values
+                    for c in all_in_contexts - set(cts["in"]):
+                        ct_index &= ~torch.max(batch['decoder_input_ids'] ==
+                                               tokenizer.context_sos[ContextType(c)], dim=1).values
 
                     if not ct_index.any():
                         continue
