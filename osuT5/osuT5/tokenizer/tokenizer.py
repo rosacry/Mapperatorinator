@@ -125,9 +125,6 @@ class Tokenizer:
                     y_count = y_max - y_min + 1
                     self.event_ranges.append(EventRange(EventType.POS, 0, x_count * y_count - 1))
 
-            if args.data.add_timing_points:
-                self.event_ranges.append(EventRange(EventType.TIMING_POINT, 0, 0))
-
         self.event_ranges: list[EventRange] = self.event_ranges + [
             EventRange(EventType.NEW_COMBO, 0, 0),
             EventRange(EventType.HITSOUND, 0, 2 ** 3 * 3 * 3),
@@ -145,6 +142,9 @@ class Tokenizer:
             EventRange(EventType.BEAT, 0, 0),
             EventRange(EventType.MEASURE, 0, 0),
         ]
+
+        if args is not None and args.data.add_timing_points:
+            self.event_ranges.append(EventRange(EventType.TIMING_POINT, 0, 0))
 
         self.event_range: dict[EventType, EventRange] = {er.type: er for er in self.event_ranges} | {er.type: er for er in self.input_event_ranges}
 
