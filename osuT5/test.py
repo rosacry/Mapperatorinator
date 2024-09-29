@@ -91,7 +91,7 @@ def test(args: DictConfig, accelerator: Accelerator, model, tokenizer, preprefix
                 stats = get_stats(loss, preds, labels, tokenizer, args)
 
                 if prefix != '':
-                    stats = add_prefix(cts, stats)
+                    stats = add_prefix(prefix, stats)
 
                 averager.update(stats)
 
