@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import torch
 import torch.nn.functional as F
@@ -46,6 +47,7 @@ class Pipeline(object):
         self.max_pre_token_len = args.osut5.data.max_pre_token_len
         self.add_pre_tokens = args.osut5.data.add_pre_tokens
         self.add_gd_context = args.osut5.data.add_gd_context
+        self.add_timing = args.osut5.data.add_timing
         self.parser = OsuParser(args.osut5, self.tokenizer)
         self.need_beatmap_idx = args.osut5.model.do_style_embed
         self.add_positions = args.osut5.data.add_positions
@@ -70,6 +72,44 @@ class Pipeline(object):
         self.time_range = range(tokenizer.event_start[EventType.TIME_SHIFT], tokenizer.event_end[EventType.TIME_SHIFT])
         self.beat_range = [self.tokenizer.event_start[EventType.BEAT], self.tokenizer.event_start[EventType.MEASURE]]
         self.types_first = args.osut5.data.types_first
+
+    def get_context(self, context, beatmap_path, add_type=True):
+        if context != "none" and not beatmap_path.is_file():
+            raise FileNotFoundError(f"Beatmap file {beatmap_path} not found.")
+
+        data = {"context_type": ContextType(context), "add_type": add_type}
+
+        if data == "none":
+            data["events"], data["event_times"] = [], []
+        elif data == "timing":
+            beatmap = Beatmap.from_path(beatmap_path)
+            data["events"], data["event_times"] = self.parser.parse_timing(beatmap)
+        elif data == "no_hs":
+            beatmap = Beatmap.from_path(beatmap_path)
+            hs_events, hs_event_times = self.parser.parse(beatmap)
+            data["events"], data["event_times"] = remove_events_of_type(hs_events, hs_event_times,
+                                                                        [EventType.HITSOUND, EventType.VOLUME])
+        elif data == "gd":
+            beatmap = Beatmap.from_path(beatmap_path)
+            data["events"], data["event_times"] = self.parser.parse(beatmap)
+            data["class"] = self.get_class_vector(
+                beatmap.beatmap_id,
+                float(beatmap.stars()),
+                self.tokenizer.beatmap_mapper.get(beatmap.beatmap_id, -1),
+                self.tokenizer.beatmap_descriptors.get(beatmap.beatmap_id, []),
+                beatmap.circle_size,
+            )
+        return data
+
+    def get_in_context(
+            self,
+            in_context: list[str],
+            beatmap_path: Path
+    ) -> list[dict[str, Any]]:
+        in_context = [self.get_context(context, beatmap_path) for context in in_context]
+        if self.add_gd_context:
+            in_context.append(self.get_context("gd", beatmap_path, add_type=False))
+        return in_context
 
     def get_class_vector(
             self,
@@ -127,14 +167,14 @@ class Pipeline(object):
             self,
             model: OsuT,
             sequences: torch.Tensor,
+            *,
             beatmap_id: int = -1,
             difficulty: float = -1,
             mapper_id: int = -1,
             descriptors: list[str] = None,
             circle_size: float = -1,
-            other_beatmap_path: str = '',
-            context_type: ContextType = None,
             negative_descriptors: list[str] = None,
+            in_context: list[dict[str, Any]] = None,
     ) -> list[Event]:
         """Generate a list of Event object lists and their timestamps given source sequences.
 
@@ -146,9 +186,8 @@ class Pipeline(object):
             mapper_id: Mapper ID for the style of beatmap.
             descriptors: List of descriptors for the style of beatmap.
             circle_size: Circle size of the beatmap.
-            other_beatmap_path: Path to the beatmap file to use as context.
-            context_type: Type of context to use for inference.
             negative_descriptors: List of descriptors for negative class vector.
+            in_context: List of context information.
 
         Returns:
             events: List of Event object lists.
@@ -157,6 +196,13 @@ class Pipeline(object):
 
         events = []
         event_times = []
+
+        # Find the timing context if any
+        if self.add_timing:
+            # Timing tokens are in all the non-empty contexts
+            timing_context = next((context for context in in_context if context["context_type"] != ContextType.NONE), None)
+        else:
+            timing_context = next((context for context in in_context if context["context_type"] == ContextType.TIMING), None)
 
         # Prepare special tokens
         beatmap_idx = torch.tensor([self.tokenizer.num_classes], dtype=torch.long, device=self.device)
@@ -167,42 +213,22 @@ class Pipeline(object):
         cond_tokens = self.get_class_vector(beatmap_id, difficulty, mapper_id, descriptors, circle_size, verbose=True)
         uncond_tokens = self.get_class_vector(-1, difficulty, -1, negative_descriptors, circle_size)
 
-        # Prepare other beatmap context
-        other_events, other_event_times = [], []
-        other_cond_tokens = torch.empty((1, 0), dtype=torch.long, device=self.device)
-        if self.add_gd_context or context_type == ContextType.GD or context_type == ContextType.TIMING or context_type == ContextType.NO_HS:
-            other_beatmap_path = Path(other_beatmap_path)
-
-            if not other_beatmap_path.is_file():
-                raise FileNotFoundError(f"Beatmap file {other_beatmap_path} not found.")
-
-            other_beatmap = Beatmap.from_path(other_beatmap_path)
-
-            if self.add_gd_context or context_type == ContextType.GD:
-                other_events, other_event_times = self.parser.parse(other_beatmap)
-                other_beatmap_id = other_beatmap.beatmap_id
-
-                other_cond_tokens = self.get_class_vector(
-                    other_beatmap_id,
-                    float(other_beatmap.stars()),
-                    self.tokenizer.beatmap_mapper.get(other_beatmap_id, -1),
-                    self.tokenizer.beatmap_descriptors.get(other_beatmap_id, []),
-                    other_beatmap.circle_size,
-                )
-            elif context_type == ContextType.NO_HS:
-                other_events, other_event_times = self.parser.parse(other_beatmap)
-                other_events, other_event_times = remove_events_of_type(other_events, other_event_times, [EventType.HITSOUND, EventType.VOLUME])
-            elif context_type == ContextType.TIMING:
-                other_events, other_event_times = self.parser.parse_timing(other_beatmap)
-
         # Prepare context type indicator tokens
-        context_sos = torch.tensor([[self.tokenizer.context_sos[context_type]]], dtype=torch.long, device=self.device)\
-            if context_type is not None else torch.empty((1, 0), dtype=torch.long, device=self.device)
-        context_eos = torch.tensor([[self.tokenizer.context_eos[context_type]]], dtype=torch.long, device=self.device)\
-            if context_type is not None else torch.empty((1, 0), dtype=torch.long, device=self.device)
+        def get_context_tokens(context):
+            context_type = context["context_type"]
+            tokens = context["tokens"]
+            if "class" in context:
+                tokens = torch.concatenate([context["class"], tokens], dim=-1)
+            if context["add_type"]:
+                tokens = torch.concatenate([
+                    torch.tensor([[self.tokenizer.context_sos[context_type]]], dtype=torch.long, device=self.device),
+                    tokens,
+                    torch.tensor([[self.tokenizer.context_eos[context_type]]], dtype=torch.long, device=self.device)
+                ], dim=-1)
+            return tokens
 
-        def get_prompt(user_prompt, context_tokens, prev_tokens, post_tokens):
-            prefix = torch.concatenate([context_sos, other_cond_tokens, context_tokens, context_eos, user_prompt, prev_tokens], dim=-1)
+        def get_prompt(user_prompt, prev_tokens, post_tokens):
+            prefix = torch.concatenate([get_context_tokens(context) for context in in_context] + [user_prompt, prev_tokens], dim=-1)
             if self.center_pad_decoder:
                 prefix = F.pad(prefix, (self.tgt_seq_len // 2 - prefix.shape[1], 0), value=self.tokenizer.pad_id)
 
@@ -229,18 +255,20 @@ class Pipeline(object):
                 events, event_times, frame_time, frame_time + self.miliseconds_per_sequence)
             post_tokens = self._encode(post_events, frame_time)
 
-            context_events = self._get_events_time_range(
-                other_events, other_event_times, frame_time,
-                frame_time + self.miliseconds_per_sequence)
-            context_tokens = self._encode(context_events, frame_time)
+            # Get context tokens
+            for context in in_context:
+                context_events = self._get_events_time_range(
+                    context["events"], context["event_times"], frame_time,
+                    frame_time + self.miliseconds_per_sequence)
+                context["tokens"] = self._encode(context_events, frame_time)
 
             # Prepare classifier-free guidance
-            cond_prompt = get_prompt(cond_tokens, context_tokens, prev_tokens, post_tokens)
+            cond_prompt = get_prompt(cond_tokens, prev_tokens, post_tokens)
             prompt = cond_prompt
             prompt_length = prompt.shape[1]
 
             if self.cfg_scale > 1:
-                uncond_prompt = get_prompt(uncond_tokens, context_tokens, prev_tokens, post_tokens)
+                uncond_prompt = get_prompt(uncond_tokens, prev_tokens, post_tokens)
                 # Left-pad unconditional prompt to match the length of conditional prompt
                 uncond_prompt = F.pad(uncond_prompt, (prompt_length - uncond_prompt.shape[1], 0), value=self.tokenizer.pad_id)
                 prompt = torch.concatenate([cond_prompt, uncond_prompt], dim=0)
@@ -299,11 +327,11 @@ class Pipeline(object):
                         input_ids = input_ids[:, :-1]
                     break
                 # Ensure the beat or measure token matches the timing of the context
-                if context_tokens.shape[1] > 1 and input_ids.shape[1] > prompt_length + 1:
+                if timing_context is not None and timing_context["tokens"].shape[1] > 1 and input_ids.shape[1] > prompt_length + 1:
                     beat_offset = -2 if self.types_first else -1
                     time_offset = -1 if self.types_first else -2
                     if last_tokens[beat_offset] in self.beat_range and last_tokens[time_offset] in self.time_range:
-                        context_time = self._get_beat_time_token_from_context(context_tokens[0], input_ids[0, prompt_length - post_tokens.shape[1]:-2])
+                        context_time = self._get_beat_time_token_from_context(timing_context["tokens"][0], input_ids[0, prompt_length - post_tokens.shape[1]:-2])
                         if context_time is not None:
                             input_ids[0, time_offset] = context_time
 

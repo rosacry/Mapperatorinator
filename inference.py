@@ -16,10 +16,9 @@ from osu_diffusion import DiT_models
 
 
 def prepare_args(args: DictConfig):
-    if not isinstance(args.context_type, str):
-        return
-    args.context_type = ContextType(args.context_type) if args.context_type != "" else None
     set_seed(args.seed)
+    if isinstance(args.output_type, str):
+        args.output_type = ContextType(args.output_type) if args.output_type != "" else None
 
 
 def get_args_from_beatmap(args: DictConfig, tokenizer: Tokenizer):
@@ -114,8 +113,10 @@ def main(args: DictConfig):
     pipeline = Pipeline(args, tokenizer)
     postprocessor = Postprocessor(args)
 
+    # TODO: Auto generate timing if not provided in in_context and required for the model and this output_type
     audio = preprocessor.load(args.audio_path)
     sequences = preprocessor.segment(audio)
+    in_context = pipeline.get_in_context(args.in_context, args.other_beatmap_path)
     events = pipeline.generate(
         model=model,
         sequences=sequences,
@@ -140,6 +141,7 @@ def main(args: DictConfig):
         timing = postprocessor.generate_timing(events)
         events = postprocessor.resnap_events(events, timing)
 
+    # TODO: Allow generting only timing beatmap
     if args.generate_positions:
         model, diff_tokenizer = find_model(args.diff_ckpt, args, device)
         refine_model = find_model(args.diff_refine_ckpt, args, device)[0] if len(args.diff_refine_ckpt) > 0 else None
