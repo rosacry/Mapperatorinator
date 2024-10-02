@@ -20,6 +20,7 @@ data:                  # Data settings
   hop_length: ${..model.spectrogram.hop_length}
   cycle_length: 16
   per_track: false      # Loads all beatmaps in a track sequentially which optimizes audio data loading
+  only_last_beatmap: false  # Only use the last beatmap in the mapset
   center_pad_decoder: false            # Center pad decoder input
   num_classes: 64821
   num_diff_classes: 24  # Number of difficulty classes
