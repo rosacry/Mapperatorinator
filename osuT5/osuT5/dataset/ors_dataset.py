@@ -645,7 +645,9 @@ class BeatmapDatasetIterable:
             audio_path = track_path / list(track_path.glob('audio.*'))[0]
             audio_samples = load_audio_file(audio_path, self.args.sample_rate, speed)
 
-            for beatmap_name in metadata["Beatmaps"]:
+            beatmaps = [list(metadata["Beatmaps"])[-1]] if self.args.only_last_beatmap else metadata["Beatmaps"]
+
+            for beatmap_name in beatmaps:
                 beatmap_path = (track_path / "beatmaps" / beatmap_name).with_suffix(".osu")
 
                 if self.args.min_difficulty > 0 and self._get_difficulty(metadata, beatmap_name) < self.args.min_difficulty:
