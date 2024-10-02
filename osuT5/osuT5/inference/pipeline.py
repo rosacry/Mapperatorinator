@@ -73,23 +73,24 @@ class Pipeline(object):
         self.beat_range = [self.tokenizer.event_start[EventType.BEAT], self.tokenizer.event_start[EventType.MEASURE]]
         self.types_first = args.osut5.data.types_first
 
-    def get_context(self, context, beatmap_path, add_type=True):
-        if context != "none" and not beatmap_path.is_file():
+    def get_context(self, context: ContextType, beatmap_path, add_type=True):
+        beatmap_path = Path(beatmap_path)
+        if context != ContextType.NONE and not beatmap_path.is_file():
             raise FileNotFoundError(f"Beatmap file {beatmap_path} not found.")
 
         data = {"context_type": ContextType(context), "add_type": add_type}
 
-        if data == "none":
+        if context == ContextType.NONE:
             data["events"], data["event_times"] = [], []
-        elif data == "timing":
+        elif context == ContextType.TIMING:
             beatmap = Beatmap.from_path(beatmap_path)
             data["events"], data["event_times"] = self.parser.parse_timing(beatmap)
-        elif data == "no_hs":
+        elif context == ContextType.NO_HS:
             beatmap = Beatmap.from_path(beatmap_path)
             hs_events, hs_event_times = self.parser.parse(beatmap)
             data["events"], data["event_times"] = remove_events_of_type(hs_events, hs_event_times,
                                                                         [EventType.HITSOUND, EventType.VOLUME])
-        elif data == "gd":
+        elif context == ContextType.GD:
             beatmap = Beatmap.from_path(beatmap_path)
             data["events"], data["event_times"] = self.parser.parse(beatmap)
             data["class"] = self.get_class_vector(
@@ -99,16 +100,18 @@ class Pipeline(object):
                 self.tokenizer.beatmap_descriptors.get(beatmap.beatmap_id, []),
                 beatmap.circle_size,
             )
+        else:
+            raise ValueError(f"Invalid context type {context}")
         return data
 
     def get_in_context(
             self,
-            in_context: list[str],
+            in_context: list[ContextType],
             beatmap_path: Path
     ) -> list[dict[str, Any]]:
         in_context = [self.get_context(context, beatmap_path) for context in in_context]
         if self.add_gd_context:
-            in_context.append(self.get_context("gd", beatmap_path, add_type=False))
+            in_context.append(self.get_context(ContextType.GD, beatmap_path, add_type=False))
         return in_context
 
     def get_class_vector(

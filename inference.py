@@ -19,6 +19,7 @@ def prepare_args(args: DictConfig):
     set_seed(args.seed)
     if isinstance(args.output_type, str):
         args.output_type = ContextType(args.output_type) if args.output_type != "" else None
+    args.in_context = [ContextType(ctx) for ctx in args.in_context]
 
 
 def get_args_from_beatmap(args: DictConfig, tokenizer: Tokenizer):
@@ -125,23 +126,21 @@ def main(args: DictConfig):
         mapper_id=args.mapper_id,
         descriptors=args.descriptors,
         circle_size=args.circle_size,
-        other_beatmap_path=args.other_beatmap_path,
-        context_type=args.context_type,
         negative_descriptors=args.negative_descriptors,
+        in_context=in_context
     )
 
     # Generate timing and resnap timing events
     timing = None
-    if args.context_type == ContextType.TIMING or args.context_type == ContextType.NO_HS or args.context_type == ContextType.GD:
+    if ContextType.TIMING in args.in_context or (args.osut5.data.add_timing and any(t in args.context_type for t in [ContextType.GD, ContextType.NO_HS])):
         # Exact timing is provided in the other beatmap, so we don't need to generate it
         other_beatmap_path = Path(args.other_beatmap_path)
         timing = Beatmap.from_path(other_beatmap_path).timing_points
         events = postprocessor.resnap_events(events, timing)
-    elif args.osut5.data.add_timing:
+    elif args.osut5.data.add_timing or args.output_type == ContextType.TIMING:
         timing = postprocessor.generate_timing(events)
         events = postprocessor.resnap_events(events, timing)
 
-    # TODO: Allow generting only timing beatmap
     if args.generate_positions:
         model, diff_tokenizer = find_model(args.diff_ckpt, args, device)
         refine_model = find_model(args.diff_refine_ckpt, args, device)[0] if len(args.diff_refine_ckpt) > 0 else None
