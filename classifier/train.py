@@ -1,10 +1,11 @@
+from pathlib import Path
+
 import hydra
 import torch
 import torchmetrics.functional
 from lightning.pytorch.callbacks import ModelCheckpoint, LearningRateMonitor
 from lightning.pytorch.loggers import WandbLogger
 import lightning
-from lightning.pytorch.utilities import grad_norm
 from omegaconf import DictConfig
 from transformers.modeling_outputs import Seq2SeqSequenceClassifierOutput
 
@@ -62,6 +63,30 @@ class LitOsuClassifier(lightning.LightningModule):
         return self.val_dataloader
 
 
+def load_old_model(path: str, model: OsuClassifier):
+    ckpt_path = Path(path)
+    model_state = torch.load(ckpt_path / "pytorch_model.bin", weights_only=True)
+
+    ignore_list = [
+        "transformer.model.decoder.embed_tokens.weight",
+        "transformer.model.decoder.embed_positions.weight",
+        "decoder_embedder.weight",
+        "transformer.proj_out.weight",
+        "loss_fn.weight",
+    ]
+    fixed_model_state = {}
+
+    for k, v in model_state.items():
+        if k in ignore_list:
+            continue
+        if k.startswith("transformer.model."):
+            fixed_model_state["transformer." + k[18:]] = v
+        else:
+            fixed_model_state[k] = v
+
+    model.load_state_dict(fixed_model_state, strict=False)
+
+
 @hydra.main(config_path="configs", config_name="train_v1", version_base="1.1")
 def main(args: DictConfig):
     wandb_logger = WandbLogger(
@@ -76,6 +101,9 @@ def main(args: DictConfig):
     train_dataloader, val_dataloader = get_dataloaders(tokenizer, args)
 
     model = LitOsuClassifier(args, tokenizer)
+
+    if args.pretrained_path:
+        load_old_model(args.pretrained_path, model.model)
 
     if args.compile:
         model = torch.compile(model)
