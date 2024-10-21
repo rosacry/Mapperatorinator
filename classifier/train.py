@@ -100,7 +100,7 @@ def main(args: DictConfig):
         load_old_model(args.pretrained_path, model.model)
 
     if args.compile:
-        model = torch.compile(model)
+        model.model = torch.compile(model.model)
 
     checkpoint_callback = ModelCheckpoint(every_n_train_steps=args.checkpoint.every_steps, save_top_k=2, monitor="val_loss")
     lr_monitor = LearningRateMonitor(logging_interval="step")
