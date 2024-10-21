@@ -5,6 +5,9 @@ defaults:
 
 pretrained_path: "../../../test/ckpt_v22_1"
 
+data:
+  augment_flip: true
+
 optim:                  # Optimizer settings
   base_lr: 1e-3         # Should be scaled with the number of devices present
   batch_size: 128       # This is the batch size per GPU
