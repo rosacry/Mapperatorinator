@@ -36,7 +36,13 @@ class OsuParser:
             self.dist_min = dist_range.min_value
             self.dist_max = dist_range.max_value
 
-    def parse(self, beatmap: Beatmap, speed: float = 1.0) -> tuple[list[Event], list[int]]:
+    def parse(
+            self,
+            beatmap: Beatmap,
+            speed: float = 1.0,
+            flip_x: bool = False,
+            flip_y: bool = False
+    ) -> tuple[list[Event], list[int]]:
         # noinspection PyUnresolvedReferences
         """Parse an .osu beatmap.
 
@@ -46,6 +52,8 @@ class OsuParser:
         Args:
             beatmap: Beatmap object parsed from an .osu file.
             speed: Speed multiplier for the beatmap.
+            flip_x: Whether to flip the x-axis.
+            flip_y: Whether to flip the y-axis.
 
         Returns:
             events: List of Event object lists.
@@ -75,9 +83,9 @@ class OsuParser:
 
         for hit_object in hit_objects:
             if isinstance(hit_object, Circle):
-                last_pos = self._parse_circle(hit_object, events, event_times, last_pos, beatmap)
+                last_pos = self._parse_circle(hit_object, events, event_times, last_pos, beatmap, flip_x, flip_y)
             elif isinstance(hit_object, Slider):
-                last_pos = self._parse_slider(hit_object, events, event_times, last_pos, beatmap)
+                last_pos = self._parse_slider(hit_object, events, event_times, last_pos, beatmap, flip_x, flip_y)
             elif isinstance(hit_object, Spinner):
                 last_pos = self._parse_spinner(hit_object, events, event_times, beatmap)
 
@@ -143,7 +151,8 @@ class OsuParser:
         hs_query = time + timedelta(milliseconds=5)
         return beatmap.timing_point_at(hs_query)
 
-    def _add_time_event(self, time: timedelta, beatmap: Beatmap, events: list[Event], event_times: list[int], add_snap: bool = True) -> None:
+    def _add_time_event(self, time: timedelta, beatmap: Beatmap, events: list[Event], event_times: list[int],
+                        add_snap: bool = True) -> None:
         """Add a snapping event to the event list.
 
         Args:
@@ -171,7 +180,8 @@ class OsuParser:
         events.append(Event(EventType.SNAPPING, snapping))
         event_times.append(time_ms)
 
-    def _add_hitsound_event(self, time: timedelta, group_time: int, hitsound: int, addition: str, beatmap: Beatmap, events: list[Event], event_times: list[int]) -> None:
+    def _add_hitsound_event(self, time: timedelta, group_time: int, hitsound: int, addition: str, beatmap: Beatmap,
+                            events: list[Event], event_times: list[int]) -> None:
         if not self.add_hitsounds:
             return
 
@@ -201,7 +211,8 @@ class OsuParser:
         p = pos / self.position_precision
         return int(np.clip(p[0], self.x_min, self.x_max)), int(np.clip(p[1], self.y_min, self.y_max))
 
-    def _add_position_event(self, pos: npt.NDArray, last_pos: npt.NDArray, time: timedelta, events: list[Event], event_times: list[int]) -> npt.NDArray:
+    def _add_position_event(self, pos: npt.NDArray, last_pos: npt.NDArray, time: timedelta, events: list[Event],
+                            event_times: list[int], flip_x: bool, flip_y: bool) -> npt.NDArray:
         time_ms = int(time.total_seconds() * 1000)
         if self.add_distances:
             dist = self._clip_dist(np.linalg.norm(pos - last_pos))
@@ -209,7 +220,13 @@ class OsuParser:
             event_times.append(time_ms)
 
         if self.add_positions:
-            p = self._scale_clip_pos(pos)
+            pos_modified = pos.copy()
+            if flip_x:
+                pos_modified[0] = 512 - pos_modified[0]
+            if flip_y:
+                pos_modified[1] = 384 - pos_modified[1]
+
+            p = self._scale_clip_pos(pos_modified)
             if self.position_split_axes:
                 events.append(Event(EventType.POS_X, p[0]))
                 events.append(Event(EventType.POS_Y, p[1]))
@@ -237,6 +254,8 @@ class OsuParser:
             hitsound_ref_times: list[timedelta] = None,
             hitsounds: list[int] = None,
             additions: list[str] = None,
+            flip_x: bool = False,
+            flip_y: bool = False,
     ) -> npt.NDArray:
         """Add a group of events to the event list."""
         time_ms = int(time.total_seconds() * 1000) if time is not None else None
@@ -247,7 +266,7 @@ class OsuParser:
         if time_event:
             self._add_time_event(time, beatmap, events, event_times, add_snap)
         if pos is not None:
-            last_pos = self._add_position_event(pos, last_pos, time, events, event_times)
+            last_pos = self._add_position_event(pos, last_pos, time, events, event_times, flip_x, flip_y)
         if new_combo:
             events.append(Event(EventType.NEW_COMBO))
             event_times.append(time_ms)
@@ -260,7 +279,8 @@ class OsuParser:
 
         return last_pos
 
-    def _parse_circle(self, circle: Circle, events: list[Event], event_times: list[int], last_pos: npt.NDArray, beatmap: Beatmap) -> npt.NDArray:
+    def _parse_circle(self, circle: Circle, events: list[Event], event_times: list[int], last_pos: npt.NDArray,
+                      beatmap: Beatmap, flip_x: bool, flip_y: bool) -> npt.NDArray:
         """Parse a circle hit object.
 
         Args:
@@ -284,9 +304,12 @@ class OsuParser:
             hitsound_ref_times=[circle.time],
             hitsounds=[circle.hitsound],
             additions=[circle.addition],
+            flip_x=flip_x,
+            flip_y=flip_y,
         )
 
-    def _parse_slider(self, slider: Slider, events: list[Event], event_times: list[int], last_pos: npt.NDArray, beatmap: Beatmap) -> npt.NDArray:
+    def _parse_slider(self, slider: Slider, events: list[Event], event_times: list[int], last_pos: npt.NDArray,
+                      beatmap: Beatmap, flip_x: bool, flip_y: bool) -> npt.NDArray:
         """Parse a slider hit object.
 
         Args:
@@ -314,6 +337,8 @@ class OsuParser:
             hitsound_ref_times=[slider.time],
             hitsounds=[slider.edge_sounds[0] if len(slider.edge_sounds) > 0 else 0],
             additions=[slider.edge_additions[0] if len(slider.edge_additions) > 0 else '0:0'],
+            flip_x=flip_x,
+            flip_y=flip_y,
         )
 
         duration: timedelta = (slider.end_time - slider.time) / slider.repeat
@@ -334,6 +359,8 @@ class OsuParser:
                 beatmap,
                 pos=np.array(slider.curve.points[i]),
                 last_pos=last_pos,
+                flip_x=flip_x,
+                flip_y=flip_y,
             )
 
         if isinstance(slider.curve, Linear):
@@ -359,9 +386,14 @@ class OsuParser:
             time_event=True,
             pos=np.array(slider.curve.points[-1]),
             last_pos=last_pos,
-            hitsound_ref_times=[slider.time + timedelta(milliseconds=1)] + [slider.time + i * duration for i in range(1, slider.repeat)],
-            hitsounds=[slider.hitsound] + [slider.edge_sounds[i] if len(slider.edge_sounds) > i else 0 for i in range(1, slider.repeat)],
-            additions=[slider.addition] + [slider.edge_additions[i] if len(slider.edge_additions) > i else '0:0' for i in range(1, slider.repeat)],
+            hitsound_ref_times=[slider.time + timedelta(milliseconds=1)] + [slider.time + i * duration for i in
+                                                                            range(1, slider.repeat)],
+            hitsounds=[slider.hitsound] + [slider.edge_sounds[i] if len(slider.edge_sounds) > i else 0 for i in
+                                           range(1, slider.repeat)],
+            additions=[slider.addition] + [slider.edge_additions[i] if len(slider.edge_additions) > i else '0:0' for i
+                                           in range(1, slider.repeat)],
+            flip_x=flip_x,
+            flip_y=flip_y,
         )
 
         return self._add_group(
@@ -376,9 +408,12 @@ class OsuParser:
             hitsound_ref_times=[slider.end_time],
             hitsounds=[slider.edge_sounds[-1] if len(slider.edge_sounds) > 0 else 0],
             additions=[slider.edge_additions[-1] if len(slider.edge_additions) > 0 else '0:0'],
+            flip_x=flip_x,
+            flip_y=flip_y,
         )
 
-    def _parse_spinner(self, spinner: Spinner, events: list[Event], event_times: list[int], beatmap: Beatmap) -> npt.NDArray:
+    def _parse_spinner(self, spinner: Spinner, events: list[Event], event_times: list[int],
+                       beatmap: Beatmap) -> npt.NDArray:
         """Parse a spinner hit object.
 
         Args:

@@ -468,7 +468,11 @@ class BeatmapDatasetIterable:
             "labels": self.tokenizer.mapper_idx[self.tokenizer.beatmap_mapper[osu_beatmap.beatmap_id]],
         }
 
-        events, event_times = self.parser.parse(osu_beatmap, speed)
+        flip_x, flip_y = False, False
+        if self.args.augment_flip:
+            flip_x, flip_y = random.random() < 0.5, random.random() < 0.5
+        
+        events, event_times = self.parser.parse(osu_beatmap, speed, flip_x, flip_y)
         in_context = {"events": events, "event_times": event_times}
 
         sequences = self._create_sequences(
