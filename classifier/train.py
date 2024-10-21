@@ -9,7 +9,7 @@ import lightning
 from omegaconf import DictConfig
 from transformers.modeling_outputs import Seq2SeqSequenceClassifierOutput
 
-from libs.model.model import OsuClassifier
+from libs.model.model import OsuClassifier, OsuClassifierOutput
 from libs import (
     get_model,
     get_tokenizer,
@@ -28,8 +28,8 @@ class LitOsuClassifier(lightning.LightningModule):
         self.args = args
         self.model: OsuClassifier = get_model(args, tokenizer)
 
-    def forward(self, x):
-        return self.model(x)
+    def forward(self, **kwargs) -> OsuClassifierOutput:
+        return self.model(**kwargs)
 
     def training_step(self, batch, batch_idx):
         output: Seq2SeqSequenceClassifierOutput = self.model(**batch)
@@ -55,12 +55,6 @@ class LitOsuClassifier(lightning.LightningModule):
             "interval": "step",
             "frequency": 1,
         }}
-
-    def train_dataloader(self):
-        return self.train_dataloader
-
-    def val_dataloader(self):
-        return self.val_dataloader
 
 
 def load_old_model(path: str, model: OsuClassifier):
@@ -122,6 +116,7 @@ def main(args: DictConfig):
         callbacks=[checkpoint_callback, lr_monitor],
     )
     trainer.fit(model, train_dataloader, val_dataloader)
+    # TODO: Save the model
 
 
 if __name__ == "__main__":
