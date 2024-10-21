@@ -1,0 +1,12 @@
+compile: true          # PyTorch 2.0 optimization
+device: gpu             # Training device (cpu/gpu)
+precision: 'no'         # Enable mixed precision (no/fp16/bf16/fp8)
+checkpoint_path: ''     # Project checkpoint directory (to resume training)
+beatmap_path: ''        # Path to beatmap to classify
+time: 0                 # Time to classify
+
+hydra:
+  job:
+    chdir: False
+  run:
+    dir: ./logs/${now:%Y-%m-%d}/${now:%H-%M-%S}

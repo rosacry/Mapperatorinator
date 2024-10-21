@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Optional
 
 import torch
@@ -12,6 +13,15 @@ from .spectrogram import MelSpectrogram
 from ..tokenizer import Tokenizer, EventType
 
 LABEL_IGNORE_ID = -100
+
+
+@dataclass
+class OsuClassifierOutput:
+    loss: Optional[torch.FloatTensor] = None
+    logits: Optional[torch.FloatTensor] = None
+    encoder_last_hidden_state: Optional[torch.FloatTensor] = None
+    decoder_last_hidden_state: Optional[torch.FloatTensor] = None
+    feature_vector: Optional[torch.FloatTensor] = None
 
 
 def get_backbone_model(args, tokenizer: Tokenizer):
@@ -92,7 +102,7 @@ class OsuClassifier(nn.Module):
             decoder_input_ids: Optional[torch.Tensor] = None,
             labels: Optional[torch.LongTensor] = None,
             **kwargs
-    ) -> Seq2SeqSequenceClassifierOutput:
+    ) -> OsuClassifierOutput:
         """
         frames: B x L_encoder x mel_bins, float32
         decoder_input_ids: B x L_decoder, int64
@@ -125,14 +135,10 @@ class OsuClassifier(nn.Module):
         if labels is not None:
             loss = self.loss_fn(logits.view(-1, self.num_classes), labels.view(-1))
 
-        return Seq2SeqSequenceClassifierOutput(
+        return OsuClassifierOutput(
             loss=loss,
             logits=logits,
-            past_key_values=base_output.past_key_values,
-            decoder_hidden_states=base_output.decoder_hidden_states,
-            decoder_attentions=base_output.decoder_attentions,
-            cross_attentions=base_output.cross_attentions,
             encoder_last_hidden_state=base_output.encoder_last_hidden_state,
-            encoder_hidden_states=base_output.encoder_hidden_states,
-            encoder_attentions=base_output.encoder_attentions,
+            decoder_last_hidden_state=base_output.last_hidden_state,
+            feature_vector=pooled_output
         )
