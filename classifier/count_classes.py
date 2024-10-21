@@ -32,6 +32,7 @@ path = "../datasets/beatmap_users.json"
 beatmap_mapper, mapper_idx, num_mapper_classes = init_mapper_idx(path)
 
 print("Number of mapper classes:", num_mapper_classes)
+print("Number of beatmaps:", len(beatmap_mapper))
 # Calculate number of maps per mapper
 maps_per_mapper = {}
 for beatmap_id in beatmap_mapper:
@@ -47,3 +48,9 @@ print("Average maps per mapper class:", average_maps_per_mapper)
 # Calculate median maps per mapper class
 median_maps_per_mapper = sorted(maps_per_mapper.values())[num_mapper_classes // 2]
 print("Median maps per mapper class:", median_maps_per_mapper)
+
+# Mapper with most number of maps
+max_maps = max(maps_per_mapper.values())
+max_maps_mapper = [user_id for user_id in maps_per_mapper if maps_per_mapper[user_id] == max_maps]
+print("Mapper with most number of maps:", max_maps_mapper)
+print("Number of maps:", max_maps)
