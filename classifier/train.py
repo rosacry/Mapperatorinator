@@ -116,7 +116,7 @@ def main(args: DictConfig):
         callbacks=[checkpoint_callback, lr_monitor],
     )
     trainer.fit(model, train_dataloader, val_dataloader)
-    # TODO: Save the model
+    trainer.save_checkpoint("final.ckpt")
 
 
 if __name__ == "__main__":
