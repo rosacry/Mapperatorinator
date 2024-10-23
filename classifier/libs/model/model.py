@@ -7,10 +7,10 @@ import torch
 import torch.nn as nn
 from omegaconf import DictConfig
 from transformers import T5Config, WhisperConfig, T5Model, WhisperModel
-from transformers.modeling_outputs import Seq2SeqModelOutput, Seq2SeqSequenceClassifierOutput
+from transformers.modeling_outputs import Seq2SeqModelOutput
 
 from .spectrogram import MelSpectrogram
-from ..tokenizer import Tokenizer, EventType
+from ..tokenizer import Tokenizer
 
 LABEL_IGNORE_ID = -100
 

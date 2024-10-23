@@ -6,13 +6,12 @@ import torch
 from omegaconf import DictConfig
 from slider import Beatmap
 
-import routed_pickle
 from classifier.libs.dataset import OsuParser
 from classifier.libs.dataset.data_utils import load_audio_file
 from classifier.libs.dataset.ors_dataset import STEPS_PER_MILLISECOND
 from classifier.libs.model.model import OsuClassifierOutput
 from classifier.libs.tokenizer import Tokenizer, Event, EventType
-from classifier.train import LitOsuClassifier
+from classifier.libs.utils import load_ckpt
 
 
 def create_example(
@@ -91,18 +90,13 @@ def main(args: DictConfig):
     # args.beatmap_path = "C:\\Users\\Olivier\\AppData\\Local\\osu!\\Songs\\1790119 THE ORAL CIGARETTES - ReI\\THE ORAL CIGARETTES - ReI (Sotarks) [Cataclysm.].osu"
     # args.beatmap_path = "C:\\Users\\Olivier\\AppData\\Local\\osu!\\Songs\\634147 Kaneko Chiharu - iLLness LiLin\\Kaneko Chiharu - iLLness LiLin (Kroytz) [TERMiNALLY iLL].osu"
     # args.beatmap_path = r"C:\Users\Olivier\AppData\Local\osu!\Songs\glass beach - neon glow\glass beach - neon glow (OliBomby) [e].osu"
-    args.checkpoint_path = r"C:\Users\Olivier\Documents\GitHub\Mapperatorinator\logs\2024-10-21\00-32-38\osu-classifier\oowes4jm\checkpoints\epoch=1-step=30000.ckpt"
-    args.time = 60
+    args.checkpoint_path = r"C:\Users\Olivier\Documents\GitHub\Mapperatorinator\test\classifier_v3\model.ckpt"
+    args.time = 0
 
     torch.set_grad_enabled(False)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    ckpt_path = Path(args.checkpoint_path)
 
-    checkpoint = torch.load(ckpt_path, map_location=lambda storage, loc: storage, weights_only=False, pickle_module=routed_pickle)
-    tokenizer = checkpoint["hyper_parameters"]["tokenizer"]
-    model_args = checkpoint["hyper_parameters"]["args"]
-
-    model = LitOsuClassifier.load_from_checkpoint(ckpt_path)
+    model, model_args, tokenizer = load_ckpt(args.checkpoint_path)
     model.eval()
     model.to(device)
 
