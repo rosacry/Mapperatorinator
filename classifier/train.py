@@ -1,60 +1,19 @@
 from pathlib import Path
 
 import hydra
+import lightning
 import torch
-import torchmetrics.functional
 from lightning.pytorch.callbacks import ModelCheckpoint, LearningRateMonitor
 from lightning.pytorch.loggers import WandbLogger
-import lightning
 from omegaconf import DictConfig
-from transformers.modeling_outputs import Seq2SeqSequenceClassifierOutput
 
-from libs.model.model import OsuClassifier, OsuClassifierOutput
 from libs import (
-    get_model,
     get_tokenizer,
-    get_scheduler,
-    get_optimizer,
     get_dataloaders,
 )
+from libs.model.model import OsuClassifier, LitOsuClassifier
 
 torch.set_float32_matmul_precision('high')
-
-
-class LitOsuClassifier(lightning.LightningModule):
-    def __init__(self, args: DictConfig, tokenizer):
-        super().__init__()
-        self.save_hyperparameters()
-        self.args = args
-        self.model: OsuClassifier = get_model(args, tokenizer)
-
-    def forward(self, **kwargs) -> OsuClassifierOutput:
-        return self.model(**kwargs)
-
-    def training_step(self, batch, batch_idx):
-        output: Seq2SeqSequenceClassifierOutput = self.model(**batch)
-        loss = output.loss
-        self.log("train_loss", loss)
-        return loss
-
-    def validation_step(self, batch, batch_idx):
-        output: Seq2SeqSequenceClassifierOutput = self.model(**batch)
-        loss = output.loss
-        preds = output.logits.argmax(dim=1)
-        labels = batch["labels"]
-        accuracy = torchmetrics.functional.accuracy(preds, labels, "multiclass", num_classes=self.args.data.num_classes)
-        self.log("val_loss", loss)
-        self.log("val_accuracy", accuracy)
-        return loss
-
-    def configure_optimizers(self):
-        optimizer = get_optimizer(self.parameters(), self.args)
-        scheduler = get_scheduler(optimizer, self.args)
-        return {"optimizer": optimizer, "lr_scheduler": {
-            "scheduler": scheduler,
-            "interval": "step",
-            "frequency": 1,
-        }}
 
 
 def load_old_model(path: str, model: OsuClassifier):
