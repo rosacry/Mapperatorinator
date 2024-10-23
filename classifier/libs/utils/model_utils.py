@@ -38,7 +38,7 @@ class LitOsuClassifier(lightning.LightningModule):
         self.log("train_loss", loss)
         return loss
 
-    def validation_step(self, batch, batch_idx):
+    def testy_step(self, batch, batch_idx, prefix):
         output: Seq2SeqSequenceClassifierOutput = self.model(**batch)
         loss = output.loss
         preds = output.logits.argmax(dim=1)
@@ -46,25 +46,17 @@ class LitOsuClassifier(lightning.LightningModule):
         accuracy = torchmetrics.functional.accuracy(preds, labels, "multiclass", num_classes=self.args.data.num_classes)
         accuracy_10 = torchmetrics.functional.accuracy(output.logits, labels, "multiclass", num_classes=self.args.data.num_classes, top_k=10)
         accuracy_100 = torchmetrics.functional.accuracy(output.logits, labels, "multiclass", num_classes=self.args.data.num_classes, top_k=100)
-        self.log("val_loss", loss)
-        self.log("val_accuracy", accuracy)
-        self.log("val_top_10_accuracy", accuracy_10)
-        self.log("val_top_100_accuracy", accuracy_100)
+        self.log(f"{prefix}_loss", loss)
+        self.log(f"{prefix}_accuracy", accuracy)
+        self.log(f"{prefix}_top_10_accuracy", accuracy_10)
+        self.log(f"{prefix}_top_100_accuracy", accuracy_100)
         return loss
 
+    def validation_step(self, batch, batch_idx):
+        return self.testy_step(batch, batch_idx, "val")
+
     def test_step(self, batch, batch_idx):
-        output: Seq2SeqSequenceClassifierOutput = self.model(**batch)
-        loss = output.loss
-        preds = output.logits.argmax(dim=1)
-        labels = batch["labels"]
-        accuracy = torchmetrics.functional.accuracy(preds, labels, "multiclass", num_classes=self.args.data.num_classes)
-        accuracy_10 = torchmetrics.functional.accuracy(output.logits, labels, "multiclass", num_classes=self.args.data.num_classes, top_k=10)
-        accuracy_100 = torchmetrics.functional.accuracy(output.logits, labels, "multiclass", num_classes=self.args.data.num_classes, top_k=100)
-        self.log("test_loss", loss)
-        self.log("test_accuracy", accuracy)
-        self.log("test_top_10_accuracy", accuracy_10)
-        self.log("test_top_100_accuracy", accuracy_100)
-        return loss
+        return self.testy_step(batch, batch_idx, "test")
 
     def configure_optimizers(self):
         optimizer = get_optimizer(self.parameters(), self.args)
