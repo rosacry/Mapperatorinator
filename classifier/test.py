@@ -15,7 +15,7 @@ torch.set_float32_matmul_precision('high')
 def main(args: DictConfig):
     args.checkpoint_path = r"C:\Users\Olivier\Documents\GitHub\Mapperatorinator\test\classifier_v3\model.ckpt"
 
-    model, model_args, tokenizer = load_ckpt(args.checkpoint_path)
+    model, model_args, tokenizer = load_ckpt(args.checkpoint_path, route_pickle=False)
 
     _, val_dataloader = get_dataloaders(tokenizer, args)
 

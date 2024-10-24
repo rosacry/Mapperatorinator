@@ -68,10 +68,15 @@ class LitOsuClassifier(lightning.LightningModule):
         }}
 
 
-def load_ckpt(ckpt_path):
+def load_ckpt(ckpt_path, route_pickle=True):
     ckpt_path = Path(ckpt_path)
 
-    checkpoint = torch.load(ckpt_path, map_location=lambda storage, loc: storage, weights_only=False)
+    checkpoint = torch.load(
+        ckpt_path,
+        map_location=lambda storage, loc: storage,
+        weights_only=False,
+        pickle_module=routed_pickle if route_pickle else None
+    )
     tokenizer = checkpoint["hyper_parameters"]["tokenizer"]
     model_args = checkpoint["hyper_parameters"]["args"]
     state_dict = checkpoint["state_dict"]

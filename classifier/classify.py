@@ -97,8 +97,7 @@ def main(args: DictConfig):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     model, model_args, tokenizer = load_ckpt(args.checkpoint_path)
-    model.eval()
-    model.to(device)
+    model.eval().to(device)
 
     example = create_example(args.beatmap_path, args.time, model_args, tokenizer, device)
     result: OsuClassifierOutput = model(**example)
