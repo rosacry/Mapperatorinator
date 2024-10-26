@@ -69,6 +69,7 @@ class LitOsuClassifier(lightning.LightningModule):
 
 
 def load_ckpt(ckpt_path, route_pickle=True):
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     ckpt_path = Path(ckpt_path)
 
     checkpoint = torch.load(
@@ -89,6 +90,7 @@ def load_ckpt(ckpt_path, route_pickle=True):
 
     model = LitOsuClassifier(model_args, tokenizer)
     model.load_state_dict(non_compiled_state_dict)
+    model.eval().to(device)
     return model, model_args, tokenizer
 
 

@@ -9,6 +9,7 @@ from osu_diffusion import timestep_embedding, Tokenizer
 from osu_diffusion import repeat_type
 from osu_diffusion import create_diffusion
 from osu_diffusion import DiT
+from osuT5.osuT5.inference import GenerationConfig
 from osuT5.osuT5.dataset import update_event_times
 from osuT5.osuT5.tokenizer import Event, EventType
 from osuT5.osuT5.dataset.data_utils import get_groups, get_group_indices
@@ -22,10 +23,18 @@ def get_beatmap_idx(path) -> dict[int, int]:
 
 
 class DiffisionPipeline(object):
-    def __init__(self, args: DictConfig, tokenizer: Tokenizer):
+    def __init__(
+            self,
+            args: DictConfig,
+            model: DiT,
+            tokenizer: Tokenizer,
+            refine_model: DiT = None,
+    ):
         """Model inference stage that generates positions for distance events."""
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.model = model
         self.tokenizer = tokenizer
+        self.refine_model = refine_model
         self.diffusion_steps = args.diffusion.model.diffusion_steps
         self.noise_schedule = args.diffusion.model.noise_schedule
         self.seq_len = args.diffusion.data.seq_len
@@ -37,40 +46,36 @@ class DiffisionPipeline(object):
 
     def get_class_vector(
             self,
-            beatmap_id: int = -1,
-            difficulty: float = -1,
-            mapper_id: int = -1,
-            descriptors: list[str] = None,
-            circle_size: float = -1,
+            config: GenerationConfig,
     ) -> torch.Tensor:
         """Get class vector for the given beatmap."""
         class_vector = torch.zeros(self.tokenizer.num_tokens)
         if self.tokenizer.num_classes > 0:
-            if beatmap_id != -1:
-                class_vector[self.tokenizer.encode_style(beatmap_id)] = 1
-                if beatmap_id not in self.tokenizer.beatmap_idx:
-                    print(f"Beatmap class {beatmap_id} not found. Using default.")
+            if config.beatmap_id != -1:
+                class_vector[self.tokenizer.encode_style(config.beatmap_id)] = 1
+                if config.beatmap_id not in self.tokenizer.beatmap_idx:
+                    print(f"Beatmap class {config.beatmap_id} not found. Using default.")
             else:
                 class_vector[self.tokenizer.style_unk] = 1
         if self.tokenizer.num_diff_classes > 0:
-            if difficulty != -1:
-                class_vector[self.tokenizer.encode_diff(difficulty)] = 1
+            if config.difficulty != -1:
+                class_vector[self.tokenizer.encode_diff(config.difficulty)] = 1
             else:
                 class_vector[self.tokenizer.diff_unk] = 1
         if self.tokenizer.num_mapper_classes > 0:
-            if mapper_id != -1:
-                class_vector[self.tokenizer.encode_mapper(mapper_id)] = 1
-                if mapper_id not in self.tokenizer.mapper_idx:
-                    print(f"Mapper class {mapper_id} not found. Using default.")
+            if config.mapper_id != -1:
+                class_vector[self.tokenizer.encode_mapper(config.mapper_id)] = 1
+                if config.mapper_id not in self.tokenizer.mapper_idx:
+                    print(f"Mapper class {config.mapper_id} not found. Using default.")
             else:
                 class_vector[self.tokenizer.mapper_unk] = 1
         if self.tokenizer.num_descriptor_classes > 0:
-            if descriptors is not None and len(descriptors) > 0:
-                if all(descriptor not in self.tokenizer.descriptor_idx for descriptor in descriptors):
+            if config.descriptors is not None and len(config.descriptors) > 0:
+                if all(descriptor not in self.tokenizer.descriptor_idx for descriptor in config.descriptors):
                     print("Descriptor classes not found. Using default.")
                     class_vector[self.tokenizer.descriptor_unk] = 1
                 else:
-                    for descriptor in descriptors:
+                    for descriptor in config.descriptors:
                         if descriptor in self.tokenizer.descriptor_idx:
                             class_vector[self.tokenizer.encode_descriptor_name(descriptor)] = 1
                         else:
@@ -78,36 +83,24 @@ class DiffisionPipeline(object):
             else:
                 class_vector[self.tokenizer.descriptor_unk] = 1
         if self.tokenizer.num_cs_classes > 0:
-            if circle_size != -1:
-                class_vector[self.tokenizer.encode_cs(circle_size)] = 1
+            if config.circle_size != -1:
+                class_vector[self.tokenizer.encode_cs(config.circle_size)] = 1
             else:
                 class_vector[self.tokenizer.cs_unk] = 1
         return class_vector
 
     def generate(
             self,
-            model: DiT,
             events: list[Event],
-            beatmap_id: int = -1,
-            difficulty: float = -1,
-            mapper_id: int = -1,
-            descriptors: list[str] = None,
-            circle_size: float = -1,
-            refine_model: DiT = None,
-            negative_descriptors: list[str] = None,
+            generation_config: GenerationConfig,
     ) -> list[Event]:
         """Generate position events for distance events in the Event list.
 
         Args:
             model: Trained model to use for inference.
             events: List of Event objects with distance events.
-            beatmap_id: Beatmap ID for class vector.
-            difficulty: Difficulty for class vector.
-            mapper_id: Mapper ID for class vector.
-            descriptors: List of descriptors for class vector.
-            circle_size: Circle size for class vector.
+            generation_config: GenerationConfig object with beatmap metadata.
             refine_model: Optional model to refine the generated positions.
-            negative_descriptors: List of descriptors for negative class vector.
 
         Returns:
             events: List of Event objects with position events.
@@ -127,8 +120,12 @@ class DiffisionPipeline(object):
         for i in range(seq_len):
             attn_mask[max(0, i - self.seq_len): min(seq_len, i + self.seq_len), i] = False
 
-        class_vector = self.get_class_vector(beatmap_id, difficulty, mapper_id, descriptors, circle_size)
-        unk_class_vector = self.get_class_vector(-1, difficulty, -1, negative_descriptors, circle_size)
+        class_vector = self.get_class_vector(generation_config)
+        unk_class_vector = self.get_class_vector(GenerationConfig(
+            difficulty=generation_config.difficulty,
+            descriptors=generation_config.negative_descriptors,
+            circle_size=generation_config.circle_size,
+        ))
 
         # Create sampling noise:
         n = 1
@@ -155,7 +152,7 @@ class DiffisionPipeline(object):
 
         # Sample positions:
         samples = diffusion.p_sample_loop(
-            model.forward_with_cfg,
+            self.model.forward_with_cfg,
             z.shape,
             z,
             clip_denoised=True,
@@ -165,12 +162,12 @@ class DiffisionPipeline(object):
         )
 
         # Refine result with refine model
-        if refine_model is not None:
+        if self.refine_model is not None:
             for _ in tqdm(range(self.refine_iters)):
                 t = torch.tensor([0] * samples.shape[0], device=self.device)
                 with torch.no_grad():
                     out = diffusion.p_sample(
-                        model.forward_with_cfg,
+                        self.model.forward_with_cfg,
                         samples,
                         t,
                         clip_denoised=True,
