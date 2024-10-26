@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from os import PathLike
 from pathlib import Path
 
 import torch
@@ -19,7 +20,7 @@ class Preprocessor(object):
         self.samples_per_sequence = self.frame_seq_len * self.frame_size
         self.sequence_stride = int(self.samples_per_sequence * (1 - args.lookback - args.lookahead))
 
-    def load(self, path: Path) -> npt.ArrayLike:
+    def load(self, path: PathLike) -> npt.ArrayLike:
         """Load an audio file as audio frames. Convert stereo to mono, normalize.
 
         Args:

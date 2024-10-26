@@ -1,4 +1,5 @@
 import dataclasses
+from os import PathLike
 from pathlib import Path
 from typing import Optional
 
@@ -12,7 +13,7 @@ from ..tokenizer import Event, EventType
 MILISECONDS_PER_SECOND = 1000
 
 
-def load_audio_file(file: Path, sample_rate: int, speed: float = 1.0) -> npt.NDArray:
+def load_audio_file(file: PathLike, sample_rate: int, speed: float = 1.0) -> npt.NDArray:
     """Load an audio file as a numpy time-series array
 
     The signals are resampled, converted to mono channel, and normalized.
@@ -25,6 +26,7 @@ def load_audio_file(file: Path, sample_rate: int, speed: float = 1.0) -> npt.NDA
     Returns:
         samples: Audio time series.
     """
+    file = Path(file)
     audio = AudioSegment.from_file(file, format=file.suffix[1:])
     audio.frame_rate = int(audio.frame_rate * speed)
     audio = audio.set_frame_rate(sample_rate)

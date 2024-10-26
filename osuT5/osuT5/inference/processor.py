@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -21,10 +22,31 @@ MILISECONDS_PER_SECOND = 1000
 MILISECONDS_PER_STEP = 10
 
 
-class Pipeline(object):
-    def __init__(self, args: DictConfig, tokenizer: Tokenizer):
+@dataclass
+class GenerationConfig:
+    beatmap_id: int = -1
+    difficulty: float = -1
+    mapper_id: int = -1
+    descriptors: list[str] = None
+    negative_descriptors: list[str] = None
+    circle_size: float = -1
+
+
+def generation_config_from_beatmap(beatmap: Beatmap, tokenizer: Tokenizer) -> GenerationConfig:
+    return GenerationConfig(
+        beatmap_id=beatmap.beatmap_id,
+        difficulty=float(beatmap.stars()),
+        mapper_id=tokenizer.mapper_idx.get(beatmap.beatmap_id, -1),
+        descriptors=[tokenizer.descriptor_name(idx) for idx in tokenizer.beatmap_descriptors.get(beatmap.beatmap_id, [])],
+        circle_size=beatmap.circle_size,
+    )
+
+
+class Processor(object):
+    def __init__(self, args: DictConfig, model: OsuT, tokenizer: Tokenizer):
         """Model inference stage that processes sequences."""
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.model = model
         self.tokenizer = tokenizer
         self.tgt_seq_len = args.osut5.data.tgt_seq_len
         self.frame_seq_len = args.osut5.data.src_seq_len - 1
@@ -93,13 +115,7 @@ class Pipeline(object):
         elif context == ContextType.GD:
             beatmap = Beatmap.from_path(beatmap_path)
             data["events"], data["event_times"] = self.parser.parse(beatmap)
-            data["class"] = self.get_class_vector(
-                beatmap.beatmap_id,
-                float(beatmap.stars()),
-                self.tokenizer.beatmap_mapper.get(beatmap.beatmap_id, -1),
-                self.tokenizer.beatmap_descriptors.get(beatmap.beatmap_id, []),
-                beatmap.circle_size,
-            )
+            data["class"] = self.get_class_vector(generation_config_from_beatmap(beatmap, self.tokenizer))
         else:
             raise ValueError(f"Invalid context type {context}")
         return data
@@ -116,13 +132,10 @@ class Pipeline(object):
 
     def get_class_vector(
             self,
-            beatmap_id: int = -1,
-            difficulty: float = -1,
-            mapper_id: int = -1,
-            descriptors: list[str] | list[int] = None,
-            circle_size: float = -1,
-            verbose: bool = False
+            config: GenerationConfig,
+            verbose: bool = False,
     ):
+        descriptors = config.descriptors if config.descriptors is not None else []
         descriptor_tokens = []
         if self.add_descriptors:
             if descriptors is not None and len(descriptors) > 0:
@@ -143,53 +156,42 @@ class Pipeline(object):
             if descriptors is None or len(descriptors) == 0:
                 descriptor_tokens = [self.tokenizer.descriptor_unk]
 
-        cond_tokens = torch.empty((1, self.special_token_len + len(descriptors)), dtype=torch.long, device=self.device)
+        cond_tokens = torch.empty((1, self.special_token_len + len(descriptor_tokens)), dtype=torch.long, device=self.device)
 
         if self.style_token_index >= 0:
-            style_token = self.tokenizer.encode_style(beatmap_id) if beatmap_id != -1 else self.tokenizer.style_unk
+            style_token = self.tokenizer.encode_style(config.beatmap_id) if config.beatmap_id != -1 else self.tokenizer.style_unk
             cond_tokens[:, self.style_token_index] = style_token
-            if beatmap_id != -1 and beatmap_id not in self.tokenizer.beatmap_idx and verbose:
-                print(f"Beatmap class {beatmap_id} not found. Using default.")
+            if config.beatmap_id != -1 and config.beatmap_id not in self.tokenizer.beatmap_idx and verbose:
+                print(f"Beatmap class {config.beatmap_id} not found. Using default.")
         if self.diff_token_index >= 0:
-            diff_token = self.tokenizer.encode_diff(difficulty) if difficulty != -1 else self.tokenizer.diff_unk
+            diff_token = self.tokenizer.encode_diff(config.difficulty) if config.difficulty != -1 else self.tokenizer.diff_unk
             cond_tokens[:, self.diff_token_index] = diff_token
         if self.mapper_token_index >= 0:
-            mapper_token = self.tokenizer.encode_mapper_id(mapper_id) if mapper_id != -1 else self.tokenizer.mapper_unk
+            mapper_token = self.tokenizer.encode_mapper_id(config.mapper_id) if config.mapper_id != -1 else self.tokenizer.mapper_unk
             cond_tokens[:, self.mapper_token_index] = mapper_token
-            if mapper_id != -1 and mapper_id not in self.tokenizer.mapper_idx and verbose:
-                print(f"Mapper class {mapper_id} not found. Using default.")
+            if config.mapper_id != -1 and config.mapper_id not in self.tokenizer.mapper_idx and verbose:
+                print(f"Mapper class {config.mapper_id} not found. Using default.")
         if self.cs_token_index >= 0:
-            cs_token = self.tokenizer.encode_cs(circle_size) if circle_size != -1 else self.tokenizer.cs_unk
+            cs_token = self.tokenizer.encode_cs(config.circle_size) if config.circle_size != -1 else self.tokenizer.cs_unk
             cond_tokens[:, self.cs_token_index] = cs_token
-        for i, descriptor in enumerate(descriptors):
-            cond_tokens[:, self.special_token_len + i] = descriptor_tokens[i]
+        for i, descriptor_token in enumerate(descriptor_tokens):
+            cond_tokens[:, self.special_token_len + i] = descriptor_token
 
         return cond_tokens
 
     def generate(
             self,
-            model: OsuT,
-            sequences: torch.Tensor,
             *,
-            beatmap_id: int = -1,
-            difficulty: float = -1,
-            mapper_id: int = -1,
-            descriptors: list[str] = None,
-            circle_size: float = -1,
-            negative_descriptors: list[str] = None,
+            sequences: torch.Tensor,
+            generation_config: GenerationConfig,
             in_context: list[dict[str, Any]] = None,
+            **kwargs,
     ) -> list[Event]:
         """Generate a list of Event object lists and their timestamps given source sequences.
 
         Args:
-            model: Trained model to use for inference.
             sequences: A list of batched source sequences.
-            beatmap_id: Beatmap ID of the desired style.
-            difficulty: The desired difficulty in star rating.
-            mapper_id: Mapper ID for the style of beatmap.
-            descriptors: List of descriptors for the style of beatmap.
-            circle_size: Circle size of the beatmap.
-            negative_descriptors: List of descriptors for negative class vector.
+            generation_config: Generation configuration.
             in_context: List of context information.
 
         Returns:
@@ -210,11 +212,14 @@ class Pipeline(object):
         # Prepare special tokens
         beatmap_idx = torch.tensor([self.tokenizer.num_classes], dtype=torch.long, device=self.device)
         if self.need_beatmap_idx:
-            beatmap_idx = torch.tensor([self.tokenizer.beatmap_idx[beatmap_id]], dtype=torch.long, device=self.device)
+            beatmap_idx = torch.tensor([self.tokenizer.beatmap_idx[generation_config.beatmap_id]], dtype=torch.long, device=self.device)
 
         # Prepare unconditional prompt
-        cond_tokens = self.get_class_vector(beatmap_id, difficulty, mapper_id, descriptors, circle_size, verbose=True)
-        uncond_tokens = self.get_class_vector(-1, difficulty, -1, negative_descriptors, circle_size)
+        cond_tokens = self.get_class_vector(generation_config, verbose=True)
+        uncond_tokens = self.get_class_vector(GenerationConfig(
+            difficulty=generation_config.difficulty,
+            descriptors=generation_config.negative_descriptors
+        ))
 
         # Prepare context type indicator tokens
         def get_context_tokens(context):
@@ -287,7 +292,7 @@ class Pipeline(object):
 
             while input_ids.shape[1] < self.tgt_seq_len:
                 if past_key_values is not None:
-                    out = model.forward(
+                    out = self.model.forward(
                         decoder_input_ids=input_ids[:, -1:].repeat(2, 1) if self.cfg_scale > 1 else input_ids[:, -1:],
                         encoder_outputs=encoder_outputs,
                         beatmap_idx=beatmap_idx,
@@ -295,7 +300,7 @@ class Pipeline(object):
                         past_key_values=past_key_values,
                     )
                 else:
-                    out = model.forward(
+                    out = self.model.forward(
                         frames=frames,
                         decoder_input_ids=prompt,
                         decoder_attention_mask=prompt.ne(self.tokenizer.pad_id),

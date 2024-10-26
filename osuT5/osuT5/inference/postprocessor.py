@@ -3,15 +3,15 @@ from __future__ import annotations
 import dataclasses
 import math
 import os
-import pathlib
 import uuid
 from datetime import timedelta
+from os import PathLike
 from string import Template
 from typing import Optional
 
 import numpy as np
 from omegaconf import DictConfig
-from slider import TimingPoint
+from slider import TimingPoint, Beatmap
 
 from .slider_path import SliderPath
 from .timing_points_change import TimingPointsChange, sort_timing_points
@@ -44,8 +44,34 @@ class BeatmapConfig:
     approach_rate: float = 9
     slider_multiplier: float = 1.8
 
+    # Timing
+    bpm: float = 120
+    offset: int = 0
+
     # Events
     background_line: str = ""
+
+
+def background_line(background: str) -> str:
+    return f"0,0,\"{background}\",0,0\n" if background else ""
+
+
+def beatmap_config_from_beatmap(beatmap: Beatmap) -> BeatmapConfig:
+    return BeatmapConfig(
+        title=beatmap.title,
+        artist=beatmap.artist,
+        title_unicode=beatmap.title,
+        artist_unicode=beatmap.artist,
+        audio_filename=beatmap.audio_filename,
+        circle_size=beatmap.circle_size,
+        slider_multiplier=beatmap.slider_multiplier,
+        creator=beatmap.creator,
+        version=beatmap.version,
+        background_line=background_line(beatmap.background),
+        preview_time=int(beatmap.preview_time.total_seconds() * 1000),
+        bpm=beatmap.bpm_max(),
+        offset=int(min(tp.offset.total_seconds() * 1000 for tp in beatmap.timing_points)),
+    )
 
 
 def calculate_coordinates(last_pos, dist, num_samples, playfield_size):
@@ -93,33 +119,24 @@ class Postprocessor(object):
             "C": "Catmull",
         }
 
-        self.output_path = args.output_path
-        self.audio_path = args.audio_path
-        self.beatmap_config = BeatmapConfig(
-            title=str(args.title),
-            artist=str(args.artist),
-            title_unicode=str(args.title),
-            artist_unicode=str(args.artist),
-            audio_filename=pathlib.Path(args.audio_path).name,
-            circle_size=float(args.circle_size),
-            slider_multiplier=float(args.slider_multiplier),
-            creator=str(args.creator),
-            version=str(args.version),
-            background_line=f"0,0,\"{args.background}\",0,0\n" if args.background else "",
-            preview_time=args.preview_time,
-        )
         self.offset = args.offset
         self.beat_length = 60000 / args.bpm
-        self.slider_multiplier = self.beatmap_config.slider_multiplier
         self.timing_leniency = args.timing_leniency
         self.types_first = args.osut5.data.types_first
         self.has_pos = args.osut5.data.add_positions
 
-    def generate(self, events: list[Event], timing: list[TimingPoint] = None):
+    def generate(
+            self,
+            events: list[Event],
+            beatmap_config: BeatmapConfig,
+            timing: list[TimingPoint] = None
+    ):
         """Generate a beatmap file.
 
         Args:
             events: List of Event objects.
+            output_path: Path to the output directory.
+            beatmap_config: BeatmapConfig object.
             timing: List of TimingPoint objects.
 
         Returns:
@@ -213,7 +230,7 @@ class Postprocessor(object):
                 redline = tp if tp.parent is None else tp.parent
                 last_sv = 1 if tp.parent is None else -100 / tp.ms_per_beat
 
-                sv, adjusted_length = self.get_human_sv_and_length(req_length, length, span_duration, last_sv, redline, slider_head.new_combo)
+                sv, adjusted_length = self.get_human_sv_and_length(req_length, length, span_duration, last_sv, redline, slider_head.new_combo, beatmap_config.slider_multiplier)
 
                 # If the adjusted length is too long, scale the control points to fit the length
                 if adjusted_length > length + 1e-4:
@@ -255,13 +272,16 @@ class Postprocessor(object):
             template = Template(tf.read())
             hit_objects = {"hit_objects": "\n".join(hit_object_strings)}
             timing_points = {"timing_points": "\n".join(tp.pack() for tp in timing)}
-            beatmap_config = dataclasses.asdict(self.beatmap_config)
+            # noinspection PyTypeChecker
+            beatmap_config = dataclasses.asdict(beatmap_config)
             result = template.safe_substitute({**beatmap_config, **hit_objects, **timing_points})
+            return result
 
-            # Write .osu file to directory
-            osu_path = os.path.join(self.output_path, f"beatmap{str(uuid.uuid4().hex)}{OSU_FILE_EXTENSION}")
-            with open(osu_path, "w") as osu_file:
-                osu_file.write(result)
+    def write_result(self, result: str, output_path: PathLike):
+        # Write .osu file to directory
+        osu_path = os.path.join(output_path, f"beatmap{str(uuid.uuid4().hex)}{OSU_FILE_EXTENSION}")
+        with open(osu_path, "w") as osu_file:
+            osu_file.write(result)
 
     @staticmethod
     def set_volume(time: timedelta, volume: int, timing: list[TimingPoint]) -> list[TimingPoint]:
@@ -277,9 +297,9 @@ class Postprocessor(object):
         tp_change = TimingPointsChange(tp, mpb=True)
         return tp_change.add_change(timing, True)
 
-    def get_human_sv_and_length(self, req_length, length, span_duration, last_sv, redline, new_combo):
+    def get_human_sv_and_length(self, req_length, length, span_duration, last_sv, redline, new_combo, slider_multiplier):
         # Only change sv if the difference is more than 10%
-        sv = req_length / 100 / span_duration * redline.ms_per_beat / self.slider_multiplier
+        sv = req_length / 100 / span_duration * redline.ms_per_beat / slider_multiplier
         leniency = 0.05 if new_combo else 0.15
 
         if abs(sv - last_sv) / last_sv <= leniency:
@@ -292,7 +312,7 @@ class Postprocessor(object):
             sv = rounded_sv if rounded_sv > 1E-5 else sv
 
         # Recalculate the required length to align with the actual sv
-        adjusted_length = sv * span_duration * 100 / redline.ms_per_beat * self.slider_multiplier
+        adjusted_length = sv * span_duration * 100 / redline.ms_per_beat * slider_multiplier
 
         return sv, adjusted_length
 
