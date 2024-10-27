@@ -63,8 +63,8 @@ def create_example(
 
     # Tokenize the events
     tokens = torch.full((model_args.data.tgt_seq_len,), tokenizer.pad_id, dtype=torch.long)
-    for i, event in enumerate(events):
-        tokens[i] = tokenizer.encode(event)
+    for i in range(min(len(events), model_args.data.tgt_seq_len)):
+        tokens[i] = tokenizer.encode(events[i])
     tokens = tokens.unsqueeze(0).to(device)
 
     return {
