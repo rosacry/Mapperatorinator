@@ -38,6 +38,8 @@ class DiffisionPipeline(object):
         self.diffusion_steps = args.diffusion.model.diffusion_steps
         self.noise_schedule = args.diffusion.model.noise_schedule
         self.seq_len = args.diffusion.data.seq_len
+        self.max_seq_len = args.max_seq_len
+        self.overlap_buffer = args.overlap_buffer
         self.timesteps = args.timesteps
         self.cfg_scale = args.diff_cfg_scale
         self.refine_iters = args.refine_iters
@@ -138,10 +140,62 @@ class DiffisionPipeline(object):
         z = torch.cat([z, z], 0)
         c = torch.cat([c, c], 0)
         y = torch.cat([y, y_null], 0)
-        model_kwargs = dict(c=c, y=y, cfg_scale=self.cfg_scale, attn_mask=attn_mask)
 
         if self.random_init:
             z = torch.randn(*z.shape, device=z.device)
+
+        def sample_part(z, start, end, start_mask_size=0):
+            z_part = z[:, :, start:end]
+            model_kwargs = dict(
+                c=c[:, :, start:end],
+                y=y,
+                cfg_scale=self.cfg_scale,
+                attn_mask=attn_mask[start:end, start:end]
+            )
+
+            # Make in-paint mask
+            def in_paint_mask(x):
+                return torch.where(mask, x, z_part)
+
+            # True means it will be generated
+            mask = torch.full_like(z_part, False, dtype=torch.bool)
+            mask[:, :, start_mask_size:] = True
+            z_part = in_paint_mask(z_part)
+
+            # Sample positions:
+            samples = diffusion.p_sample_loop(
+                self.model.forward_with_cfg,
+                z_part.shape,
+                z_part,
+                denoised_fn=in_paint_mask,
+                clip_denoised=True,
+                model_kwargs=model_kwargs,
+                progress=True,
+                device=self.device,
+            )
+
+            # Refine result with refine model
+            if self.refine_model is not None:
+                for _ in tqdm(range(self.refine_iters)):
+                    t = torch.tensor([0] * samples.shape[0], device=self.device)
+                    with torch.no_grad():
+                        out = diffusion.p_sample(
+                            self.model.forward_with_cfg,
+                            samples,
+                            t,
+                            denoised_fn=in_paint_mask,
+                            clip_denoised=True,
+                            model_kwargs=model_kwargs,
+                        )
+                        samples = out["sample"]
+
+            return samples
+
+        full_samples = z
+        for i in range(0, seq_len - self.overlap_buffer * 2, self.max_seq_len - self.overlap_buffer * 2):
+            end = min(i + self.max_seq_len, seq_len)
+            samples = sample_part(full_samples, i, end, start_mask_size=self.overlap_buffer if i > 0 else 0)
+            full_samples[:, :, i:end] = samples
 
         def to_positions(samples):
             samples, _ = samples.chunk(2, dim=0)  # Remove null class samples
@@ -150,32 +204,7 @@ class DiffisionPipeline(object):
             samples *= torch.tensor((512, 384), device=self.device).repeat(n, 1).unsqueeze(2)
             return samples.cpu()
 
-        # Sample positions:
-        samples = diffusion.p_sample_loop(
-            self.model.forward_with_cfg,
-            z.shape,
-            z,
-            clip_denoised=True,
-            model_kwargs=model_kwargs,
-            progress=True,
-            device=self.device,
-        )
-
-        # Refine result with refine model
-        if self.refine_model is not None:
-            for _ in tqdm(range(self.refine_iters)):
-                t = torch.tensor([0] * samples.shape[0], device=self.device)
-                with torch.no_grad():
-                    out = diffusion.p_sample(
-                        self.model.forward_with_cfg,
-                        samples,
-                        t,
-                        clip_denoised=True,
-                        model_kwargs=model_kwargs,
-                    )
-                    samples = out["sample"]
-
-        positions = to_positions(samples)
+        positions = to_positions(full_samples)
         return self.events_with_pos(events, positions.squeeze(0), seq_indices)
 
     def events_to_sequence(self, events: list[Event]) -> tuple[torch.Tensor, torch.Tensor, int, dict[int, int]]:
