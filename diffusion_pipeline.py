@@ -191,9 +191,13 @@ class DiffisionPipeline(object):
 
             return samples
 
-        full_samples = z
+        full_samples = z.clone()
         for i in range(0, seq_len - self.overlap_buffer * 2, self.max_seq_len - self.overlap_buffer * 2):
             end = min(i + self.max_seq_len, seq_len)
+            if i > 0:
+                # The first buffer is already done
+                # The second buffer is generated but should be regenerated, so we reset it to the random noise
+                full_samples[:, :, i + self.overlap_buffer:i + self.overlap_buffer * 2] = z[:, :, i + self.overlap_buffer:i + self.overlap_buffer * 2]
             samples = sample_part(full_samples, i, end, start_mask_size=self.overlap_buffer if i > 0 else 0)
             full_samples[:, :, i:end] = samples
 
