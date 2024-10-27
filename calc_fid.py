@@ -156,6 +156,8 @@ def main(args: DictConfig):
             features = classifier_result.feature_vector
             generated_features.append(features.squeeze(0).cpu().numpy())
 
+        torch.cuda.empty_cache()  # Clear any cached memory
+
     # Calculate FID
     real_features = np.stack(real_features)
     generated_features = np.stack(generated_features)
