@@ -9,7 +9,7 @@ import torch.nn.functional as F
 from slider import Beatmap
 from tqdm import tqdm
 from transformers.generation import ClassifierFreeGuidanceLogitsProcessor
-from transformers import LogitsProcessorList, TemperatureLogitsWarper, TopPLogitsWarper
+from transformers import LogitsProcessorList, TemperatureLogitsWarper, TopPLogitsWarper, StaticCache
 
 from omegaconf import DictConfig
 
@@ -286,12 +286,18 @@ class Processor(object):
 
             # Prepare cache for autoregressive decoding
             encoder_outputs = None
-            past_key_values = None
+            past_key_values = StaticCache(
+                config=self.model.transformer.config,
+                batch_size=1,
+                max_cache_len=self.tgt_seq_len,
+                device=self.model.transformer.device,
+                dtype=self.model.transformer.dtype
+            )
 
             input_ids = cond_prompt
 
             while input_ids.shape[1] < self.tgt_seq_len:
-                if past_key_values is not None:
+                if encoder_outputs is not None:
                     out = self.model.forward(
                         decoder_input_ids=input_ids[:, -1:].repeat(2, 1) if self.cfg_scale > 1 else input_ids[:, -1:],
                         encoder_outputs=encoder_outputs,
@@ -305,6 +311,8 @@ class Processor(object):
                         decoder_input_ids=prompt,
                         decoder_attention_mask=prompt.ne(self.tokenizer.pad_id),
                         beatmap_idx=beatmap_idx,
+                        use_cache=True,
+                        past_key_values=past_key_values,
                     )
 
                 past_key_values = out.past_key_values
