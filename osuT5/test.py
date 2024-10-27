@@ -218,7 +218,7 @@ def test(args: DictConfig, accelerator: Accelerator, model, tokenizer, preprefix
         logger.info(averaged_stats)
 
 
-@hydra.main(config_path="../configs/osuT5", config_name="train_v1", version_base="1.1")
+@hydra.main(config_path="../configs/osut5", config_name="train_v1", version_base="1.1")
 def main(args: DictConfig):
     accelerator = Accelerator(
         cpu=args.device == "cpu",
