@@ -105,6 +105,9 @@ def main(args: DictConfig):
 
     model, tokenizer = load_model(args.model_path, args.osut5)
 
+    if args.compile:
+        model.transformer.forward = torch.compile(model.transformer.forward, mode="reduce-overhead", fullgraph=True)
+
     diff_model, diff_tokenizer, refine_model = None, None, None
     if args.generate_positions:
         diff_model, diff_tokenizer = load_diff_model(args.diff_ckpt, args.diffusion)
@@ -116,6 +119,9 @@ def main(args: DictConfig):
             diff_model.forward = torch.compile(diff_model.forward, mode="reduce-overhead", fullgraph=True)
 
     classifier_model, classifier_args, classifier_tokenizer = load_ckpt(args.classifier_ckpt)
+
+    if args.compile:
+        classifier_model.model.transformer.forward = torch.compile(classifier_model.model.transformer.forward, mode="reduce-overhead", fullgraph=True)
 
     # Calc features
     beatmap_paths = get_beatmap_paths(args)
