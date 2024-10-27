@@ -149,12 +149,12 @@ def main(args: DictConfig):
         for example in iterate_examples(beatmap, audio, classifier_args, classifier_tokenizer, device):
             classifier_result: OsuClassifierOutput = classifier_model(**example)
             features = classifier_result.feature_vector
-            real_features.append(features.cpu().numpy())
+            real_features.append(features.squeeze(0).cpu().numpy())
 
         for example in iterate_examples(generated_beatmap, audio, classifier_args, classifier_tokenizer, device):
             classifier_result: OsuClassifierOutput = classifier_model(**example)
             features = classifier_result.feature_vector
-            generated_features.append(features.cpu().numpy())
+            generated_features.append(features.squeeze(0).cpu().numpy())
 
     # Calculate FID
     real_features = np.stack(real_features)
