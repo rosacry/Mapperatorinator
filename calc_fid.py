@@ -105,9 +105,8 @@ def main(args: DictConfig):
 
     model, tokenizer = load_model(args.model_path, args.osut5)
 
-    # TODO Compile needs additional tuning. As of now it only slows down the model.
-    # if args.compile:
-    #     model.transformer.forward = torch.compile(model.transformer.forward, mode="reduce-overhead", fullgraph=False)
+    if args.compile:
+        model.transformer.forward = torch.compile(model.transformer.forward, mode="reduce-overhead", fullgraph=False)
 
     diff_model, diff_tokenizer, refine_model = None, None, None
     if args.generate_positions:
@@ -116,8 +115,9 @@ def main(args: DictConfig):
         if len(args.diff_refine_ckpt) > 0:
             refine_model = load_diff_model(args.diff_refine_ckpt, args.diffusion)[0]
 
-        if args.compile:
-            diff_model.forward = torch.compile(diff_model.forward, mode="reduce-overhead", fullgraph=False)
+        # Compiling is disabled for the diffision model because it uses various input sizes and that slows down the process with recompilations
+        # if args.compile:
+        #     diff_model.forward = torch.compile(diff_model.forward, mode="reduce-overhead", fullgraph=False)
 
     classifier_model, classifier_args, classifier_tokenizer = load_ckpt(args.classifier_ckpt)
 
@@ -139,6 +139,7 @@ def main(args: DictConfig):
         result = generate(
             args,
             audio_path=audio_path,
+            other_beatmap_path=beatmap_path,
             generation_config=generation_config,
             beatmap_config=beatmap_config,
             model=model,

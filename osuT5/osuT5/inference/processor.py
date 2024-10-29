@@ -9,7 +9,8 @@ import torch.nn.functional as F
 from slider import Beatmap
 from tqdm import tqdm
 from transformers.generation import ClassifierFreeGuidanceLogitsProcessor
-from transformers import LogitsProcessorList, TemperatureLogitsWarper, TopPLogitsWarper, StaticCache
+from transformers import LogitsProcessorList, TemperatureLogitsWarper, TopPLogitsWarper, StaticCache, \
+    EncoderDecoderCache, DynamicCache
 
 from omegaconf import DictConfig
 
@@ -285,74 +286,87 @@ class Processor(object):
                 frames = frames.repeat(prompt.shape[0], 1)
 
             # Prepare cache for autoregressive decoding
-            encoder_outputs = None
-            past_key_values = StaticCache(
+            self_attention_cache = StaticCache(
                 config=self.model.transformer.config,
                 batch_size=1,
-                max_cache_len=self.tgt_seq_len,
+                max_cache_len=self.model.transformer.config.max_target_positions,
                 device=self.model.transformer.device,
                 dtype=self.model.transformer.dtype
             )
+            cross_attention_cache = StaticCache(
+                config=self.model.transformer.config,
+                batch_size=1,
+                max_cache_len=self.model.transformer.config.max_source_positions,
+                device=self.model.transformer.device,
+                dtype=self.model.transformer.dtype
+            )
+            past_key_values = EncoderDecoderCache(self_attention_cache, cross_attention_cache)
 
-            input_ids = cond_prompt
+            # Autoregressive decoding
+            inputs = {
+                "decoder_input_ids": prompt,
+                "decoder_attention_mask": prompt.ne(self.tokenizer.pad_id),
+                "frames": frames,
+                "beatmap_idx": beatmap_idx,
+            }
+            generated_ids = cond_prompt
+            cache_position = torch.arange(cond_prompt.shape[1], dtype=torch.int64, device=self.device)
 
-            while input_ids.shape[1] < self.tgt_seq_len:
-                if encoder_outputs is not None:
-                    out = self.model.forward(
-                        decoder_input_ids=input_ids[:, -1:].repeat(2, 1) if self.cfg_scale > 1 else input_ids[:, -1:],
-                        encoder_outputs=encoder_outputs,
-                        beatmap_idx=beatmap_idx,
-                        use_cache=True,
-                        past_key_values=past_key_values,
-                    )
-                else:
-                    out = self.model.forward(
-                        frames=frames,
-                        decoder_input_ids=prompt,
-                        decoder_attention_mask=prompt.ne(self.tokenizer.pad_id),
-                        beatmap_idx=beatmap_idx,
-                        use_cache=True,
-                        past_key_values=past_key_values,
-                    )
+            while generated_ids.shape[1] < self.tgt_seq_len:
+                out = self.model.forward(
+                    **inputs,
+                    cache_position=cache_position,
+                    past_key_values=past_key_values,
+                    use_cache=True,
+                )
 
-                past_key_values = out.past_key_values
-                encoder_outputs = (out.encoder_last_hidden_state, out.encoder_hidden_states, out.encoder_attentions)
+                # Sample one next token
                 logits = out.logits[:, -1, :]
 
                 if self.timeshift_bias != 0:
                     logits[:, self.time_range] += self.timeshift_bias
 
                 # noinspection PyTypeChecker
-                logits = self.logits_processor(input_ids, logits)
+                logits = self.logits_processor(generated_ids, logits)
                 probabilities = F.softmax(logits, dim=-1)
-                next_tokens = torch.multinomial(probabilities, 1)
-
-                input_ids = torch.cat([input_ids, next_tokens], dim=-1)
+                next_token_ids = torch.multinomial(probabilities, 1)
+                generated_ids = torch.cat([generated_ids, next_token_ids], dim=-1)
 
                 # check if any sentence in batch has reached EOS, mark as finished
-                eos_in_sentence = next_tokens == self.tokenizer.eos_id
+                eos_in_sentence = next_token_ids == self.tokenizer.eos_id
 
                 # stop preemptively when all sentences have finished
                 if eos_in_sentence.all():
                     break
 
-                last_tokens = input_ids[0, -2:].cpu()
+                last_tokens = generated_ids[0, -2:].cpu()
                 if sequence_index != len(sequences) - 1 and last_tokens[-1] in self.lookahead_time_range:
                     # If the type token comes before the timeshift token we should remove the type token too
                     if self.types_first:
-                        input_ids = input_ids[:, :-1]
+                        generated_ids = generated_ids[:, :-1]
                     break
                 # Ensure the beat or measure token matches the timing of the context
-                if timing_context is not None and timing_context["tokens"].shape[1] > 1 and input_ids.shape[1] > prompt_length + 1:
+                if timing_context is not None and timing_context["tokens"].shape[1] > 1 and generated_ids.shape[1] > prompt_length + 1:
                     beat_offset = -2 if self.types_first else -1
                     time_offset = -1 if self.types_first else -2
                     if last_tokens[beat_offset] in self.beat_range and last_tokens[time_offset] in self.time_range:
-                        context_time = self._get_beat_time_token_from_context(timing_context["tokens"][0], input_ids[0, prompt_length - post_tokens.shape[1]:-2])
+                        context_time = self._get_beat_time_token_from_context(timing_context["tokens"][0], generated_ids[0, prompt_length - post_tokens.shape[1]:-2])
                         if context_time is not None:
-                            input_ids[0, time_offset] = context_time
+                            generated_ids[0, time_offset] = context_time
+
+                # Prepare inputs for the next generation step by leaaving unprocessed tokens, in our case we have only one new token
+                # and expanding attn mask for the new token, as explained above
+                attention_mask = inputs["decoder_attention_mask"]
+                attention_mask = torch.cat([attention_mask, attention_mask.new_ones((attention_mask.shape[0], 1))], dim=-1)
+                inputs = {
+                    "decoder_input_ids": next_token_ids.repeat(2, 1) if self.cfg_scale > 1 else next_token_ids,
+                    "decoder_attention_mask": attention_mask,
+                    "encoder_outputs": (out.encoder_last_hidden_state, None, None),
+                }
+                cache_position = cache_position[-1:] + 1  # add one more position for the next token
 
             # Trim prompt and EOS tokens
-            predicted_tokens = input_ids[:, prompt_length:-1]
+            predicted_tokens = generated_ids[:, prompt_length:-1]
             result = self._decode(predicted_tokens[0], frame_time)
             events += result
             update_event_times(events, event_times, frame_time + self.eos_time, self.types_first)
