@@ -107,7 +107,7 @@ class OsuT(nn.Module):
             beatmap_idx = torch.full([batch_size], self.num_classes, dtype=torch.long, device=device)
 
         inputs_embeds = None
-        if encoder_outputs is None:
+        if encoder_outputs is None and frames is not None:
             frames = self.spectrogram(frames)  # (N, L, M)
             if self.do_style_embed:
                 style_embeds = self.style_embedder(beatmap_idx)  # (N, D)

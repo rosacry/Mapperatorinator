@@ -19,6 +19,7 @@ from osu_diffusion import DiT_models
 
 def prepare_args(args: DictConfig):
     torch.set_grad_enabled(False)
+    torch.set_float32_matmul_precision('high')
     set_seed(args.seed)
     if isinstance(args.output_type, str):
         args.output_type = ContextType(args.output_type) if args.output_type != "" else None
@@ -97,6 +98,7 @@ def generate(
         args: DictConfig,
         *,
         audio_path: PathLike,
+        other_beatmap_path: PathLike,
         generation_config: GenerationConfig,
         beatmap_config: BeatmapConfig,
         model,
@@ -105,6 +107,9 @@ def generate(
         diff_tokenizer=None,
         refine_model=None,
 ):
+    audio_path = args.audio_path if audio_path is None else audio_path
+    other_beatmap_path = args.other_beatmap_path if other_beatmap_path is None else other_beatmap_path
+
     preprocessor = Preprocessor(args)
     processor = Processor(args, model, tokenizer)
     postprocessor = Postprocessor(args)
@@ -112,7 +117,7 @@ def generate(
     # TODO: Auto generate timing if not provided in in_context and required for the model and this output_type
     audio = preprocessor.load(audio_path)
     sequences = preprocessor.segment(audio)
-    in_context = processor.get_in_context(args.in_context, args.other_beatmap_path)
+    in_context = processor.get_in_context(args.in_context, other_beatmap_path)
     events = processor.generate(
         sequences=sequences,
         generation_config=generation_config,
@@ -219,10 +224,10 @@ def main(args: DictConfig):
 
     generate(
         args,
-        model=model,
-        tokenizer=tokenizer,
         generation_config=generation_config,
         beatmap_config=beatmap_config,
+        model=model,
+        tokenizer=tokenizer,
         diff_model=diff_model,
         diff_tokenizer=diff_tokenizer,
         refine_model=refine_model,
