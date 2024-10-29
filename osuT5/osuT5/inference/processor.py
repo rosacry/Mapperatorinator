@@ -288,14 +288,14 @@ class Processor(object):
             # Prepare cache for autoregressive decoding
             self_attention_cache = StaticCache(
                 config=self.model.transformer.config,
-                batch_size=1,
+                batch_size=prompt.shape[0],
                 max_cache_len=self.model.transformer.config.max_target_positions,
                 device=self.model.transformer.device,
                 dtype=self.model.transformer.dtype
             )
             cross_attention_cache = StaticCache(
                 config=self.model.transformer.config,
-                batch_size=1,
+                batch_size=prompt.shape[0],
                 max_cache_len=self.model.transformer.config.max_source_positions,
                 device=self.model.transformer.device,
                 dtype=self.model.transformer.dtype
