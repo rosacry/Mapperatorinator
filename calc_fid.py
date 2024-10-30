@@ -145,6 +145,7 @@ def worker(beatmap_paths, args, return_dict, idx):
             diff_model=diff_model,
             diff_tokenizer=diff_tokenizer,
             refine_model=refine_model,
+            verbose=False,
         )
         generated_beatmap = Beatmap.parse(result)
 
@@ -173,6 +174,7 @@ def main(args: DictConfig):
     num_processes = 4
     chunk_size = len(beatmap_paths) // num_processes
     chunks = [beatmap_paths[i * chunk_size:(i + 1) * chunk_size] for i in range(num_processes)]
+    # TODO Add support for uneven chunks
     manager = Manager()
     return_dict = manager.dict()
     processes = []
