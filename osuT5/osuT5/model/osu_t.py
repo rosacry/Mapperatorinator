@@ -168,6 +168,32 @@ class OsuT(PreTrainedModel):
 
         return output
 
+    def prepare_inputs_for_generation(
+        self,
+        decoder_input_ids,
+        past_key_values=None,
+        use_cache=None,
+        encoder_outputs=None,
+        beatmap_idx=None,
+        decoder_attention_mask=None,
+        cache_position=None,
+        **kwargs,
+    ):
+        inputs = self.transformer.prepare_inputs_for_generation(
+            decoder_input_ids=decoder_input_ids,
+            past_key_values=past_key_values,
+            use_cache=use_cache,
+            encoder_outputs=encoder_outputs,
+            decoder_attention_mask=decoder_attention_mask,
+            cache_position=cache_position,
+            **kwargs,
+        )
+
+        inputs["beatmap_idx"] = beatmap_idx
+        return inputs
+
+
+
     def can_generate(self) -> bool:
         return True
 
@@ -181,6 +207,9 @@ class OsuT(PreTrainedModel):
             self.input_features,
             self.do_style_embed
         )
+
+    def get_decoder(self):
+        return self.transformer.get_decoder()
 
 
 class OsuTEncoder(nn.Module):
