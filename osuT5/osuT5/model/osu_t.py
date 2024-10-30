@@ -5,17 +5,18 @@ from typing import Optional
 import torch
 import torch.nn as nn
 from omegaconf import DictConfig
-from transformers import T5Config, T5ForConditionalGeneration, WhisperForConditionalGeneration, WhisperConfig
+from transformers import T5Config, T5ForConditionalGeneration, WhisperForConditionalGeneration, WhisperConfig, \
+    PreTrainedModel
 from transformers.modeling_outputs import Seq2SeqLMOutput
+from transformers.models.whisper.modeling_whisper import WhisperEncoder
 
 from ..model.spectrogram import MelSpectrogram
 from ..tokenizer import Tokenizer, EventType
 
-
 LABEL_IGNORE_ID = -100
 
 
-def get_backbone_model(args, tokenizer: Tokenizer):
+def get_backbone_config(args, tokenizer: Tokenizer):
     if args.model.name.startswith("google/t5"):
         config = T5Config.from_pretrained(args.model.name)
     elif args.model.name.startswith("openai/whisper"):
@@ -35,29 +36,57 @@ def get_backbone_model(args, tokenizer: Tokenizer):
             assert not hasattr(config, k), f"config already has attribute {k}"
             setattr(config, k, v)
 
-    if args.model.name.startswith("google/t5"):
-        model = T5ForConditionalGeneration(config)
-    elif args.model.name.startswith("openai/whisper"):
+    if args.model.name.startswith("openai/whisper"):
         config.num_mel_bins = config.d_model
         config.pad_token_id = tokenizer.pad_id
         config.bos_token_id = tokenizer.sos_id
         config.eos_token_id = tokenizer.eos_id
         config.max_source_positions = args.data.src_seq_len // 2
         config.max_target_positions = args.data.tgt_seq_len
+        config.begin_suppress_tokens = None
+        config.decoder_start_token_id = tokenizer.sos_id
+        config.do_sample = True
+        config.forced_decoder_ids = None
+        config.max_length = args.data.tgt_seq_len
+        config.suppress_tokens = None
+        config.top_k = 0
+    else:
+        raise NotImplementedError
+
+    return config
+
+
+def get_backbone_model(config):
+    if isinstance(config, T5Config):
+        model = T5ForConditionalGeneration(config)
+    elif isinstance(config, WhisperConfig):
         model = WhisperForConditionalGeneration(config)
     else:
         raise NotImplementedError
 
-    return model, config.d_model
+    return model
 
 
-class OsuT(nn.Module):
+class OsuT(PreTrainedModel):
     __slots__ = ["spectrogram", "decoder_embedder", "encoder_embedder", "transformer", "style_embedder", "num_classes"]
+    config_class = WhisperConfig
+    base_model_prefix = "model"
+    main_input_name = "frames"
+    supports_gradient_checkpointing = True
+    _no_split_modules = ["WhisperEncoderLayer", "WhisperDecoderLayer"]
+    _supports_flash_attn_2 = True
+    _supports_sdpa = True
+    _supports_cache_class = True
+    _supports_static_cache = True
 
     def __init__(self, args: DictConfig, tokenizer: Tokenizer):
-        super().__init__()
+        config = get_backbone_config(args, tokenizer)
+        d_model = config.d_model
 
-        self.transformer, d_model = get_backbone_model(args, tokenizer)
+        super().__init__(config)
+
+        self.transformer: WhisperForConditionalGeneration = get_backbone_model(config)
+
         self.num_classes = tokenizer.num_classes
         self.input_features = args.model.input_features
 
@@ -88,6 +117,7 @@ class OsuT(nn.Module):
             self,
             frames: Optional[torch.FloatTensor] = None,
             decoder_input_ids: Optional[torch.Tensor] = None,
+            decoder_attention_mask: Optional[torch.Tensor] = None,
             beatmap_idx: Optional[torch.Tensor] = None,
             encoder_outputs: Optional[torch.FloatTensor] = None,
             labels: Optional[torch.LongTensor] = None,
@@ -122,9 +152,11 @@ class OsuT(nn.Module):
             # noinspection PyTypeChecker
             output = self.transformer.forward(input_features=input_features,
                                               decoder_inputs_embeds=decoder_inputs_embeds,
+                                              decoder_attention_mask=decoder_attention_mask,
                                               encoder_outputs=encoder_outputs, labels=labels, **kwargs)
         else:
             output = self.transformer.forward(inputs_embeds=inputs_embeds, decoder_inputs_embeds=decoder_inputs_embeds,
+                                              decoder_attention_mask=decoder_attention_mask,
                                               encoder_outputs=encoder_outputs, labels=labels, **kwargs)
         # output = self.transformer.forward(inputs_embeds=inputs_embeds, decoder_input_ids=decoder_input_ids,encoder_outputs=encoder_outputs, **kwargs)
 
@@ -135,6 +167,73 @@ class OsuT(nn.Module):
             output.loss = unreduced_loss.sum() / (labels != LABEL_IGNORE_ID).sum()
 
         return output
+
+    def can_generate(self) -> bool:
+        return True
+
+    def get_encoder(self):
+        return OsuTEncoder(
+            self.transformer.get_encoder(),
+            self.spectrogram,
+            self.style_embedder if self.do_style_embed else None,
+            self.encoder_embedder,
+            self.num_classes,
+            self.input_features,
+            self.do_style_embed
+        )
+
+
+class OsuTEncoder(nn.Module):
+    def __init__(
+            self,
+            base_encoder: WhisperEncoder,
+            spectrogram: MelSpectrogram,
+            style_embedder: LabelEmbedder,
+            encoder_embedder: nn.Linear,
+            num_classes: int,
+            input_features: bool,
+            do_style_embed: bool
+    ):
+        super().__init__()
+        self.base = base_encoder
+        self.spectrogram = spectrogram
+        self.style_embedder = style_embedder
+        self.encoder_embedder = encoder_embedder
+        self.num_classes = num_classes
+        self.input_features = input_features
+        self.do_style_embed = do_style_embed
+
+    def forward(
+            self,
+            frames: torch.FloatTensor,
+            beatmap_idx: torch.Tensor,
+            output_attentions: bool = False,
+            output_hidden_states: bool = False,
+            return_dict: bool = False
+    ):
+        if beatmap_idx is None and self.do_style_embed:
+            batch_size = frames.shape[0]
+            device = frames.device
+            beatmap_idx = torch.full([batch_size], self.num_classes, dtype=torch.long, device=device)
+
+        frames = self.spectrogram(frames)  # (N, L, M)
+        if self.do_style_embed:
+            style_embeds = self.style_embedder(beatmap_idx)  # (N, D)
+            frames_concat = torch.concatenate((frames, style_embeds.unsqueeze(1).expand((-1, frames.shape[1], -1))),
+                                              -1)
+            inputs_embeds = self.encoder_embedder(frames_concat)
+        else:
+            inputs_embeds = self.encoder_embedder(frames)
+
+        if self.input_features:
+            inputs_embeds = torch.swapaxes(inputs_embeds, 1, 2) if inputs_embeds is not None else None
+
+        return self.base.forward(
+            inputs_embeds,
+            output_attentions=output_attentions,
+            output_hidden_states=output_hidden_states,
+            return_dict=return_dict
+        )
 
 
 class LabelEmbedder(nn.Module):

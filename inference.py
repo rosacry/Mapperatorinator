@@ -97,8 +97,8 @@ def get_config(args: DictConfig):
 def generate(
         args: DictConfig,
         *,
-        audio_path: PathLike,
-        other_beatmap_path: PathLike,
+        audio_path: PathLike = None,
+        other_beatmap_path: PathLike = None,
         generation_config: GenerationConfig,
         beatmap_config: BeatmapConfig,
         model,
