@@ -168,10 +168,10 @@ def worker(beatmap_paths, args, return_dict, idx):
     return_dict[idx] = (real_features, generated_features)
 
 
-@hydra.main(config_path="configs", config_name="inference_v1", version_base="1.1")
+@hydra.main(config_path="configs", config_name="calc_fic", version_base="1.1")
 def main(args: DictConfig):
     beatmap_paths = get_beatmap_paths(args)
-    num_processes = 4
+    num_processes = args.num_processes
 
     # Assign beatmaps to processes in a round-robin fashion
     chunks = [[] for _ in range(num_processes)]

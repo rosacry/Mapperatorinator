@@ -1,0 +1,14 @@
+defaults:
+  - inference_v22
+  - _self_
+
+compile: true
+num_processes: 6
+
+dataset_path: /workspace/datasets/ORS16291
+dataset_start: 16200
+dataset_end: 16291
+
+model_path: /workspace/Mapperatorinator/test/ckpt_v22_1
+diff_ckpt: /workspace/Mapperatorinator/test/diff_ckpt2
+classifier_ckpt: /workspace/Mapperatorinator/test/classifier_v3/model.ckpt
