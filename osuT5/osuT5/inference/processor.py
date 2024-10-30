@@ -195,6 +195,7 @@ class Processor(object):
             sequences: torch.Tensor,
             generation_config: GenerationConfig,
             in_context: list[dict[str, Any]] = None,
+            verbose: bool = True,
     ) -> list[Event]:
         """Generate a list of Event object lists and their timestamps given source sequences.
 
@@ -202,6 +203,7 @@ class Processor(object):
             sequences: A list of batched source sequences.
             generation_config: Generation configuration.
             in_context: List of context information.
+            verbose: Whether to show progress bar.
 
         Returns:
             events: List of Event object lists.
@@ -217,7 +219,7 @@ class Processor(object):
             beatmap_idx = torch.tensor([self.tokenizer.beatmap_idx[generation_config.beatmap_id]], dtype=torch.long, device=self.device)
 
         # Prepare unconditional prompt
-        cond_tokens = self.get_class_vector(generation_config, verbose=True)
+        cond_tokens = self.get_class_vector(generation_config, verbose=verbose)
         uncond_tokens = self.get_class_vector(GenerationConfig(
             difficulty=generation_config.difficulty,
             descriptors=generation_config.negative_descriptors
@@ -247,7 +249,8 @@ class Processor(object):
             return prompt
 
         # Start generation
-        for sequence_index, frames in enumerate(tqdm(sequences)):
+        iterator = tqdm(sequences) if verbose else sequences
+        for sequence_index, frames in enumerate(iterator):
             # noinspection PyUnresolvedReferences
             frames = frames.to(self.device).unsqueeze(0)
 
