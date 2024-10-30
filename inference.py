@@ -94,6 +94,7 @@ def get_config(args: DictConfig):
         offset=args.offset,
     )
 
+
 def generate(
         args: DictConfig,
         *,
@@ -106,6 +107,7 @@ def generate(
         diff_model=None,
         diff_tokenizer=None,
         refine_model=None,
+        verbose=True,
 ):
     audio_path = args.audio_path if audio_path is None else audio_path
     other_beatmap_path = args.other_beatmap_path if other_beatmap_path is None else other_beatmap_path
@@ -121,7 +123,8 @@ def generate(
     events = processor.generate(
         sequences=sequences,
         generation_config=generation_config,
-        in_context=in_context
+        in_context=in_context,
+        verbose=verbose,
     )
 
     # Generate timing and resnap timing events
@@ -141,6 +144,7 @@ def generate(
         events = diffusion_pipeline.generate(
             events=events,
             generation_config=generation_config,
+            verbose=verbose,
         )
 
     result = postprocessor.generate(
@@ -150,7 +154,8 @@ def generate(
     )
 
     if args.output_path is not None and args.output_path != "":
-        print(f"Generated beatmap saved to {args.output_path}")
+        if verbose:
+            print(f"Generated beatmap saved to {args.output_path}")
         postprocessor.write_result(result, args.output_path)
 
     return result

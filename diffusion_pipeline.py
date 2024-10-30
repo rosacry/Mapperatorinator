@@ -95,21 +95,22 @@ class DiffisionPipeline(object):
             self,
             events: list[Event],
             generation_config: GenerationConfig,
+            verbose: bool = False,
     ) -> list[Event]:
         """Generate position events for distance events in the Event list.
 
         Args:
-            model: Trained model to use for inference.
             events: List of Event objects with distance events.
             generation_config: GenerationConfig object with beatmap metadata.
-            refine_model: Optional model to refine the generated positions.
+            verbose: Whether to print debug information.
 
         Returns:
             events: List of Event objects with position events.
         """
 
         seq_x, seq_c, seq_len, seq_indices = self.events_to_sequence(events)
-        print(f"seq len {seq_len}")
+        if verbose:
+            print(f"seq len {seq_len}")
 
         diffusion = create_diffusion(
             timestep_respacing=self.timesteps,
@@ -170,13 +171,14 @@ class DiffisionPipeline(object):
                 denoised_fn=in_paint_mask,
                 clip_denoised=True,
                 model_kwargs=model_kwargs,
-                progress=True,
+                progress=verbose,
                 device=self.device,
             )
 
             # Refine result with refine model
             if self.refine_model is not None:
-                for _ in tqdm(range(self.refine_iters)):
+                refine_iters = tqdm(range(self.refine_iters)) if verbose else range(self.refine_iters)
+                for _ in refine_iters:
                     t = torch.tensor([0] * samples.shape[0], device=self.device)
                     with torch.no_grad():
                         out = diffusion.p_sample(

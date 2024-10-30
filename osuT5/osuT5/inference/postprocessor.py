@@ -129,7 +129,7 @@ class Postprocessor(object):
             self,
             events: list[Event],
             beatmap_config: BeatmapConfig,
-            timing: list[TimingPoint] = None
+            timing: list[TimingPoint] = None,
     ):
         """Generate a beatmap file.
 
