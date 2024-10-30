@@ -3,7 +3,7 @@ defaults:
   - _self_
 
 compile: true
-num_processes: 6
+num_processes: 4
 
 dataset_path: /workspace/datasets/ORS16291
 dataset_start: 16200
