@@ -132,7 +132,6 @@ def generate(
     if ContextType.TIMING in args.in_context or (
             args.osut5.data.add_timing and any(t in args.in_context for t in [ContextType.GD, ContextType.NO_HS])):
         # Exact timing is provided in the other beatmap, so we don't need to generate it
-        other_beatmap_path = Path(args.other_beatmap_path)
         timing = Beatmap.from_path(other_beatmap_path).timing_points
         events = postprocessor.resnap_events(events, timing)
     elif args.osut5.data.add_timing or args.output_type == ContextType.TIMING:
