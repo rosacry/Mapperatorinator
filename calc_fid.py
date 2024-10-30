@@ -15,6 +15,7 @@ from classifier.libs.utils import load_ckpt
 from inference import prepare_args, load_diff_model, generate, load_model
 from osuT5.osuT5.dataset.data_utils import load_audio_file
 from osuT5.osuT5.inference import generation_config_from_beatmap, beatmap_config_from_beatmap
+from multiprocessing import Manager, Process
 
 
 def get_beatmap_paths(args) -> list[Path]:
@@ -98,8 +99,7 @@ def calculate_frechet_distance(mu1, sigma1, mu2, sigma2, eps=1e-6):
     return diff.dot(diff) + np.trace(sigma1) + np.trace(sigma2) - 2 * tr_covmean
 
 
-@hydra.main(config_path="configs", config_name="inference_v1", version_base="1.1")
-def main(args: DictConfig):
+def worker(beatmap_paths, args, return_dict, idx):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     prepare_args(args)
 
@@ -124,8 +124,6 @@ def main(args: DictConfig):
     if args.compile:
         classifier_model.model.transformer.forward = torch.compile(classifier_model.model.transformer.forward, mode="reduce-overhead", fullgraph=False)
 
-    # Calc features
-    beatmap_paths = get_beatmap_paths(args)
     real_features = []
     generated_features = []
 
@@ -165,6 +163,33 @@ def main(args: DictConfig):
             generated_features.append(features.squeeze(0).cpu().numpy())
 
         torch.cuda.empty_cache()  # Clear any cached memory
+
+    return_dict[idx] = (real_features, generated_features)
+
+
+@hydra.main(config_path="configs", config_name="inference_v1", version_base="1.1")
+def main(args: DictConfig):
+    beatmap_paths = get_beatmap_paths(args)
+    num_processes = 4
+    chunk_size = len(beatmap_paths) // num_processes
+    chunks = [beatmap_paths[i * chunk_size:(i + 1) * chunk_size] for i in range(num_processes)]
+    manager = Manager()
+    return_dict = manager.dict()
+    processes = []
+
+    for i in range(num_processes):
+        p = Process(target=worker, args=(chunks[i], args, return_dict, i))
+        processes.append(p)
+        p.start()
+
+    for p in processes:
+        p.join()
+
+    real_features = []
+    generated_features = []
+    for i in range(num_processes):
+        real_features.extend(return_dict[i][0])
+        generated_features.extend(return_dict[i][1])
 
     # Calculate FID
     real_features = np.stack(real_features)
