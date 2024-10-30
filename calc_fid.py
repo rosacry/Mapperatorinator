@@ -127,7 +127,7 @@ def worker(beatmap_paths, args, return_dict, idx):
     real_features = []
     generated_features = []
 
-    for beatmap_path in tqdm(beatmap_paths):
+    for beatmap_path in tqdm(beatmap_paths, desc=f"Process {idx}"):
         audio_path = beatmap_path.parents[1] / list(beatmap_path.parents[1].glob('audio.*'))[0]
         beatmap = Beatmap.from_path(beatmap_path)
 
@@ -172,9 +172,12 @@ def worker(beatmap_paths, args, return_dict, idx):
 def main(args: DictConfig):
     beatmap_paths = get_beatmap_paths(args)
     num_processes = 4
-    chunk_size = len(beatmap_paths) // num_processes
-    chunks = [beatmap_paths[i * chunk_size:(i + 1) * chunk_size] for i in range(num_processes)]
-    # TODO Add support for uneven chunks
+
+    # Assign beatmaps to processes in a round-robin fashion
+    chunks = [[] for _ in range(num_processes)]
+    for i, path in enumerate(beatmap_paths):
+        chunks[i % num_processes].append(path)
+
     manager = Manager()
     return_dict = manager.dict()
     processes = []
