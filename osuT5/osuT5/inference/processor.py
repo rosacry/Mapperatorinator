@@ -231,6 +231,12 @@ class Processor(object):
             tokens = context["tokens"]
             if "class" in context:
                 tokens = torch.concatenate([context["class"], tokens], dim=-1)
+
+            # Trim tokens if they are too long
+            max_context_length = self.tgt_seq_len // 2
+            if tokens.shape[1] > max_context_length:
+                tokens = tokens[:, :max_context_length]
+
             if context["add_type"]:
                 tokens = torch.concatenate([
                     torch.tensor([[self.tokenizer.context_sos[context_type]]], dtype=torch.long, device=self.device),
@@ -278,6 +284,17 @@ class Processor(object):
             # Prepare classifier-free guidance
             cond_prompt = get_prompt(cond_tokens, prev_tokens, post_tokens)
             uncond_prompt = get_prompt(uncond_tokens, prev_tokens, post_tokens) if self.cfg_scale > 1 else None
+
+            # Make sure the prompt is not too long
+            i = 0
+            while cond_prompt.shape[1] >= self.tgt_seq_len:
+                i += 1
+                if i > 10:
+                    raise ValueError("Prompt is too long.")
+                prev_tokens = prev_tokens[:, -(prev_tokens.shape[1] // 2):]
+                post_tokens = post_tokens[:, -(post_tokens.shape[1] // 2):]
+                cond_prompt = get_prompt(cond_tokens, prev_tokens, post_tokens)
+                uncond_prompt = get_prompt(uncond_tokens, prev_tokens, post_tokens) if self.cfg_scale > 1 else None
 
             eos_token_id = [self.tokenizer.eos_id]
             if sequence_index != len(sequences) - 1:

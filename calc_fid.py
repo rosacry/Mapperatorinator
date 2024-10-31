@@ -193,6 +193,8 @@ def main(args: DictConfig):
     real_features = []
     generated_features = []
     for i in range(num_processes):
+        if i not in return_dict:
+            print(f"Process {i} did not return results!")
         real_features.extend(return_dict[i][0])
         generated_features.extend(return_dict[i][1])
 
