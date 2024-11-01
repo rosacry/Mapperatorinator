@@ -1,4 +1,5 @@
 import os
+import random
 from pathlib import Path
 
 import hydra
@@ -15,6 +16,7 @@ from classifier.libs.utils import load_ckpt
 from inference import prepare_args, load_diff_model, generate, load_model
 from osuT5.osuT5.dataset.data_utils import load_audio_file
 from osuT5.osuT5.inference import generation_config_from_beatmap, beatmap_config_from_beatmap
+from osuT5.osuT5.tokenizer import ContextType
 from multiprocessing import Manager, Process
 
 
@@ -131,13 +133,21 @@ def worker(beatmap_paths, args, return_dict, idx):
         audio_path = beatmap_path.parents[1] / list(beatmap_path.parents[1].glob('audio.*'))[0]
         beatmap = Beatmap.from_path(beatmap_path)
 
+        if ContextType.GD in args.in_context:
+            other_beatmaps = [k for k in beatmap_path.parent.glob("*.osu") if k != beatmap_path]
+            if len(other_beatmaps) == 0:
+                continue
+            other_beatmap_path = random.choice(other_beatmaps)
+        else:
+            other_beatmap_path = beatmap_path
+
         generation_config = generation_config_from_beatmap(beatmap, tokenizer)
         beatmap_config = beatmap_config_from_beatmap(beatmap)
 
         result = generate(
             args,
             audio_path=audio_path,
-            other_beatmap_path=beatmap_path,
+            other_beatmap_path=other_beatmap_path,
             generation_config=generation_config,
             beatmap_config=beatmap_config,
             model=model,
