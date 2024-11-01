@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+import numpy as np
 import torch
 import torch.nn.functional as F
 from omegaconf import DictConfig
@@ -365,9 +366,12 @@ class Processor(object):
 
     def _encode(self, events: list[Event], frame_time: float) -> torch.Tensor:
         tokens = torch.empty((1, len(events)), dtype=torch.long)
+        timeshift_range = self.tokenizer.event_range[EventType.TIME_SHIFT]
         for i, event in enumerate(events):
             if event.type == EventType.TIME_SHIFT:
-                event = Event(type=event.type, value=int((event.value - frame_time) / MILISECONDS_PER_STEP))
+                value = int((event.value - frame_time) / MILISECONDS_PER_STEP)
+                value = np.clip(value, timeshift_range.min_value, timeshift_range.max_value)
+                event = Event(type=event.type, value=value)
             tokens[0, i] = self.tokenizer.encode(event)
         return tokens.to(self.device)
 
