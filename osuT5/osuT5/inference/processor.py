@@ -46,8 +46,8 @@ class TimeshiftBias(LogitsProcessor):
         self.timeshift_bias = timeshift_bias
         self.time_range = time_range
 
-    def __call__(self, input_ids: torch.LongTensor, scores: torch.FloatTensor) -> torch.FloatTensor:
-        scores_processed = torch.FloatTensor(scores)
+    def __call__(self, input_ids: torch.LongTensor, scores: torch.FloatTensor) -> torch.Tensor:
+        scores_processed = scores.clone()
         scores_processed[:, self.time_range] += self.timeshift_bias
         return scores_processed
 
