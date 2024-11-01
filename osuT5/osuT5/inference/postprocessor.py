@@ -249,12 +249,16 @@ class Postprocessor(object):
                 node_additions = slider_head.additions + last_anchor.additions[1:] + group.additions
                 node_volumes = slider_head.volumes + last_anchor.volumes[1:] + group.volumes
 
+                body_hitsound = last_anchor.hitsounds[0] if len(last_anchor.hitsounds) > 0 else 0
+                body_sampleset = last_anchor.samplesets[0] if len(last_anchor.samplesets) > 0 else 0
+                body_addition = last_anchor.additions[0] if len(last_anchor.additions) > 0 else 0
+
                 control_points = "|".join(f"{int(round(cp[1]))}:{int(round(cp[2]))}" for cp in anchor_info)
                 node_hitsounds = "|".join(map(str, node_hitsounds))
                 node_sampleset = "|".join(f"{s}:{a}" for s, a in zip(node_samplesets, node_additions))
 
                 hit_object_strings.append(
-                    f"{int(round(slider_head.x))},{int(round(slider_head.y))},{slider_start_time},{6 if slider_head.new_combo else 2},{last_anchor.hitsounds[0]},{curve_type}|{control_points},{slides},{adjusted_length},{node_hitsounds},{node_sampleset},{last_anchor.samplesets[0]}:{last_anchor.additions[0]}:0:0:"
+                    f"{int(round(slider_head.x))},{int(round(slider_head.y))},{slider_start_time},{6 if slider_head.new_combo else 2},{body_hitsound},{curve_type}|{control_points},{slides},{adjusted_length},{node_hitsounds},{node_sampleset},{body_sampleset}:{body_addition}:0:0:"
                 )
 
                 # Set volume for each node sample
