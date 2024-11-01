@@ -166,6 +166,10 @@ class Postprocessor(object):
                 coordinates = calculate_coordinates((last_x, last_y), group.distance, 500, (512, 384))
                 group.x, group.y = coordinates[np.random.randint(len(coordinates))]
 
+            if group.x is None or group.y is None:
+                # Maybe the model forgot to add any distance or position tokens, so let's just assume the last position
+                group.x, group.y = last_x, last_y
+
             if hit_type in [EventType.CIRCLE, EventType.SLIDER_HEAD, EventType.BEZIER_ANCHOR, EventType.PERFECT_ANCHOR, EventType.CATMULL_ANCHOR, EventType.RED_ANCHOR, EventType.LAST_ANCHOR, EventType.SLIDER_END]:
                 last_x, last_y = group.x, group.y
 
