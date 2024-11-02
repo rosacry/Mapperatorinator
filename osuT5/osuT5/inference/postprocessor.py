@@ -174,17 +174,25 @@ class Postprocessor(object):
                 last_x, last_y = group.x, group.y
 
             if hit_type == EventType.CIRCLE:
-                hit_object_strings.append(f"{int(round(group.x))},{int(round(group.y))},{int(round(group.time))},{5 if group.new_combo else 1},{group.hitsounds[0]},{group.samplesets[0]}:{group.additions[0]}:0:0:")
-                timing = self.set_volume(timedelta(milliseconds=int(round(group.time))), group.volumes[0], timing)
+                hitsound = group.hitsounds[0] if len(group.hitsounds) > 0 else 0
+                sampleset = group.samplesets[0] if len(group.samplesets) > 0 else 0
+                addition = group.additions[0] if len(group.additions) > 0 else 0
+                hit_object_strings.append(f"{int(round(group.x))},{int(round(group.y))},{int(round(group.time))},{5 if group.new_combo else 1},{hitsound},{sampleset}:{addition}:0:0:")
+                if len(group.volumes) > 0:
+                    timing = self.set_volume(timedelta(milliseconds=int(round(group.time))), group.volumes[0], timing)
 
             elif hit_type == EventType.SPINNER:
                 spinner_start = group
 
             elif hit_type == EventType.SPINNER_END and spinner_start is not None:
+                hitsound = group.hitsounds[0] if len(group.hitsounds) > 0 else 0
+                sampleset = group.samplesets[0] if len(group.samplesets) > 0 else 0
+                addition = group.additions[0] if len(group.additions) > 0 else 0
                 hit_object_strings.append(
-                    f"{256},{192},{int(round(spinner_start.time))},{12},{group.hitsounds[0]},{int(round(group.time))},{group.samplesets[0]}:{group.additions[0]}:0:0:"
+                    f"{256},{192},{int(round(spinner_start.time))},{12},{hitsound},{int(round(group.time))},{sampleset}:{addition}:0:0:"
                 )
-                timing = self.set_volume(timedelta(milliseconds=int(round(group.time))), group.volumes[0], timing)
+                if len(group.volumes) > 0:
+                    timing = self.set_volume(timedelta(milliseconds=int(round(group.time))), group.volumes[0], timing)
                 spinner_start = None
                 last_x, last_y = 256, 192
 
@@ -267,7 +275,7 @@ class Postprocessor(object):
                     node_volume = node_volumes[i]
                     timing = self.set_volume(timedelta(milliseconds=t), node_volume, timing)
 
-                    if last_anchor.volumes[0] != node_volume and i < slides and span_duration > 6:
+                    if len(last_anchor.volumes) > 0 and last_anchor.volumes[0] != node_volume and i < slides and span_duration > 6:
                         # Add a volume change after each node sample to make sure the body volume is maintained
                         timing = self.set_volume(timedelta(milliseconds=t + 6), last_anchor.volumes[0], timing)
 
