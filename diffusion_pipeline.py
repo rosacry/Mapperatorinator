@@ -236,6 +236,7 @@ class DiffisionPipeline(object):
 
         groups = get_groups(events, event_times=event_times, types_first=self.types_first)
         group_indices = get_group_indices(events, self.types_first)
+        assert len(groups) == len(group_indices)
 
         seq_indices = {}
         indices = []
