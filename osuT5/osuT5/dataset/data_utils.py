@@ -304,6 +304,9 @@ def get_group_indices(events: list[Event], types_first: bool = False) -> list[li
                 indices = []
 
     if len(indices) > 0:
-        groups.append(indices)
+        if types_first:
+            groups.append(indices)
+        else:
+            groups[-1].extend(indices)
 
     return groups
