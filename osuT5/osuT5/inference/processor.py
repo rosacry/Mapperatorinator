@@ -67,7 +67,7 @@ class Processor(object):
         self.miliseconds_per_sequence = self.samples_per_sequence * MILISECONDS_PER_SECOND / self.sample_rate
         self.miliseconds_per_stride = self.sequence_stride * MILISECONDS_PER_SECOND / self.sample_rate
         self.lookahead_max_time = (1 - args.lookahead) * self.miliseconds_per_sequence
-        self.lookahead_time_range = range(tokenizer.encode(Event(EventType.TIME_SHIFT, int(self.lookahead_max_time / MILISECONDS_PER_STEP) + 1)), tokenizer.event_end[EventType.TIME_SHIFT])
+        self.lookahead_time_range = range(tokenizer.encode(Event(EventType.TIME_SHIFT, int(self.lookahead_max_time / MILISECONDS_PER_STEP))), tokenizer.event_end[EventType.TIME_SHIFT])
         self.eos_time = (1 - args.osut5.data.lookahead) * self.miliseconds_per_sequence
         self.center_pad_decoder = args.osut5.data.center_pad_decoder
         self.special_token_len = args.osut5.data.special_token_len
