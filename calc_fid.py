@@ -117,9 +117,8 @@ def worker(beatmap_paths, args, return_dict, idx):
         if len(args.diff_refine_ckpt) > 0:
             refine_model = load_diff_model(args.diff_refine_ckpt, args.diffusion)[0]
 
-        # Compiling is disabled for the diffision model because it uses various input sizes and that slows down the process with recompilations
-        # if args.compile:
-        #     diff_model.forward = torch.compile(diff_model.forward, mode="reduce-overhead", fullgraph=False)
+        if args.compile:
+            diff_model.forward = torch.compile(diff_model.forward, mode="reduce-overhead", fullgraph=False)
 
     classifier_model, classifier_args, classifier_tokenizer = load_ckpt(args.classifier_ckpt)
 

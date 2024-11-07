@@ -129,7 +129,7 @@ class DiTBlock(nn.Module):
             nn.Linear(hidden_size, 6 * hidden_size, bias=True),
         )
 
-    def forward(self, x, c, attn_mask=None):
+    def forward(self, x, c, attn_mask=None, key_padding_mask=None):
         (
             shift_msa,
             scale_msa,
@@ -278,7 +278,7 @@ class DiT(nn.Module):
         nn.init.constant_(self.final_layer.linear.weight, 0)
         nn.init.constant_(self.final_layer.linear.bias, 0)
 
-    def forward(self, x, t, c, y, attn_mask=None):
+    def forward(self, x, t, c, y, attn_mask=None, key_padding_mask=None):
         """
         Forward pass of DiT.
         x: (N, C, T) tensor of sequence inputs
@@ -293,23 +293,23 @@ class DiT(nn.Module):
         y = self.y_embedder(y)  # (N, D)
         b = t + y  # (N, D)
         for block in self.blocks:
-            x = block(x, b, attn_mask)  # (N, T, D)
+            x = block(x, b, attn_mask, key_padding_mask)  # (N, T, D)
         x = self.final_layer(x, b)  # (N, T, out_channels)
         x = torch.swapaxes(x, 1, 2)  # (N, out_channels, T)
         return x
 
-    def forward_with_cfg(self, x, t, c, y, cfg_scale, attn_mask=None):
+    def forward_with_cfg(self, x, t, c, y, cfg_scale, attn_mask=None, key_padding_mask=None):
         """
         Forward pass of DiT, but also batches the unconditional forward pass for classifier-free guidance.
         """
         # https://github.com/openai/glide-text2im/blob/main/notebooks/text2im.ipynb
         half = x[: len(x) // 2]
         combined = torch.cat([half, half], dim=0)
-        model_out = self.forward(combined, t, c, y, attn_mask)
+        model_out = self.forward(combined, t, c, y, attn_mask, key_padding_mask)
         # For exact reproducibility reasons, we apply classifier-free guidance on only
         # three channels by default. The standard approach to cfg applies it to all channels.
         # This can be done by uncommenting the following line and commenting-out the line following that.
-        eps, rest = model_out[:, : self.in_channels], model_out[:, self.in_channels :]
+        eps, rest = model_out[:, : self.in_channels], model_out[:, self.in_channels:]
         # eps, rest = model_out[:, :3], model_out[:, 3:]
         cond_eps, uncond_eps = torch.split(eps, len(eps) // 2, dim=0)
         half_eps = uncond_eps + cfg_scale * (cond_eps - uncond_eps)
