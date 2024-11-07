@@ -45,6 +45,7 @@ class DiffisionPipeline(object):
         self.refine_iters = args.refine_iters
         self.random_init = args.random_init
         self.types_first = args.osut5.data.types_first
+        self.pad_sequence = args.pad_sequence
 
     def get_class_vector(
             self,
@@ -147,11 +148,25 @@ class DiffisionPipeline(object):
 
         def sample_part(z, start, end, start_mask_size=0):
             z_part = z[:, :, start:end]
+            c_part = c[:, :, start:end]
+            attn_mask_part = attn_mask[start:end, start:end]
+            key_padding_mask = None
+
+            # Pad to max seq len
+            pad_amount = self.max_seq_len - z_part.shape[2] if self.pad_sequence else 0
+            if pad_amount > 0:
+                z_part = torch.nn.functional.pad(z_part, (0, pad_amount))
+                c_part = torch.nn.functional.pad(c_part, (0, pad_amount))
+                attn_mask_part = torch.nn.functional.pad(attn_mask_part, (0, pad_amount, 0, pad_amount), value=False)
+                key_padding_mask = torch.full((z_part.shape[0], self.max_seq_len), False, dtype=torch.bool, device=self.device)
+                key_padding_mask[:, -pad_amount:] = True
+
             model_kwargs = dict(
-                c=c[:, :, start:end],
+                c=c_part,
                 y=y,
                 cfg_scale=self.cfg_scale,
-                attn_mask=attn_mask[start:end, start:end]
+                attn_mask=attn_mask_part,
+                key_padding_mask=key_padding_mask,
             )
 
             # Make in-paint mask
@@ -190,6 +205,10 @@ class DiffisionPipeline(object):
                             model_kwargs=model_kwargs,
                         )
                         samples = out["sample"]
+
+            # Remove the padding
+            if pad_amount > 0:
+                samples = samples[:, :, :-pad_amount]
 
             return samples
 
