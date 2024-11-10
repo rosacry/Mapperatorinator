@@ -340,6 +340,13 @@ class Processor(object):
         if self.add_positions:
             events = self._rescale_positions(events)
 
+        # Make sure the time shifts are monotonically increasing
+        time = 0
+        for i, event in enumerate(events):
+            if event.type == EventType.TIME_SHIFT:
+                time = max(time, event.value)
+                events[i] = Event(EventType.TIME_SHIFT, time)
+
         return events
 
     def _get_events_time_range(self, events: list[Event], event_times: list[float], start_time: float, end_time: float):
