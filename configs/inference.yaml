@@ -17,7 +17,7 @@ output_type: 'map'      # Output type (map, timing)
 seed: 0                 # Random seed
 cfg_scale: 1.0              # Scale of classifier-free guidance
 temperature: 1.0        # Sampling temperature
-top_p: 0.99              # Top-p sampling threshold
+top_p: 0.95              # Top-p sampling threshold
 timeshift_bias: 0.0        # Logit bias for sampling timeshift tokens
 
 bpm: 120                # Beats per minute of input audio
