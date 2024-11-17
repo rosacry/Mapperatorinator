@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import os
 import random
 from multiprocessing.managers import Namespace
@@ -12,6 +11,7 @@ import numpy.typing as npt
 import pandas as pd
 import torch
 from omegaconf import DictConfig
+from pandas import Series, DataFrame
 from slider import Beatmap
 from torch.utils.data import IterableDataset
 
@@ -46,34 +46,53 @@ class MmrsDataset(IterableDataset):
             parser: OsuParser,
             tokenizer: Tokenizer,
             subset_ids: Optional[list[int]] = None,
+            test: bool = False,
             shared: Namespace = None,
     ):
-        """Manage and process ORS dataset.
+        """Manage and process MMRS dataset.
 
         Attributes:
             args: Data loading arguments.
             parser: Instance of OsuParser class.
             tokenizer: Instance of Tokenizer class.
             subset_ids: List of beatmap set IDs to process. Overrides track index range.
+            test: Whether to load the test dataset.
         """
         super().__init__()
-        self.path = Path(args.dataset_path)
+        self._validate_args(args)
+        self.path = Path(args.test_dataset_path if test else args.train_dataset_path)
+        self.start = args.test_dataset_start if test else args.train_dataset_start
+        self.end = args.test_dataset_end if test else args.train_dataset_end
         self.metadata = self._load_metadata()
-        self.subset_ids = subset_ids if subset_ids is not None else self._beatmap_set_ids_from_metadata()
-        self.start = 0
-        self.end = len(subset_ids)
+        if subset_ids is not None:
+            self.subset_ids = subset_ids
+            self.start = 0
+            self.end = len(subset_ids)
+        else:
+            self.subset_ids = self._beatmap_set_ids_from_metadata()
         self.args = args
         self.parser = parser
         self.tokenizer = tokenizer
+        self.test = test
         self.shared = shared
         self.sample_weights = self._get_sample_weights(args.sample_weights_path)
 
+    def _validate_args(self, args: DictConfig):
+        if not args.per_track:
+            raise ValueError("MMRS dataset requires per_track to be True")
+        if args.only_last_beatmap:
+            raise ValueError("MMRS dataset does not support only_last_beatmap")
+
     def _load_metadata(self):
         # Loads the metadata parquet from the dataset path
-        return pd.read_parquet(self.path / "metadata.parquet")
+        df = pd.read_parquet(self.path / "metadata.parquet")
+        df["BeatmapIdx"] = df.index
+        df.set_index(["BeatmapSetId", "Id"], inplace=True)
+        df.sort_index(inplace=True)
+        return df
 
     def _beatmap_set_ids_from_metadata(self):
-        return self.metadata['BeatmapSetId'].astype(int).unique().tolist()
+        return self.metadata.index.to_frame()["BeatmapSetId"].unique().tolist()
 
     @staticmethod
     def _get_sample_weights(sample_weights_path):
@@ -82,21 +101,16 @@ class MmrsDataset(IterableDataset):
 
         # Load the sample weights csv to a dictionary
         with open(sample_weights_path, "r") as f:
-            sample_weights = {int(line.split(",")[0]): np.clip(float(line.split(",")[1]), 0.1, 10) for line in f.readlines()}
+            sample_weights = {int(line.split(",")[0]): np.clip(float(line.split(",")[1]), 0.1, 10) for line in
+                              f.readlines()}
             # Normalize the weights so the mean is 1
             mean = sum(sample_weights.values()) / len(sample_weights)
             sample_weights = {k: v / mean for k, v in sample_weights.items()}
 
         return sample_weights
 
-    def _get_beatmap_ids(self) -> list[int]:
-        return self.metadata[self.metadata["B"]]
-
-    def _get_beatmap_set_ids(self) -> list[int]:
-        return self.subset_ids[self.start:self.end].copy()
-
     def __iter__(self):
-        subset_ids = self._get_beatmap_set_ids() if self.args.per_track else self._get_beatmap_ids()
+        subset_ids = self.subset_ids[self.start:self.end].copy()
 
         if not self.test:
             random.shuffle(subset_ids)
@@ -110,10 +124,12 @@ class MmrsDataset(IterableDataset):
 
         return self._iterable_factory(subset_ids).__iter__()
 
-    def _iterable_factory(self, beatmap_files: list[Path]):
+    def _iterable_factory(self, subset_ids: list[int]):
         return BeatmapDatasetIterable(
-            beatmap_files,
+            subset_ids,
             self.args,
+            self.path,
+            self.metadata,
             self.parser,
             self.tokenizer,
             self.test,
@@ -127,16 +143,14 @@ class InterleavingBeatmapDatasetIterable:
 
     def __init__(
             self,
-            beatmap_files: list[Path],
+            subset_ids: list[int],
             iterable_factory: Callable,
             cycle_length: int,
     ):
-        per_worker = int(np.ceil(len(beatmap_files) / float(cycle_length)))
+        per_worker = int(np.ceil(len(subset_ids) / float(cycle_length)))
         self.workers = [
             iterable_factory(
-                beatmap_files[
-                i * per_worker: min(len(beatmap_files), (i + 1) * per_worker)
-                ]
+                subset_ids[i * per_worker: min(len(subset_ids), (i + 1) * per_worker)]
             ).__iter__()
             for i in range(cycle_length)
         ]
@@ -161,8 +175,10 @@ class InterleavingBeatmapDatasetIterable:
 
 class BeatmapDatasetIterable:
     __slots__ = (
-        "beatmap_files",
+        "subset_ids",
         "args",
+        "path",
+        "metadata",
         "parser",
         "tokenizer",
         "test",
@@ -181,16 +197,20 @@ class BeatmapDatasetIterable:
 
     def __init__(
             self,
-            beatmap_files: list[Path],
+            subset_ids: list[int],
             args: DictConfig,
+            path: Path,
+            metadata: pd.DataFrame,
             parser: OsuParser,
             tokenizer: Tokenizer,
             test: bool,
             shared: Namespace,
             sample_weights: dict[int, float] = None,
     ):
-        self.beatmap_files = beatmap_files
+        self.subset_ids = subset_ids
         self.args = args
+        self.path = path
+        self.metadata = metadata
         self.parser = parser
         self.tokenizer = tokenizer
         self.test = test
@@ -270,7 +290,8 @@ class BeatmapDatasetIterable:
 
         start_indices, end_indices = {}, {}
         for context in in_context + [out_context]:
-            start_indices[context["extra"]["context_type"]], end_indices[context["extra"]["context_type"]] = get_event_indices(context["events"], context["event_times"])
+            start_indices[context["extra"]["context_type"]], end_indices[
+                context["extra"]["context_type"]] = get_event_indices(context["events"], context["event_times"])
 
         sequences = []
         n_frames = len(frames)
@@ -300,12 +321,13 @@ class BeatmapDatasetIterable:
 
             # Create the sequence
             sequence = {
-                "time": frame_times[frame_start_idx],
-                "frames": frames[frame_start_idx:frame_end_idx],
-                "labels_offset": gen_start_idx - event_start_idx,
-                "out_context": slice_context(out_context, frame_start_idx, gen_end_frame),
-                "in_context": [slice_context(context, frame_start_idx, frame_end_idx) for context in in_context],
-            } | extra_data
+                           "time": frame_times[frame_start_idx],
+                           "frames": frames[frame_start_idx:frame_end_idx],
+                           "labels_offset": gen_start_idx - event_start_idx,
+                           "out_context": slice_context(out_context, frame_start_idx, gen_end_frame),
+                           "in_context": [slice_context(context, frame_start_idx, frame_end_idx) for context in
+                                          in_context],
+                       } | extra_data
 
             if self.args.add_pre_tokens or self.args.add_pre_tokens_at_step >= 0:
                 sequence["pre_events"] = slice_events(out_context, frame_pre_idx, frame_start_idx)
@@ -325,11 +347,15 @@ class BeatmapDatasetIterable:
             The same sequence with trimmed time shifts.
         """
 
+        min_t = self.tokenizer.event_range[EventType.TIME_SHIFT].min_value
+
         def process(events: list[Event], start_time) -> list[Event] | tuple[list[Event], int]:
             for i, event in enumerate(events):
                 if event.type == EventType.TIME_SHIFT:
                     # We cant modify the event objects themselves because that will affect subsequent sequences
-                    events[i] = Event(EventType.TIME_SHIFT, int((event.value - start_time) * STEPS_PER_MILLISECOND))
+                    t = int((event.value - start_time) * STEPS_PER_MILLISECOND)
+                    assert t >= min_t  # TODO: Fix weird unordered events
+                    events[i] = Event(EventType.TIME_SHIFT, t)
 
             return events
 
@@ -505,13 +531,14 @@ class BeatmapDatasetIterable:
 
         # Randomize some input tokens
         def randomize_tokens(tokens):
-            offset = torch.randint(low=-self.args.timing_random_offset, high=self.args.timing_random_offset+1, size=tokens.shape)
+            offset = torch.randint(low=-self.args.timing_random_offset, high=self.args.timing_random_offset + 1,
+                                   size=tokens.shape)
             return torch.where((self.tokenizer.event_start[EventType.TIME_SHIFT] <= tokens) & (
                     tokens < self.tokenizer.event_end[EventType.TIME_SHIFT]),
-                                       torch.clamp(tokens + offset,
-                                                   self.tokenizer.event_start[EventType.TIME_SHIFT],
-                                                   self.tokenizer.event_end[EventType.TIME_SHIFT] - 1),
-                                       tokens)
+                               torch.clamp(tokens + offset,
+                                           self.tokenizer.event_start[EventType.TIME_SHIFT],
+                                           self.tokenizer.event_end[EventType.TIME_SHIFT] - 1),
+                               tokens)
 
         if self.args.timing_random_offset > 0:
             input_tokens[si:si + m + n] = randomize_tokens(input_tokens[si:si + m + n])
@@ -570,74 +597,45 @@ class BeatmapDatasetIterable:
             self.add_pre_tokens = True
 
     def __iter__(self):
-        return self._get_next_tracks() if self.args.per_track else self._get_next_beatmaps()
+        return self._get_next_tracks()
 
-    @staticmethod
-    def _load_metadata(track_path: Path) -> dict:
-        metadata_file = track_path / "metadata.json"
-        with open(metadata_file) as f:
-            return json.load(f)
-
-    def _get_difficulty(self, metadata: dict, beatmap_name: str, speed: float = 1.0, beatmap: Beatmap = None) -> float:
-        if beatmap is not None and (all(e == 1.5 for e in self.args.dt_augment_range) or speed not in [1.0, 1.5]):
-            return beatmap.stars(speed_scale=speed)
-
-        if speed == 1.5:
-            return metadata["Beatmaps"][beatmap_name]["StandardStarRating"]["64"]
-        return metadata["Beatmaps"][beatmap_name]["StandardStarRating"]["0"]
-
-    @staticmethod
-    def _get_idx(metadata: dict, beatmap_name: str):
-        return metadata["Beatmaps"][beatmap_name]["Index"]
+    def _get_difficulty(self, beatmap_metadata: Series, speed: float = 1.0) -> float:
+        # StarRating is an array that gives the difficulty for the speeds:
+        # 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0
+        # Linearly interpolate between the two closest speeds
+        star_ratings = beatmap_metadata["StarRating"]
+        speed_ratios = [0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0]
+        return np.interp(speed, speed_ratios, star_ratings)  # type: ignore
 
     def _get_speed_augment(self):
         mi, ma = self.args.dt_augment_range
         return random.random() * (ma - mi) + mi if random.random() < self.args.dt_augment_prob else 1.0
 
-    def _get_next_beatmaps(self) -> dict:
-        for beatmap_path in self.beatmap_files:
-            metadata = self._load_metadata(beatmap_path.parents[1])
-
-            if self.args.add_gd_context and len(metadata["Beatmaps"]) <= 1:
-                continue
-
-            if self.args.min_difficulty > 0 and self._get_difficulty(metadata, beatmap_path.stem) < self.args.min_difficulty:
-                continue
-
-            speed = self._get_speed_augment()
-            audio_path = beatmap_path.parents[1] / list(beatmap_path.parents[1].glob('audio.*'))[0]
-            audio_samples = load_audio_file(audio_path, self.args.sample_rate, speed)
-
-            for sample in self._get_next_beatmap(audio_samples, beatmap_path, metadata, speed):
-                yield sample
-
     def _get_next_tracks(self) -> dict:
-        for track_path in self.beatmap_files:
-            metadata = self._load_metadata(track_path)
+        for beatmapset_id in self.subset_ids:
+            metadata = self.metadata.loc[beatmapset_id]
 
-            if self.args.add_gd_context and len(metadata["Beatmaps"]) <= 1:
+            if self.args.add_gd_context and len(metadata) <= 1:
                 continue
 
-            if self.args.min_difficulty > 0 and all(self._get_difficulty(metadata, beatmap_name)
-                                                    < self.args.min_difficulty for beatmap_name in metadata["Beatmaps"]):
+            if self.args.min_difficulty > 0 and all(beatmap_metadata["DifficultyRating"]
+                                                    < self.args.min_difficulty for beatmap_metadata in
+                                                    metadata):
                 continue
 
             speed = self._get_speed_augment()
-            audio_path = track_path / list(track_path.glob('audio.*'))[0]
+            track_path = self.path / "data" / metadata.iloc[0]["BeatmapSetFolder"]
+            audio_path = track_path / metadata.iloc[0]["AudioFile"]
             audio_samples = load_audio_file(audio_path, self.args.sample_rate, speed)
 
-            beatmaps = [list(metadata["Beatmaps"])[-1]] if self.args.only_last_beatmap else metadata["Beatmaps"]
-
-            for beatmap_name in beatmaps:
-                beatmap_path = (track_path / "beatmaps" / beatmap_name).with_suffix(".osu")
-
-                if self.args.min_difficulty > 0 and self._get_difficulty(metadata, beatmap_name) < self.args.min_difficulty:
+            for i, beatmap_metadata in metadata.iterrows():
+                if self.args.min_difficulty > 0 and beatmap_metadata["DifficultyRating"] < self.args.min_difficulty:
                     continue
 
-                for sample in self._get_next_beatmap(audio_samples, beatmap_path, metadata, speed):
+                for sample in self._get_next_beatmap(audio_samples, i, beatmap_metadata, metadata, speed):
                     yield sample
 
-    def _get_next_beatmap(self, audio_samples, beatmap_path: Path, metadata: dict, speed: float) -> dict:
+    def _get_next_beatmap(self, audio_samples, i, beatmap_metadata: Series, set_metadata: DataFrame, speed: float) -> dict:
         context_info = None
         if len(self.args.context_types) > 0:
             # Randomly select a context type with probabilities of context_weights
@@ -649,19 +647,19 @@ class BeatmapDatasetIterable:
                 # It's important to copy the context_info because we will modify it, and we don't want to permanently change the config
                 context_info = context_info.copy()
 
-            if "gd" in context_info["in"] and len(metadata["Beatmaps"]) <= 1:
+            if "gd" in context_info["in"] and len(set_metadata) <= 1:
                 context_info["in"].remove("gd")
             if len(context_info["in"]) == 0:
                 context_info["in"].append("none")
 
-        beatmap_name = beatmap_path.stem
+        beatmap_path = self.path / "data" / beatmap_metadata["BeatmapSetFolder"] / beatmap_metadata["BeatmapFile"]
         frames, frame_times = self._get_frames(audio_samples)
         osu_beatmap = Beatmap.from_path(beatmap_path)
 
-        def add_special_data(data, beatmap, beatmap_name):
+        def add_special_data(data, beatmap_metadata, beatmap: Beatmap):
             data["extra"]["beatmap_id"] = beatmap.beatmap_id
-            data["extra"]["beatmap_idx"] = self._get_idx(metadata, beatmap_name)
-            data["extra"]["difficulty"] = self._get_difficulty(metadata, beatmap_name, speed, beatmap)
+            data["extra"]["beatmap_idx"] = beatmap_metadata["BeatmapIdx"]
+            data["extra"]["difficulty"] = self._get_difficulty(beatmap_metadata, speed)
             data["extra"]["circle_size"] = beatmap.circle_size
 
         def get_context(context, add_type=True, force_special_data=False):
@@ -672,22 +670,22 @@ class BeatmapDatasetIterable:
                 data["events"], data["event_times"] = self.parser.parse_timing(osu_beatmap, speed)
             elif context == "no_hs":
                 hs_events, hs_event_times = self.parser.parse(osu_beatmap, speed)
-                data["events"], data["event_times"] = remove_events_of_type(hs_events, hs_event_times, [EventType.HITSOUND, EventType.VOLUME])
+                data["events"], data["event_times"] = remove_events_of_type(hs_events, hs_event_times,
+                                                                            [EventType.HITSOUND, EventType.VOLUME])
             elif context == "gd":
-                other_beatmaps = [k for k in metadata["Beatmaps"] if k != beatmap_name]
-                other_name = random.choice(other_beatmaps)
-                other_beatmap_path = (beatmap_path.parent / other_name).with_suffix(".osu")
+                other_metadata = set_metadata.drop(i).sample().iloc[0]
+                other_beatmap_path = self.path / "data" / other_metadata["BeatmapSetFolder"] / other_metadata["BeatmapFile"]
                 other_beatmap = Beatmap.from_path(other_beatmap_path)
                 data["events"], data["event_times"] = self.parser.parse(other_beatmap, speed)
-                add_special_data(data, other_beatmap, other_name)
+                add_special_data(data, other_metadata, other_beatmap)
             elif context == "map":
                 data["events"], data["event_times"] = self.parser.parse(osu_beatmap, speed)
             if force_special_data:
-                add_special_data(data, osu_beatmap, beatmap_name)
+                add_special_data(data, beatmap_metadata, osu_beatmap)
             return data
 
         extra_data = {
-            "beatmap_idx": self._get_idx(metadata, beatmap_name),
+            "beatmap_idx": beatmap_metadata["BeatmapIdx"],
         }
 
         if self.sample_weights is not None:
