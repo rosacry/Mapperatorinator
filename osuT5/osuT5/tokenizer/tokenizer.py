@@ -3,7 +3,9 @@ import pickle
 from pathlib import Path
 
 import numpy as np
+import pandas as pd
 from omegaconf import DictConfig
+from pandas import DataFrame
 from tqdm import tqdm
 
 from .event import Event, EventType, EventRange, ContextType
@@ -35,6 +37,7 @@ class Tokenizer:
         "descriptor_idx",
         "num_descriptor_classes",
         "num_cs_classes",
+        "metadata",
     ]
 
     def __init__(self, args: DictConfig = None):
@@ -81,16 +84,20 @@ class Tokenizer:
             max_time_shift = int(miliseconds_per_sequence / MILISECONDS_PER_STEP)
             min_time_shift = -max_time_shift if args.data.add_pre_tokens or args.data.add_pre_tokens_at_step >= 0 else 0
 
+            if args.data.dataset_type == "mmrs":
+                self.metadata = self._get_metadata(args)
+
             self.event_ranges = [
                 EventRange(EventType.TIME_SHIFT, min_time_shift, max_time_shift),
                 EventRange(EventType.SNAPPING, 0, 16),
             ]
             self.input_event_ranges: list[EventRange] = []
 
-            self._init_beatmap_idx(args)
-            self.num_classes = args.data.num_classes
-            if args.data.style_token_index >= 0:
-                self.input_event_ranges.append(EventRange(EventType.STYLE, 0, self.num_classes))
+            if args.model.do_style_embed or args.data.style_token_index >= 0:
+                self._init_beatmap_idx(args)
+                self.num_classes = args.data.num_classes
+                if args.data.style_token_index >= 0:
+                    self.input_event_ranges.append(EventRange(EventType.STYLE, 0, self.num_classes))
 
             if args.data.diff_token_index >= 0:
                 self.num_diff_classes = args.data.num_diff_classes
@@ -325,6 +332,12 @@ class Tokenizer:
 
     def _init_beatmap_idx(self, args: DictConfig) -> None:
         """Initializes and caches the beatmap index."""
+        if args.data.dataset_type == "ors":
+            self._init_beatmap_idx_ors(args)
+        elif args.data.dataset_type == "mmrs":
+            self._init_beatmap_idx_mmrs(args)
+
+    def _init_beatmap_idx_ors(self, args: DictConfig) -> None:
         if args is None or "train_dataset_path" not in args.data:
             return
 
@@ -349,10 +362,30 @@ class Tokenizer:
                 self.beatmap_idx[beatmap_metadata["BeatmapId"]] = beatmap_metadata["Index"]
 
         with open(cache_path, "wb") as f:
-            pickle.dump(self.beatmap_idx, f)
+            pickle.dump(self.beatmap_idx, f)  # type: ignore
+
+    def _init_beatmap_idx_mmrs(self, args: DictConfig) -> None:
+        self.beatmap_idx = self.metadata.reset_index().set_index(["Id"])["BeatmapIdx"].to_dict()
+
+    def _get_metadata(self, args: DictConfig) -> DataFrame:
+        df = pd.read_parquet(Path(args.data.train_dataset_path) / "metadata.parquet")
+        df["BeatmapIdx"] = df.index
+        df.set_index(["BeatmapSetId", "Id"], inplace=True)
+        df.sort_index(inplace=True)
+
+        sets = df.index.to_frame()["BeatmapSetId"].unique().tolist()
+        sets = sets[args.data.train_dataset_start:args.data.train_dataset_end]
+
+        return df.loc[sets]
 
     def _init_mapper_idx(self, args):
-        """"Indexes beatmap mappers and mapper idx."""
+        """Indexes beatmap mappers and mapper idx."""
+        if args.data.dataset_type == "ors":
+            self._init_mapper_idx_ors(args)
+        elif args.data.dataset_type == "mmrs":
+            self._init_mapper_idx_mmrs(args)
+
+    def _init_mapper_idx_ors(self, args):
         if args is None or "mappers_path" not in args.data:
             raise ValueError("mappers_path not found in args")
 
@@ -376,8 +409,24 @@ class Tokenizer:
         self.mapper_idx = {user_id: idx for idx, user_id in enumerate(unique_user_ids)}
         self.num_mapper_classes = len(unique_user_ids)
 
+    def _init_mapper_idx_mmrs(self, args):
+        self.beatmap_mapper = self.metadata.reset_index().set_index(["Id"])["UserId"].to_dict()
+
+        # Get unique user_ids from beatmap_mapper values
+        unique_user_ids = self.metadata["UserId"].unique().tolist()
+
+        # Create mapper_idx
+        self.mapper_idx = {user_id: idx for idx, user_id in enumerate(unique_user_ids)}
+        self.num_mapper_classes = len(unique_user_ids)
+
     def _init_descriptor_idx(self, args):
         """"Indexes beatmap descriptors and descriptor idx."""
+        if args.data.dataset_type == "ors":
+            self._init_descriptor_idx_ors(args)
+        elif args.data.dataset_type == "mmrs":
+            self._init_descriptor_idx_mmrs(args)
+
+    def _init_descriptor_idx_ors(self, args):
         if args is None or "descriptors_path" not in args.data:
             raise ValueError("descriptors_path not found in args")
 
@@ -405,6 +454,18 @@ class Tokenizer:
             if beatmap_id not in self.beatmap_descriptors:
                 self.beatmap_descriptors[beatmap_id] = []
             self.beatmap_descriptors[beatmap_id].append(descriptor_idx)
+
+        self.num_descriptor_classes = len(self.descriptor_idx)
+
+    def _init_descriptor_idx_mmrs(self, args):
+        # Populate descriptor_idx
+        descriptors = self.metadata["OmdbTags"].explode().dropna().unique()
+        for descriptor_name in descriptors:
+            self.descriptor_idx[descriptor_name] = len(self.descriptor_idx)
+
+        # Populate beatmap_descriptors
+        self.beatmap_descriptors = (self.metadata.reset_index().set_index(["Id"])["OmdbTags"]
+                                    .apply(lambda x: None if np.count_nonzero(x) == 0 else [self.descriptor_idx[y] for y in x]).dropna().to_dict())
 
         self.num_descriptor_classes = len(self.descriptor_idx)
 

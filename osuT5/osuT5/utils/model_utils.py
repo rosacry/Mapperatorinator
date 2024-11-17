@@ -6,7 +6,7 @@ import torch
 import numpy as np
 from omegaconf import DictConfig, open_dict
 from torch.optim import Optimizer
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, Dataset
 from torch.optim.lr_scheduler import (
     LRScheduler,
     SequentialLR,
@@ -15,6 +15,7 @@ from torch.optim.lr_scheduler import (
 )
 
 from ..dataset import OrsDataset, OsuParser
+from ..dataset.mmrs_dataset import MmrsDataset
 from ..model.osu_t import OsuT
 from ..tokenizer import Tokenizer
 
@@ -110,20 +111,30 @@ def get_scheduler(optimizer: Optimizer, args: DictConfig, accelerator) -> LRSche
     return scheduler
 
 
+def get_dataset(args: DictConfig, test: bool, **kwargs) -> Dataset:
+    if args.dataset_type == "ors":
+        return OrsDataset(args=args, test=test, **kwargs)
+    elif args.dataset_type == "mmrs":
+        return MmrsDataset(args=args, **kwargs)
+    else:
+        raise NotImplementedError
+
+
 def get_dataloaders(tokenizer: Tokenizer, args: DictConfig, shared: Namespace) -> tuple[DataLoader, DataLoader]:
     parser = OsuParser(args, tokenizer)
     dataset = {
-        "train": OrsDataset(
-            args.data,
-            parser,
-            tokenizer,
+        "train": get_dataset(
+            args=args,
+            test=False,
+            parser=parser,
+            tokenizer=tokenizer,
             shared=shared,
         ),
-        "test": OrsDataset(
-            args.data,
-            parser,
-            tokenizer,
+        "test": get_dataset(
+            args=args,
             test=True,
+            parser=parser,
+            tokenizer=tokenizer,
             shared=shared,
         ),
     }
