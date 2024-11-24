@@ -132,6 +132,9 @@ class Tokenizer:
                     y_count = y_max - y_min + 1
                     self.event_ranges.append(EventRange(EventType.POS, 0, x_count * y_count - 1))
 
+            if args.data.add_kiai:
+                self.event_ranges.append(EventRange(EventType.KIAI, 0, 1))
+
         self.event_ranges: list[EventRange] = self.event_ranges + [
             EventRange(EventType.NEW_COMBO, 0, 0),
             EventRange(EventType.HITSOUND, 0, 2 ** 3 * 3 * 3),

@@ -58,6 +58,7 @@ class OrsDataset(IterableDataset):
             test: Whether to load the test dataset.
         """
         super().__init__()
+        self._validate_args(args)
         self.path = args.test_dataset_path if test else args.train_dataset_path
         self.start = args.test_dataset_start if test else args.train_dataset_start
         self.end = args.test_dataset_end if test else args.train_dataset_end
@@ -69,6 +70,9 @@ class OrsDataset(IterableDataset):
         self.shared = shared
         self.sample_weights = self._get_sample_weights(args.sample_weights_path)
 
+    def _validate_args(self, args: DictConfig):
+        if args.add_kiai:
+            raise ValueError("ORS dataset does not support kiai")
     @staticmethod
     def _get_sample_weights(sample_weights_path):
         if not os.path.exists(sample_weights_path):

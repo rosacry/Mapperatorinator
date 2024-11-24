@@ -24,6 +24,7 @@ AUDIO_FILE_NAME = "audio.mp3"
 MILISECONDS_PER_SECOND = 1000
 STEPS_PER_MILLISECOND = 0.1
 LABEL_IGNORE_ID = -100
+context_types_with_kiai = [ContextType.NO_HS, ContextType.GD, ContextType.MAP]
 
 
 class MmrsDataset(IterableDataset):
@@ -296,6 +297,7 @@ class BeatmapDatasetIterable:
         sequences = []
         n_frames = len(frames)
         offset = random.randint(0, self.frame_seq_len)
+        last_kiai = {}
         # Divide audio frames into splits
         for frame_start_idx in range(offset, n_frames - self.gen_start_frame, self.frame_seq_len):
             frame_end_idx = min(frame_start_idx + self.frame_seq_len, n_frames)
@@ -331,6 +333,24 @@ class BeatmapDatasetIterable:
 
             if self.args.add_pre_tokens or self.args.add_pre_tokens_at_step >= 0:
                 sequence["pre_events"] = slice_events(out_context, frame_pre_idx, frame_start_idx)
+
+            def add_last_kiai(sequence_context, context, last_kiai):
+                if sequence_context["context_type"] not in [ContextType.NO_HS, ContextType.GD, ContextType.MAP]:
+                    return
+                if context in last_kiai:
+                    sequence_context["last_kiai"] = last_kiai[context]
+                else:
+                    sequence_context["last_kiai"] = Event(EventType.KIAI, 0)
+                # Find the last kiai event in the out context
+                for event in reversed(sequence_context["events"]):
+                    if event.type == EventType.KIAI:
+                        last_kiai[context] = event
+                        break
+
+            if self.args.add_kiai:
+                add_last_kiai(sequence["out_context"], out_context, last_kiai)
+                for i, sequence_context in enumerate(sequence["in_context"]):
+                    add_last_kiai(sequence_context, in_context[i], last_kiai)
 
             sequences.append(sequence)
 
@@ -411,6 +431,9 @@ class BeatmapDatasetIterable:
                     context["descriptor_tokens"] = self.tokenizer.encode_descriptor(context["beatmap_id"]) \
                         if random.random() >= self.args.descriptor_dropout_prob else [self.tokenizer.descriptor_unk]
 
+            if "last_kiai" in context:
+                context["last_kiai_token"] = self.tokenizer.encode(context["last_kiai"])
+
         if "pre_events" in sequence:
             pre_tokens = torch.empty(len(sequence["pre_events"]), dtype=torch.long)
             for i, event in enumerate(sequence["pre_events"]):
@@ -446,6 +469,9 @@ class BeatmapDatasetIterable:
         if "descriptor_tokens" in sequence["out_context"]:
             stl += len(sequence["out_context"]["descriptor_tokens"])
 
+        if "last_kiai_token" in sequence["out_context"]:
+            stl += 1
+
         # Count irreducable tokens for in contexts
         for context in sequence["in_context"]:
             if context["add_type"]:
@@ -455,6 +481,9 @@ class BeatmapDatasetIterable:
 
                 if "descriptor_tokens" in context:
                     stl += len(context["descriptor_tokens"])
+
+            if "last_kiai_token" in context:
+                stl += 1
 
         # Count reducible tokens, pre_tokens and context tokens
         num_tokens = len(sequence["out_context"]["tokens"])
@@ -482,21 +511,26 @@ class BeatmapDatasetIterable:
         label_tokens = torch.full((self.args.tgt_seq_len,), LABEL_IGNORE_ID, dtype=torch.long)
 
         def add_special_tokens(context, si):
-            if "beatmap_idx_token" in context:
-                input_tokens[si + self.args.style_token_index] = context["beatmap_idx_token"]
-            if "difficulty_token" in context:
-                input_tokens[si + self.args.diff_token_index] = context["difficulty_token"]
-            if "mapper_token" in context:
-                input_tokens[si + self.args.mapper_token_index] = context["mapper_token"]
-            if "circle_size_token" in context:
-                input_tokens[si + self.args.cs_token_index] = context["circle_size_token"]
+            if "beatmap_id" in context:
+                if "beatmap_idx_token" in context:
+                    input_tokens[si + self.args.style_token_index] = context["beatmap_idx_token"]
+                if "difficulty_token" in context:
+                    input_tokens[si + self.args.diff_token_index] = context["difficulty_token"]
+                if "mapper_token" in context:
+                    input_tokens[si + self.args.mapper_token_index] = context["mapper_token"]
+                if "circle_size_token" in context:
+                    input_tokens[si + self.args.cs_token_index] = context["circle_size_token"]
 
-            si += self.args.special_token_len
+                si += self.args.special_token_len
 
-            if "descriptor_tokens" in context:
-                for token in context["descriptor_tokens"]:
-                    input_tokens[si] = token
-                    si += 1
+                if "descriptor_tokens" in context:
+                    for token in context["descriptor_tokens"]:
+                        input_tokens[si] = token
+                        si += 1
+
+            if "last_kiai_token" in context:
+                input_tokens[si] = context["last_kiai_token"]
+                si += 1
             return si
 
         for context in sequence["in_context"]:
@@ -504,8 +538,7 @@ class BeatmapDatasetIterable:
                 input_tokens[si] = self.tokenizer.context_sos[context["context_type"]]
                 si += 1
 
-            if "beatmap_id" in context:
-                si = add_special_tokens(context, si)
+            si = add_special_tokens(context, si)
 
             num_other_tokens_to_add = min(len(context["tokens"]), o)
             input_tokens[si:si + num_other_tokens_to_add] = context["tokens"][:num_other_tokens_to_add]
