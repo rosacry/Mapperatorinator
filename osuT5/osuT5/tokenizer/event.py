@@ -32,6 +32,7 @@ class EventType(Enum):
     POS_Y = "pos_y"
     POS = "pos"
     CS = "cs"
+    KIAI = "kiai"
 
 
 class ContextType(Enum):

@@ -22,6 +22,7 @@ class OsuParser:
         self.add_hitsounds = args.data.add_hitsounds
         self.add_distances = args.data.add_distances
         self.add_positions = args.data.add_positions
+        self.add_kiai = args.data.add_kiai
         if self.add_positions:
             self.position_precision = args.data.position_precision
             self.position_split_axes = args.data.position_split_axes
@@ -81,12 +82,35 @@ class OsuParser:
             elif isinstance(hit_object, Spinner):
                 last_pos = self._parse_spinner(hit_object, events, event_times, beatmap)
 
+        if self.add_kiai:
+            kiai_events, kiai_times = self.parse_kiai(beatmap)
+            events, event_times = merge_events(kiai_events, kiai_times, events, event_times)
+
         if self.add_timing:
             timing_events, timing_times = self.parse_timing(beatmap)
             events, event_times = merge_events(timing_events, timing_times, events, event_times)
 
         if speed != 1.0:
             events, event_times = speed_events(events, event_times, speed)
+
+        return events, event_times
+
+    def parse_kiai(self, beatmap: Beatmap) -> tuple[list[Event], list[int]]:
+        """Extract all kiai information from a beatmap."""
+        events = []
+        event_times = []
+        kiai = False
+
+        for tp in beatmap.timing_points:
+            if tp.kiai_mode != kiai:
+                self._add_group(
+                    Event(EventType.KIAI, int(tp.kiai_mode)),
+                    tp.offset,
+                    events,
+                    event_times,
+                    beatmap,
+                    time_event=True,
+                )
 
         return events, event_times
 
@@ -223,7 +247,7 @@ class OsuParser:
 
     def _add_group(
             self,
-            event_type: EventType,
+            event: EventType | Event,
             time: timedelta,
             events: list[Event],
             event_times: list[int],
@@ -241,8 +265,11 @@ class OsuParser:
         """Add a group of events to the event list."""
         time_ms = int(time.total_seconds() * 1000) if time is not None else None
 
+        if isinstance(event, EventType):
+            event = Event(event)
+
         if self.types_first:
-            events.append(Event(event_type))
+            events.append(event)
             event_times.append(time_ms)
         if time_event:
             self._add_time_event(time, beatmap, events, event_times, add_snap)
@@ -255,7 +282,7 @@ class OsuParser:
             for i, ref_time in enumerate(hitsound_ref_times):
                 self._add_hitsound_event(ref_time, time_ms, hitsounds[i], additions[i], beatmap, events, event_times)
         if not self.types_first:
-            events.append(Event(event_type))
+            events.append(event)
             event_times.append(time_ms)
 
         return last_pos

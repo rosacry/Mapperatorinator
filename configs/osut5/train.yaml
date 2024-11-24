@@ -66,6 +66,7 @@ data:                  # Data settings
   dt_augment_prob: 0.0   # Probability of augmenting the dataset with DT
   dt_augment_range: [1.5, 1.5]  # Range of DT augmentation
   types_first: false       # Put the type token at the start of the group before the timeshift token
+  add_kiai: false        # Model kiai times
 
 
 dataloader:             # Dataloader settings
