@@ -285,6 +285,13 @@ def get_stats(loss, preds, labels, tokenizer, args: DictConfig):
     if args.data.add_distances:
         stats["spacing_acc"] = acc_range(preds, labels, tokenizer.event_start[EventType.DISTANCE],
                                          tokenizer.event_end[EventType.DISTANCE])
+    if 3 in args.data.gamemodes:
+        stats["column_acc"] = acc_range(preds, labels, tokenizer.event_start[EventType.MANIA_COLUMN],
+                                        tokenizer.event_end[EventType.MANIA_COLUMN])
+    if 1 in args.data.gamemodes or 3 in args.data.gamemodes:
+        stats["scroll_speed_acc"] = acc_range(preds, labels, tokenizer.event_start[EventType.SCROLL_SPEED],
+                                              tokenizer.event_end[EventType.SCROLL_SPEED])
+
     return stats
 
 
