@@ -722,7 +722,7 @@ class BeatmapDatasetIterable:
             if gamemode in [0, 2]:
                 data["extra"]["circle_size"] = beatmap.circle_size
             if gamemode == 3:
-                data["extra"]["keycount"] = beatmap.circle_size
+                data["extra"]["keycount"] = int(beatmap.circle_size)
                 data["extra"]["hold_note_ratio"] = self._get_hold_note_ratio(beatmap)
             if gamemode in [1, 3]:
                 data["extra"]["scroll_speed_ratio"] = self._get_scroll_speed_ratio(beatmap)

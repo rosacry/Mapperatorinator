@@ -43,6 +43,10 @@ class EventType(Enum):
     HOLD_NOTE_END = "hold_note_end"
     SCROLL_SPEED_CHANGE = "scroll_speed_change"
     SCROLL_SPEED = "scroll_speed"
+    DRUMROLL = "drumroll"
+    DRUMROLL_END = "drumroll_end"
+    DENDEN = "denden"
+    DENDEN_END = "denden_end"
 
 
 class ContextType(Enum):
