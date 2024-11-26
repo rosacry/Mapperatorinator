@@ -7,9 +7,8 @@ compile: false          # PyTorch 2.0 optimization
 precision: 'no'         # Enable mixed precision (no/fp16/bf16/fp8)
 
 data:                  # Data settings
-  special_token_len: 2
-  diff_token_index: 0
-  style_token_index: 1
+  add_diff_token: true
+  add_style_token: true
   add_empty_sequences: false
   add_empty_sequences_at_step: 15000
   add_pre_tokens: false

@@ -8,9 +8,8 @@ precision: 'no'         # Enable mixed precision (no/fp16/bf16/fp8)
 pretrained_path: ''     # Path to pretrained model weights (to do transfer learning)
 
 data:                  # Data settings
-  special_token_len: 2
-  diff_token_index: 0
-  style_token_index: 1
+  add_diff_token: true
+  add_style_token: true
   max_pre_token_len: 4
   add_gd_context: true  # Prefix the decoder with tokens of another beatmap in the mapset
 

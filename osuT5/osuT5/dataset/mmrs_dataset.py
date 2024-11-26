@@ -12,7 +12,7 @@ import pandas as pd
 import torch
 from omegaconf import DictConfig
 from pandas import Series, DataFrame
-from slider import Beatmap
+from slider import Beatmap, HoldNote
 from torch.utils.data import IterableDataset
 
 from .data_utils import load_audio_file, remove_events_of_type
@@ -409,30 +409,51 @@ class BeatmapDatasetIterable:
             for i, event in enumerate(context["events"]):
                 tokens[i] = self.tokenizer.encode(event)
             context["tokens"] = tokens
+            special_tokens = []
 
             if "beatmap_id" in context:
-                if self.args.style_token_index >= 0:
-                    context["beatmap_idx_token"] = self.tokenizer.encode_style_idx(context["beatmap_idx"]) \
-                        if random.random() >= self.args.class_dropout_prob else self.tokenizer.style_unk
+                if self.args.add_gamemode_token:
+                    special_tokens.append(self.tokenizer.encode_gamemode(context["extra"]["gamemode"]))
 
-                if self.args.diff_token_index >= 0:
-                    context["difficulty_token"] = self.tokenizer.encode_diff(context["difficulty"]) \
-                        if random.random() >= self.args.diff_dropout_prob else self.tokenizer.diff_unk
+                if self.args.add_style_token:
+                    special_tokens.append(self.tokenizer.encode_style_idx(context["beatmap_idx"])
+                                          if random.random() >= self.args.class_dropout_prob else self.tokenizer.style_unk)
 
-                if self.args.mapper_token_index >= 0:
-                    context["mapper_token"] = self.tokenizer.encode_mapper(context["beatmap_id"]) \
-                        if random.random() >= self.args.mapper_dropout_prob else self.tokenizer.mapper_unk
+                if self.args.add_diff_token:
+                    special_tokens.append(self.tokenizer.encode_diff(context["difficulty"])
+                                          if random.random() >= self.args.diff_dropout_prob else self.tokenizer.diff_unk)
 
-                if self.args.cs_token_index >= 0:
-                    context["circle_size_token"] = self.tokenizer.encode_cs(context["circle_size"]) \
-                        if random.random() >= self.args.cs_dropout_prob else self.tokenizer.cs_unk
+                if self.args.add_mapper_token:
+                    special_tokens.append(self.tokenizer.encode_mapper(context["beatmap_id"])
+                                          if random.random() >= self.args.mapper_dropout_prob else self.tokenizer.mapper_unk)
+
+                if self.args.add_year_token:
+                    special_tokens.append(self.tokenizer.encode_year(context["year"])
+                                          if random.random() >= self.args.year_dropout_prob else self.tokenizer.year_unk)
+
+                if self.args.add_cs_token and "circle_size" in context:
+                    special_tokens.append(self.tokenizer.encode_cs(context["circle_size"])
+                                          if random.random() >= self.args.cs_dropout_prob else self.tokenizer.cs_unk)
+
+                if "keycount" in context:
+                    special_tokens.append(self.tokenizer.encode(Event(EventType.MANIA_KEYCOUNT, context["keycount"])))
+
+                if "hold_note_ratio" in context:
+                    special_tokens.append(self.tokenizer.encode_hold_note_ratio(context["hold_note_ratio"])
+                                          if random.random() >= self.args.hold_note_ratio_dropout_prob else self.tokenizer.hold_note_ratio_unk)
+
+                if "scroll_speed_ratio" in context:
+                    special_tokens.append(self.tokenizer.encode_scroll_speed_ratio(context["scroll_speed_ratio"])
+                                          if random.random() >= self.args.scroll_speed_ratio_dropout_prob else self.tokenizer.scroll_speed_ratio_unk)
 
                 if self.args.add_descriptors:
-                    context["descriptor_tokens"] = self.tokenizer.encode_descriptor(context["beatmap_id"]) \
-                        if random.random() >= self.args.descriptor_dropout_prob else [self.tokenizer.descriptor_unk]
+                    special_tokens.append(self.tokenizer.encode_descriptor(context["beatmap_id"])
+                                          if random.random() >= self.args.descriptor_dropout_prob else [self.tokenizer.descriptor_unk])
 
             if "last_kiai" in context:
-                context["last_kiai_token"] = self.tokenizer.encode(context["last_kiai"])
+                special_tokens.append(self.tokenizer.encode(context["last_kiai"]))
+
+            context["special_tokens"] = special_tokens
 
         if "pre_events" in sequence:
             pre_tokens = torch.empty(len(sequence["pre_events"]), dtype=torch.long)
@@ -463,27 +484,15 @@ class BeatmapDatasetIterable:
         Returns:
             The same sequence with padded tokens.
         """
-        # Count irreducable tokens for out context and SOS/EOS tokens
-        stl = self.args.special_token_len + 1
+        # Count irreducable tokens for SOS/EOS tokens
+        stl = 1
 
-        if "descriptor_tokens" in sequence["out_context"]:
-            stl += len(sequence["out_context"]["descriptor_tokens"])
-
-        if "last_kiai_token" in sequence["out_context"]:
-            stl += 1
-
-        # Count irreducable tokens for in contexts
-        for context in sequence["in_context"]:
+        # Count irreducable tokens for all contexts
+        for context in sequence["in_context"] + [sequence["out_context"]]:
             if context["add_type"]:
                 stl += 2
-            if "beatmap_id" in context:
-                stl += self.args.special_token_len
 
-                if "descriptor_tokens" in context:
-                    stl += len(context["descriptor_tokens"])
-
-            if "last_kiai_token" in context:
-                stl += 1
+            stl += len(context["special_tokens"])
 
         # Count reducible tokens, pre_tokens and context tokens
         num_tokens = len(sequence["out_context"]["tokens"])
@@ -511,25 +520,8 @@ class BeatmapDatasetIterable:
         label_tokens = torch.full((self.args.tgt_seq_len,), LABEL_IGNORE_ID, dtype=torch.long)
 
         def add_special_tokens(context, si):
-            if "beatmap_id" in context:
-                if "beatmap_idx_token" in context:
-                    input_tokens[si + self.args.style_token_index] = context["beatmap_idx_token"]
-                if "difficulty_token" in context:
-                    input_tokens[si + self.args.diff_token_index] = context["difficulty_token"]
-                if "mapper_token" in context:
-                    input_tokens[si + self.args.mapper_token_index] = context["mapper_token"]
-                if "circle_size_token" in context:
-                    input_tokens[si + self.args.cs_token_index] = context["circle_size_token"]
-
-                si += self.args.special_token_len
-
-                if "descriptor_tokens" in context:
-                    for token in context["descriptor_tokens"]:
-                        input_tokens[si] = token
-                        si += 1
-
-            if "last_kiai_token" in context:
-                input_tokens[si] = context["last_kiai_token"]
+            for token in context["special_tokens"]:
+                input_tokens[si] = token
                 si += 1
             return si
 
@@ -644,6 +636,35 @@ class BeatmapDatasetIterable:
         mi, ma = self.args.dt_augment_range
         return random.random() * (ma - mi) + mi if random.random() < self.args.dt_augment_prob else 1.0
 
+    def _get_hold_note_ratio(self, beatmap: Beatmap) -> float:
+        notes = beatmap.hit_objects(circles=True, hold_notes=True, stacking=False)
+        hold_note_count = 0
+        for note in notes:
+            if isinstance(note, HoldNote):
+                hold_note_count += 1
+        return hold_note_count / len(notes)
+
+    def _get_scroll_speed_ratio(self, beatmap: Beatmap) -> float:
+        # Number of scroll speed changes divided by number of distinct hit object times
+        notes = beatmap.hit_objects(circles=True, sliders=True, spinners=True, hold_notes=True, stacking=False)
+        last_time = -1
+        num_note_times = 0
+        for note in notes:
+            if note.time != last_time:
+                num_note_times += 1
+                last_time = note.time
+        last_scroll_speed = -1
+        num_scroll_speed_changes = 0
+        for timing_point in beatmap.timing_points:
+            if timing_point.parent is None:
+                last_scroll_speed = 1
+            else:
+                scroll_speed = -100 / timing_point.ms_per_beat
+                if scroll_speed != last_scroll_speed:
+                    num_scroll_speed_changes += 1
+                    last_scroll_speed = scroll_speed
+        return num_scroll_speed_changes / num_note_times
+
     def _get_next_tracks(self) -> dict:
         for beatmapset_id in self.subset_ids:
             metadata = self.metadata.loc[beatmapset_id]
@@ -668,7 +689,8 @@ class BeatmapDatasetIterable:
                 for sample in self._get_next_beatmap(audio_samples, i, beatmap_metadata, metadata, speed):
                     yield sample
 
-    def _get_next_beatmap(self, audio_samples, i, beatmap_metadata: Series, set_metadata: DataFrame, speed: float) -> dict:
+    def _get_next_beatmap(self, audio_samples, i, beatmap_metadata: Series, set_metadata: DataFrame,
+                          speed: float) -> dict:
         context_info = None
         if len(self.args.context_types) > 0:
             # Randomly select a context type with probabilities of context_weights
@@ -690,10 +712,19 @@ class BeatmapDatasetIterable:
         osu_beatmap = Beatmap.from_path(beatmap_path)
 
         def add_special_data(data, beatmap_metadata, beatmap: Beatmap):
+            gamemode = beatmap.mode
+            data["extra"]["gamemode"] = gamemode
             data["extra"]["beatmap_id"] = beatmap.beatmap_id
             data["extra"]["beatmap_idx"] = beatmap_metadata["BeatmapIdx"]
             data["extra"]["difficulty"] = self._get_difficulty(beatmap_metadata, speed)
-            data["extra"]["circle_size"] = beatmap.circle_size
+            data["extra"]["year"] = beatmap_metadata["SubmittedDate"].year
+            if gamemode in [0, 2]:
+                data["extra"]["circle_size"] = beatmap.circle_size
+            if gamemode == 3:
+                data["extra"]["keycount"] = beatmap.circle_size
+                data["extra"]["hold_note_ratio"] = self._get_hold_note_ratio(beatmap)
+            if gamemode in [1, 3]:
+                data["extra"]["scroll_speed_ratio"] = self._get_scroll_speed_ratio(beatmap)
 
         def get_context(context, add_type=True, force_special_data=False):
             data = {"extra": {"context_type": ContextType(context), "add_type": add_type}}
@@ -707,7 +738,8 @@ class BeatmapDatasetIterable:
                                                                             [EventType.HITSOUND, EventType.VOLUME])
             elif context == "gd":
                 other_metadata = set_metadata.drop(i).sample().iloc[0]
-                other_beatmap_path = self.path / "data" / other_metadata["BeatmapSetFolder"] / other_metadata["BeatmapFile"]
+                other_beatmap_path = self.path / "data" / other_metadata["BeatmapSetFolder"] / other_metadata[
+                    "BeatmapFile"]
                 other_beatmap = Beatmap.from_path(other_beatmap_path)
                 data["events"], data["event_times"] = self.parser.parse(other_beatmap, speed)
                 add_special_data(data, other_metadata, other_beatmap)
@@ -724,7 +756,7 @@ class BeatmapDatasetIterable:
         if self.sample_weights is not None:
             extra_data["sample_weights"] = self.sample_weights.get(osu_beatmap.beatmap_id, 1.0)
 
-        out_context = get_context(context_info["out"], force_special_data=True)
+        out_context = get_context(context_info["out"], add_type=False, force_special_data=True)
 
         in_context = []
         for context in context_info["in"]:

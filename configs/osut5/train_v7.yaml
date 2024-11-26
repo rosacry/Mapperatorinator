@@ -9,9 +9,8 @@ precision: 'bf16'         # Enable mixed precision (no/fp16/bf16/fp8)
 data:                  # Data settings
   src_seq_len: 1024
   tgt_seq_len: 512
-  special_token_len: 2
-  diff_token_index: 0
-  style_token_index: 1
+  add_diff_token: true
+  add_style_token: true
   max_pre_token_len: 4
 
 dataloader:             # Dataloader settings

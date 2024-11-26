@@ -71,8 +71,13 @@ class OrsDataset(IterableDataset):
         self.sample_weights = self._get_sample_weights(args.sample_weights_path)
 
     def _validate_args(self, args: DictConfig):
+        if args.gamemodes != [0]:
+            raise ValueError("ORS dataset only supports gamemode 0")
         if args.add_kiai:
             raise ValueError("ORS dataset does not support kiai")
+        if args.add_year_token:
+            raise ValueError("ORS dataset does not support upload year token")
+
     @staticmethod
     def _get_sample_weights(sample_weights_path):
         if not os.path.exists(sample_weights_path):
@@ -388,19 +393,19 @@ class BeatmapDatasetIterable:
             context["tokens"] = tokens
 
             if "beatmap_id" in context:
-                if self.args.style_token_index >= 0:
+                if self.args.add_style_token_index:
                     context["beatmap_idx_token"] = self.tokenizer.encode_style_idx(context["beatmap_idx"]) \
                         if random.random() >= self.args.class_dropout_prob else self.tokenizer.style_unk
 
-                if self.args.diff_token_index >= 0:
+                if self.args.add_diff_token_index:
                     context["difficulty_token"] = self.tokenizer.encode_diff(context["difficulty"]) \
                         if random.random() >= self.args.diff_dropout_prob else self.tokenizer.diff_unk
 
-                if self.args.mapper_token_index >= 0:
+                if self.args.add_mapper_token_index:
                     context["mapper_token"] = self.tokenizer.encode_mapper(context["beatmap_id"]) \
                         if random.random() >= self.args.mapper_dropout_prob else self.tokenizer.mapper_unk
 
-                if self.args.cs_token_index >= 0:
+                if self.args.add_cs_token_index:
                     context["circle_size_token"] = self.tokenizer.encode_cs(context["circle_size"]) \
                         if random.random() >= self.args.cs_dropout_prob else self.tokenizer.cs_unk
 
@@ -480,16 +485,17 @@ class BeatmapDatasetIterable:
 
         def add_special_tokens(context, si):
             if "beatmap_idx_token" in context:
-                input_tokens[si + self.args.style_token_index] = context["beatmap_idx_token"]
+                input_tokens[si] = context["beatmap_idx_token"]
+                si += 1
             if "difficulty_token" in context:
-                input_tokens[si + self.args.diff_token_index] = context["difficulty_token"]
+                input_tokens[si] = context["difficulty_token"]
+                si += 1
             if "mapper_token" in context:
-                input_tokens[si + self.args.mapper_token_index] = context["mapper_token"]
+                input_tokens[si] = context["mapper_token"]
+                si += 1
             if "circle_size_token" in context:
-                input_tokens[si + self.args.cs_token_index] = context["circle_size_token"]
-
-            si += self.args.special_token_len
-
+                input_tokens[si] = context["circle_size_token"]
+                si += 1
             if "descriptor_tokens" in context:
                 for token in context["descriptor_tokens"]:
                     input_tokens[si] = token

@@ -15,10 +15,11 @@ data:                  # Data settings
   test_dataset_start: 38689
   test_dataset_end: 39389
   num_classes: 152680
-  special_token_len: 3
-  diff_token_index: 0
-  mapper_token_index: 1
-  cs_token_index: 2
+  add_gamemode_token: true
+  add_diff_token: true
+  add_mapper_token: true
+  add_cs_token: true
+  add_year_token: true
   add_descriptors: true
   timing_random_offset: 2
   src_seq_len: 1024
@@ -45,6 +46,7 @@ data:                  # Data settings
   dt_augment_range: [1.25, 1.5]  # Range of DT augmentation
   types_first: true       # Put the type token at the start of the group before the timeshift token
   add_kiai: true        # Model kiai times
+  gamemodes: [0, 1, 2, 3]  # List of gamemodes to include in the dataset
 
 dataloader:             # Dataloader settings
   num_workers: 8

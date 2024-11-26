@@ -7,9 +7,8 @@ compile: true          # PyTorch 2.0 optimization
 precision: 'bf16'         # Enable mixed precision (no/fp16/bf16/fp8)
 
 data:                  # Data settings
-  special_token_len: 2
-  diff_token_index: 0
-  mapper_token_index: 1
+  add_diff_token: true
+  add_mapper_token: true
   add_descriptors: true
   timing_random_offset: 2
   src_seq_len: 1024
