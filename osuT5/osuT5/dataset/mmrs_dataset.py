@@ -447,7 +447,7 @@ class BeatmapDatasetIterable:
                                           if random.random() >= self.args.scroll_speed_ratio_dropout_prob else self.tokenizer.scroll_speed_ratio_unk)
 
                 if self.args.add_descriptors:
-                    special_tokens.append(self.tokenizer.encode_descriptor(context["beatmap_id"])
+                    special_tokens.extend(self.tokenizer.encode_descriptor(context["beatmap_id"])
                                           if random.random() >= self.args.descriptor_dropout_prob else [self.tokenizer.descriptor_unk])
 
             if "last_kiai" in context:
