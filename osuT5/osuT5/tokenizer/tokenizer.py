@@ -93,24 +93,30 @@ class Tokenizer:
             ]
             self.input_event_ranges: list[EventRange] = []
 
-            if args.model.do_style_embed or args.data.style_token_index >= 0:
+            if args.data.gamemodes != [0]:
+                self.input_event_ranges.append(EventRange(EventType.GAMEMODE, 0, 3))
+
+            if args.model.do_style_embed or args.data.add_style_token:
                 self._init_beatmap_idx(args)
                 self.num_classes = args.data.num_classes
-                if args.data.style_token_index >= 0:
+                if args.data.add_style_token:
                     self.input_event_ranges.append(EventRange(EventType.STYLE, 0, self.num_classes))
 
-            if args.data.diff_token_index >= 0:
+            if args.data.add_diff_token:
                 self.num_diff_classes = args.data.num_diff_classes
                 self.max_difficulty = args.data.max_diff
                 self.input_event_ranges.append(EventRange(EventType.DIFFICULTY, 0, self.num_diff_classes))
 
-            if args.data.mapper_token_index >= 0:
+            if args.data.add_mapper_token:
                 self._init_mapper_idx(args)
                 self.input_event_ranges.append(EventRange(EventType.MAPPER, 0, self.num_mapper_classes))
 
-            if args.data.cs_token_index >= 0:
+            if args.data.add_cs_token:
                 self.num_cs_classes = args.data.num_cs_classes
                 self.input_event_ranges.append(EventRange(EventType.CS, 0, self.num_cs_classes))
+
+            if args.data.add_year_token:
+                self.input_event_ranges.append(EventRange(EventType.YEAR, 2007, 2077))
 
             if args.data.add_descriptors:
                 self._init_descriptor_idx(args)
@@ -132,8 +138,14 @@ class Tokenizer:
                     y_count = y_max - y_min + 1
                     self.event_ranges.append(EventRange(EventType.POS, 0, x_count * y_count - 1))
 
-            if args.data.add_kiai:
-                self.event_ranges.append(EventRange(EventType.KIAI, 0, 1))
+            if 3 in args.data.gamemodes:
+                self.input_event_ranges.append(EventRange(EventType.MANIA_KEYCOUNT, 1, 18))
+                self.input_event_ranges.append(EventRange(EventType.HOLD_NOTE_RATIO, 0, 11))
+                self.event_ranges.append(EventRange(EventType.MANIA_COLUMN, 1, 18))
+
+            if 1 in args.data.gamemodes or 3 in args.data.gamemodes:
+                self.input_event_ranges.append(EventRange(EventType.SCROLL_SPEED_RATIO, 0, 11))
+                self.event_ranges.append(EventRange(EventType.SCROLL_SPEED, 0, 1000))
 
         self.event_ranges: list[EventRange] = self.event_ranges + [
             EventRange(EventType.NEW_COMBO, 0, 0),
@@ -153,8 +165,18 @@ class Tokenizer:
             EventRange(EventType.MEASURE, 0, 0),
         ]
 
-        if args is not None and args.data.add_timing_points:
-            self.event_ranges.append(EventRange(EventType.TIMING_POINT, 0, 0))
+        # These are placed after the event ranges so they count as 'other' when calculating validation accuracy
+        if args is not None:
+            if args.data.add_timing_points:
+                self.event_ranges.append(EventRange(EventType.TIMING_POINT, 0, 0))
+
+            if args.data.add_kiai:
+                self.event_ranges.append(EventRange(EventType.KIAI, 0, 1))
+
+            if 3 in args.data.gamemodes:
+                self.event_ranges.append(EventRange(EventType.HOLD_NOTE, 0, 0))
+                self.event_ranges.append(EventRange(EventType.HOLD_NOTE_END, 0, 0))
+                self.event_ranges.append(EventRange(EventType.SCROLL_SPEED_CHANGE, 0, 0))
 
         self.event_range: dict[EventType, EventRange] = {er.type: er for er in self.event_ranges} | {er.type: er for er in self.input_event_ranges}
 
@@ -238,6 +260,10 @@ class Tokenizer:
         elif not (self.event_start[EventType.DIFFICULTY] <= token_id < self.event_end[EventType.DIFFICULTY]):
             raise ValueError(f"token id {token_id} is not a difficulty token")
         return self.decode(token_id).value * self.max_difficulty / self.num_diff_classes
+
+    def encode_gamemode(self, gamemode: int) -> int:
+        """Converts gamemode into token id."""
+        return self.encode(Event(type=EventType.GAMEMODE, value=gamemode))
 
     def encode_diff_event(self, diff: float) -> Event:
         """Converts difficulty value into event."""
@@ -332,6 +358,33 @@ class Tokenizer:
             if idx == descriptor_idx:
                 return descriptor_name
         return "unknown"
+
+    @property
+    def year_unk(self) -> int:
+        """Gets the unknown year value token id."""
+        return self.encode(Event(type=EventType.YEAR, value=2077))
+
+    def encode_year(self, year: int) -> int:
+        """Converts year into token id."""
+        return self.encode(Event(type=EventType.YEAR, value=year))
+
+    @property
+    def hold_note_ratio_unk(self) -> int:
+        """Gets the unknown hold note ratio value token id."""
+        return self.encode(Event(type=EventType.HOLD_NOTE_RATIO, value=11))
+
+    def encode_hold_note_ratio(self, hold_note_ratio: float) -> int:
+        """Converts hold note ratio into token id."""
+        return self.encode(Event(type=EventType.HOLD_NOTE_RATIO, value=np.clip(round(hold_note_ratio * 10), 0, 10)))
+
+    @property
+    def scroll_speed_ratio_unk(self) -> int:
+        """Gets the unknown scroll speed ratio value token id."""
+        return self.encode(Event(type=EventType.SCROLL_SPEED_RATIO, value=11))
+
+    def encode_scroll_speed_ratio(self, scroll_speed_ratio: float) -> int:
+        """Converts scroll speed ratio into token id."""
+        return self.encode(Event(type=EventType.SCROLL_SPEED_RATIO, value=np.clip(round(scroll_speed_ratio * 10), 0, 10)))
 
     def _init_beatmap_idx(self, args: DictConfig) -> None:
         """Initializes and caches the beatmap index."""

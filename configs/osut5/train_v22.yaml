@@ -9,10 +9,9 @@ precision: 'bf16'         # Enable mixed precision (no/fp16/bf16/fp8)
 data:                  # Data settings
   train_dataset_path: "/workspace/datasets/ORS16291"
   test_dataset_path: "/workspace/datasets/ORS16291"
-  special_token_len: 3
-  diff_token_index: 0
-  mapper_token_index: 1
-  cs_token_index: 2
+  add_diff_token: true
+  add_mapper_token: true
+  add_cs_token: true
   add_descriptors: true
   timing_random_offset: 2
   src_seq_len: 1024

@@ -31,12 +31,16 @@ data:                  # Data settings
   diff_dropout_prob: 0.2
   mapper_dropout_prob: 0.2
   cs_dropout_prob: 0.2
+  year_dropout_prob: 0.2
+  hold_note_ratio_dropout_prob: 0.2
+  scroll_speed_ratio_dropout_prob: 0.2
   descriptor_dropout_prob: 0.2
-  special_token_len: 0
-  diff_token_index: -1
-  style_token_index: -1
-  mapper_token_index: -1
-  cs_token_index: -1
+  add_gamemode_token: false
+  add_diff_token: false
+  add_style_token: false
+  add_mapper_token: false
+  add_cs_token: false
+  add_year_token: false
   add_descriptors: false
   add_empty_sequences: true
   add_empty_sequences_at_step: -1
@@ -67,6 +71,7 @@ data:                  # Data settings
   dt_augment_range: [1.5, 1.5]  # Range of DT augmentation
   types_first: false       # Put the type token at the start of the group before the timeshift token
   add_kiai: false        # Model kiai times
+  gamemodes: [0]  # List of gamemodes to include in the dataset
 
 
 dataloader:             # Dataloader settings
