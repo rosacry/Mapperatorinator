@@ -90,6 +90,7 @@ class MmrsDataset(IterableDataset):
         df["BeatmapIdx"] = df.index
         df.set_index(["BeatmapSetId", "Id"], inplace=True)
         df.sort_index(inplace=True)
+        df = df[df["ModeInt"].isin(self.args.gamemodes)]
         return df
 
     def _beatmap_set_ids_from_metadata(self):
