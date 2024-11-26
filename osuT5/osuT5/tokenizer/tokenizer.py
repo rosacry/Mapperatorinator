@@ -141,7 +141,7 @@ class Tokenizer:
             if 3 in args.data.gamemodes:
                 self.input_event_ranges.append(EventRange(EventType.MANIA_KEYCOUNT, 1, 18))
                 self.input_event_ranges.append(EventRange(EventType.HOLD_NOTE_RATIO, 0, 11))
-                self.event_ranges.append(EventRange(EventType.MANIA_COLUMN, 1, 18))
+                self.event_ranges.append(EventRange(EventType.MANIA_COLUMN, 0, 17))
 
             if 1 in args.data.gamemodes or 3 in args.data.gamemodes:
                 self.input_event_ranges.append(EventRange(EventType.SCROLL_SPEED_RATIO, 0, 11))
@@ -177,6 +177,12 @@ class Tokenizer:
                 self.event_ranges.append(EventRange(EventType.HOLD_NOTE, 0, 0))
                 self.event_ranges.append(EventRange(EventType.HOLD_NOTE_END, 0, 0))
                 self.event_ranges.append(EventRange(EventType.SCROLL_SPEED_CHANGE, 0, 0))
+
+            if 1 in args.data.gamemodes:
+                self.event_ranges.append(EventRange(EventType.DRUMROLL, 0, 0))
+                self.event_ranges.append(EventRange(EventType.DRUMROLL_END, 0, 0))
+                self.event_ranges.append(EventRange(EventType.DENDEN, 0, 0))
+                self.event_ranges.append(EventRange(EventType.DENDEN_END, 0, 0))
 
         self.event_range: dict[EventType, EventRange] = {er.type: er for er in self.event_ranges} | {er.type: er for er in self.input_event_ranges}
 
