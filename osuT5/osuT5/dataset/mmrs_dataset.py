@@ -681,7 +681,12 @@ class BeatmapDatasetIterable:
             speed = self._get_speed_augment()
             track_path = self.path / "data" / metadata.iloc[0]["BeatmapSetFolder"]
             audio_path = track_path / metadata.iloc[0]["AudioFile"]
-            audio_samples = load_audio_file(audio_path, self.args.sample_rate, speed)
+            try:
+                audio_samples = load_audio_file(audio_path, self.args.sample_rate, speed)
+            except Exception as e:
+                print(f"Failed to load audio file: {audio_path}")
+                print(e)
+                continue
 
             for i, beatmap_metadata in metadata.iterrows():
                 if self.args.min_difficulty > 0 and beatmap_metadata["DifficultyRating"] < self.args.min_difficulty:
