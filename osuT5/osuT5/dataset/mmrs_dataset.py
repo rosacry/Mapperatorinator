@@ -451,8 +451,8 @@ class BeatmapDatasetIterable:
                     special_tokens.extend(self.tokenizer.encode_descriptor(context["beatmap_id"])
                                           if random.random() >= self.args.descriptor_dropout_prob else [self.tokenizer.descriptor_unk])
 
-            if "last_kiai" in context:
-                special_tokens.append(self.tokenizer.encode(context["last_kiai"]))
+                if "last_kiai" in context:
+                    special_tokens.append(self.tokenizer.encode(context["last_kiai"]))
 
             context["special_tokens"] = special_tokens
 
