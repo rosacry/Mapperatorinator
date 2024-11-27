@@ -213,7 +213,7 @@ class OsuParser:
 
     def tp_to_scroll_speed(self, tp: TimingPoint) -> int:
         if tp.parent is None or tp.ms_per_beat >= 0 or np.isnan(tp.ms_per_beat):
-            return 1
+            return 100
         else:
             return int(np.clip(-100 / tp.ms_per_beat, 0.01, 10) * 100)
 
