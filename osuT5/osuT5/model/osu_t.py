@@ -192,8 +192,6 @@ class OsuT(PreTrainedModel):
         inputs["beatmap_idx"] = beatmap_idx
         return inputs
 
-
-
     def can_generate(self) -> bool:
         return True
 

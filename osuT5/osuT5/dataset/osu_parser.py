@@ -259,6 +259,7 @@ class OsuParser:
         sample_set = sample_set if 0 < sample_set < 4 else 1  # Overflow default to normal sample set
         addition_set = addition_set if 0 < addition_set < 4 else 1  # Overflow default to normal sample set
         hitsound = hitsound & 14  # Only take the bits for normal, whistle, and finish
+        volume = np.clip(volume, 0, 100)
 
         hitsound_idx = hitsound // 2 + 8 * (sample_set - 1) + 24 * (addition_set - 1)
 
