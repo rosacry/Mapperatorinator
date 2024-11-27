@@ -27,7 +27,7 @@ def load_audio_file(file: PathLike, sample_rate: int, speed: float = 1.0) -> npt
         samples: Audio time series.
     """
     file = Path(file)
-    audio = AudioSegment.from_file(file, format=file.suffix[1:])
+    audio = AudioSegment.from_file(file)
     audio.frame_rate = int(audio.frame_rate * speed)
     audio = audio.set_frame_rate(sample_rate)
     audio = audio.set_channels(1)
