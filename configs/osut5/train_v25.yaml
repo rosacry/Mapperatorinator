@@ -23,7 +23,7 @@ data:                  # Data settings
   add_descriptors: true
   timing_random_offset: 2
   src_seq_len: 1024
-  tgt_seq_len: 1536
+  tgt_seq_len: 2048
   rhythm_weight: 3.0    # Weight of rhythm tokens in the loss calculation
   context_types: [
     {"in": ["none"], "out": "map"},
