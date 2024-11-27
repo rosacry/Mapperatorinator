@@ -393,19 +393,19 @@ class BeatmapDatasetIterable:
             context["tokens"] = tokens
 
             if "beatmap_id" in context:
-                if self.args.add_style_token_index:
+                if self.args.add_style_token:
                     context["beatmap_idx_token"] = self.tokenizer.encode_style_idx(context["beatmap_idx"]) \
                         if random.random() >= self.args.class_dropout_prob else self.tokenizer.style_unk
 
-                if self.args.add_diff_token_index:
+                if self.args.add_diff_token:
                     context["difficulty_token"] = self.tokenizer.encode_diff(context["difficulty"]) \
                         if random.random() >= self.args.diff_dropout_prob else self.tokenizer.diff_unk
 
-                if self.args.add_mapper_token_index:
+                if self.args.add_mapper_token:
                     context["mapper_token"] = self.tokenizer.encode_mapper(context["beatmap_id"]) \
                         if random.random() >= self.args.mapper_dropout_prob else self.tokenizer.mapper_unk
 
-                if self.args.add_cs_token_index:
+                if self.args.add_cs_token:
                     context["circle_size_token"] = self.tokenizer.encode_cs(context["circle_size"]) \
                         if random.random() >= self.args.cs_dropout_prob else self.tokenizer.cs_unk
 
