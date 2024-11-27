@@ -61,6 +61,11 @@ class MmrsDataset(IterableDataset):
         """
         super().__init__()
         self._validate_args(args)
+        self.args = args
+        self.parser = parser
+        self.tokenizer = tokenizer
+        self.test = test
+        self.shared = shared
         self.path = Path(args.test_dataset_path if test else args.train_dataset_path)
         self.start = args.test_dataset_start if test else args.train_dataset_start
         self.end = args.test_dataset_end if test else args.train_dataset_end
@@ -71,11 +76,6 @@ class MmrsDataset(IterableDataset):
             self.end = len(subset_ids)
         else:
             self.subset_ids = self._beatmap_set_ids_from_metadata()
-        self.args = args
-        self.parser = parser
-        self.tokenizer = tokenizer
-        self.test = test
-        self.shared = shared
         self.sample_weights = self._get_sample_weights(args.sample_weights_path)
 
     def _validate_args(self, args: DictConfig):
@@ -335,23 +335,23 @@ class BeatmapDatasetIterable:
             if self.args.add_pre_tokens or self.args.add_pre_tokens_at_step >= 0:
                 sequence["pre_events"] = slice_events(out_context, frame_pre_idx, frame_start_idx)
 
-            def add_last_kiai(sequence_context, context, last_kiai):
+            def add_last_kiai(sequence_context, id, last_kiai):
                 if sequence_context["context_type"] not in [ContextType.NO_HS, ContextType.GD, ContextType.MAP]:
                     return
-                if context in last_kiai:
-                    sequence_context["last_kiai"] = last_kiai[context]
+                if id in last_kiai:
+                    sequence_context["last_kiai"] = last_kiai[id]
                 else:
                     sequence_context["last_kiai"] = Event(EventType.KIAI, 0)
                 # Find the last kiai event in the out context
                 for event in reversed(sequence_context["events"]):
                     if event.type == EventType.KIAI:
-                        last_kiai[context] = event
+                        last_kiai[id] = event
                         break
 
             if self.args.add_kiai:
-                add_last_kiai(sequence["out_context"], out_context, last_kiai)
+                add_last_kiai(sequence["out_context"], "out_context", last_kiai)
                 for i, sequence_context in enumerate(sequence["in_context"]):
-                    add_last_kiai(sequence_context, in_context[i], last_kiai)
+                    add_last_kiai(sequence_context, i, last_kiai)
 
             sequences.append(sequence)
 
@@ -414,7 +414,7 @@ class BeatmapDatasetIterable:
 
             if "beatmap_id" in context:
                 if self.args.add_gamemode_token:
-                    special_tokens.append(self.tokenizer.encode_gamemode(context["extra"]["gamemode"]))
+                    special_tokens.append(self.tokenizer.encode_gamemode(context["gamemode"]))
 
                 if self.args.add_style_token:
                     special_tokens.append(self.tokenizer.encode_style_idx(context["beatmap_idx"])
@@ -713,7 +713,7 @@ class BeatmapDatasetIterable:
         osu_beatmap = Beatmap.from_path(beatmap_path)
 
         def add_special_data(data, beatmap_metadata, beatmap: Beatmap):
-            gamemode = beatmap.mode
+            gamemode = beatmap_metadata["ModeInt"]
             data["extra"]["gamemode"] = gamemode
             data["extra"]["beatmap_id"] = beatmap.beatmap_id
             data["extra"]["beatmap_idx"] = beatmap_metadata["BeatmapIdx"]
