@@ -140,11 +140,11 @@ class Tokenizer:
 
             if 3 in args.data.gamemodes:
                 self.input_event_ranges.append(EventRange(EventType.MANIA_KEYCOUNT, 1, 18))
-                self.input_event_ranges.append(EventRange(EventType.HOLD_NOTE_RATIO, 0, 11))
+                self.input_event_ranges.append(EventRange(EventType.HOLD_NOTE_RATIO, -1, 12))
                 self.event_ranges.append(EventRange(EventType.MANIA_COLUMN, 0, 17))
 
             if 1 in args.data.gamemodes or 3 in args.data.gamemodes:
-                self.input_event_ranges.append(EventRange(EventType.SCROLL_SPEED_RATIO, 0, 11))
+                self.input_event_ranges.append(EventRange(EventType.SCROLL_SPEED_RATIO, -1, 12))
                 self.event_ranges.append(EventRange(EventType.SCROLL_SPEED, 0, 1000))
 
         self.event_ranges: list[EventRange] = self.event_ranges + [
@@ -377,20 +377,30 @@ class Tokenizer:
     @property
     def hold_note_ratio_unk(self) -> int:
         """Gets the unknown hold note ratio value token id."""
-        return self.encode(Event(type=EventType.HOLD_NOTE_RATIO, value=11))
+        return self.encode(Event(type=EventType.HOLD_NOTE_RATIO, value=12))
 
     def encode_hold_note_ratio(self, hold_note_ratio: float) -> int:
         """Converts hold note ratio into token id."""
-        return self.encode(Event(type=EventType.HOLD_NOTE_RATIO, value=np.clip(round(hold_note_ratio * 10), 0, 10)))
+        value = np.clip(round(hold_note_ratio * 10), 0, 10)
+        if hold_note_ratio == 0:
+            value = -1
+        elif hold_note_ratio == 1:
+            value = 11
+        return self.encode(Event(type=EventType.HOLD_NOTE_RATIO, value=value))
 
     @property
     def scroll_speed_ratio_unk(self) -> int:
         """Gets the unknown scroll speed ratio value token id."""
-        return self.encode(Event(type=EventType.SCROLL_SPEED_RATIO, value=11))
+        return self.encode(Event(type=EventType.SCROLL_SPEED_RATIO, value=12))
 
     def encode_scroll_speed_ratio(self, scroll_speed_ratio: float) -> int:
         """Converts scroll speed ratio into token id."""
-        return self.encode(Event(type=EventType.SCROLL_SPEED_RATIO, value=np.clip(round(scroll_speed_ratio * 10), 0, 10)))
+        value = np.clip(round(scroll_speed_ratio * 10), 0, 10)
+        if scroll_speed_ratio == 0:
+            value = -1
+        elif scroll_speed_ratio == 1:
+            value = 11
+        return self.encode(Event(type=EventType.SCROLL_SPEED_RATIO, value=value))
 
     def _init_beatmap_idx(self, args: DictConfig) -> None:
         """Initializes and caches the beatmap index."""

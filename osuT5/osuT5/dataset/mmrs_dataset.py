@@ -661,9 +661,9 @@ class BeatmapDatasetIterable:
                 last_scroll_speed = 1
             else:
                 scroll_speed = -100 / timing_point.ms_per_beat
-                if scroll_speed != last_scroll_speed:
+                if scroll_speed != last_scroll_speed and last_scroll_speed != -1:
                     num_scroll_speed_changes += 1
-                    last_scroll_speed = scroll_speed
+                last_scroll_speed = scroll_speed
         return num_scroll_speed_changes / num_note_times
 
     def _get_next_tracks(self) -> dict:
