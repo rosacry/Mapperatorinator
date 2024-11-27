@@ -85,6 +85,7 @@ def main(args: DictConfig):
     if args.mode == 'plot':
         for b in tqdm.tqdm(dataloader, smoothing=0.01):
             mels = transform(b["frames"])
+            # [tokenizer.decode(t) if t > 10 else t for t in b['decoder_input_ids'][3].cpu().numpy()]
             # plot the melspectrogram
             for i in range(len(mels)):
                 plt.imshow(mels[i].numpy().T, aspect="auto", origin="lower", norm="log")
