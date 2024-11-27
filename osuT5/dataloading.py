@@ -28,7 +28,7 @@ def main(args: DictConfig):
     tokenizer = get_tokenizer(args)
     parser = OsuParser(args, tokenizer)
     dataset = get_dataset(
-        args=args.data,
+        args=args,
         test=False,
         parser=parser,
         tokenizer=tokenizer,
@@ -53,6 +53,12 @@ def main(args: DictConfig):
     )
 
     if args.mode == 'benchmark':
+        # Iterate one full epoch
+        for _ in tqdm.tqdm(dataloader, smoothing=0.01):
+            shared.current_train_step += 1
+        print(shared.current_train_step)
+
+    if args.mode == 'lengths':
         # Make histogram of the lengths of the sequences
         lengths = []
         for b in tqdm.tqdm(dataloader, smoothing=0.01):
