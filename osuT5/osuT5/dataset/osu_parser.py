@@ -547,7 +547,6 @@ class OsuParser:
             slider: Slider object.
             events: List of events to add to.
         """
-
         self._add_group(
             EventType.DRUMROLL,
             slider.time,
