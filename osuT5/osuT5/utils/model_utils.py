@@ -113,9 +113,9 @@ def get_scheduler(optimizer: Optimizer, args: DictConfig, accelerator) -> LRSche
 
 def get_dataset(args: DictConfig, test: bool, **kwargs) -> Dataset:
     if args.data.dataset_type == "ors":
-        return OrsDataset(args=args, test=test, **kwargs)
+        return OrsDataset(args=args.data, test=test, **kwargs)
     elif args.data.dataset_type == "mmrs":
-        return MmrsDataset(args=args, **kwargs)
+        return MmrsDataset(args=args.data, **kwargs)
     else:
         raise NotImplementedError
 
