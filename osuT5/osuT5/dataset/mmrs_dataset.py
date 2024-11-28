@@ -286,7 +286,7 @@ class BeatmapDatasetIterable:
                 start_indices.append(event_index)
 
             # Corresponding end event index for every audio frame.
-            end_indices = start_indices[1:] + [len(events2)]
+            end_indices = start_indices[1:] + [start_indices[-1]]
 
             return start_indices, end_indices
 
