@@ -357,7 +357,7 @@ class BeatmapDatasetIterable:
 
         return sequences
 
-    def _normalize_time_shifts(self, sequence: dict) -> dict:
+    def _normalize_time_shifts(self, sequence: dict, beatmap_path) -> dict:
         """Make all time shifts in the sequence relative to the start time of the sequence,
         and normalize time values.
 
@@ -369,13 +369,16 @@ class BeatmapDatasetIterable:
         """
 
         min_t = self.tokenizer.event_range[EventType.TIME_SHIFT].min_value
+        max_t = self.tokenizer.event_range[EventType.TIME_SHIFT].max_value
 
         def process(events: list[Event], start_time) -> list[Event] | tuple[list[Event], int]:
             for i, event in enumerate(events):
                 if event.type == EventType.TIME_SHIFT:
                     # We cant modify the event objects themselves because that will affect subsequent sequences
                     t = int((event.value - start_time) * STEPS_PER_MILLISECOND)
-                    assert t >= min_t  # TODO: Fix weird unordered events
+                    if t < min_t or t > max_t:
+                        print(f"WARNING: Time shift out of range ({t}) in beatmap {beatmap_path}")
+                        t = np.clip(t, min_t, max_t)
                     events[i] = Event(EventType.TIME_SHIFT, t)
 
             return events
@@ -781,7 +784,7 @@ class BeatmapDatasetIterable:
 
         for sequence in sequences:
             self.maybe_change_dataset()
-            sequence = self._normalize_time_shifts(sequence)
+            sequence = self._normalize_time_shifts(sequence, beatmap_path)
             sequence = self._tokenize_sequence(sequence)
             sequence = self._pad_frame_sequence(sequence)
             sequence = self._pad_and_split_token_sequence(sequence)
