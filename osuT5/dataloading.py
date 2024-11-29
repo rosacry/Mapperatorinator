@@ -33,6 +33,7 @@ def main(args: DictConfig):
         parser=parser,
         tokenizer=tokenizer,
         shared=shared,
+        # subset_ids=[2933, 1891, 4131],
     )
 
     dataloader = DataLoader(
