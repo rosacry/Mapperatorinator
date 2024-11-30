@@ -44,6 +44,9 @@ def get_args_from_beatmap(args: DictConfig, tokenizer: Tokenizer):
 
     generation_config = generation_config_from_beatmap(beatmap, tokenizer)
 
+    if args.gamemode == -1:
+        args.gamemode = generation_config.gamemode
+        print(f"Using game mode {args.gamemode}")
     if args.beatmap_id == -1 and generation_config.beatmap_id:
         args.beatmap_id = generation_config.beatmap_id
         print(f"Using beatmap ID {args.beatmap_id}")
@@ -59,6 +62,9 @@ def get_args_from_beatmap(args: DictConfig, tokenizer: Tokenizer):
     if args.circle_size == -1:
         args.circle_size = generation_config.circle_size
         print(f"Using circle size {args.circle_size}")
+    if args.keycount == -1 and args.gamemode == 3:
+        args.keycount = int(generation_config.keycount)
+        print(f"Using keycount {args.keycount}")
 
     beatmap_config = beatmap_config_from_beatmap(beatmap)
 
@@ -73,18 +79,23 @@ def get_args_from_beatmap(args: DictConfig, tokenizer: Tokenizer):
 
 def get_config(args: DictConfig):
     return GenerationConfig(
+        gamemode=args.gamemode,
         beatmap_id=args.beatmap_id,
         difficulty=args.difficulty,
         mapper_id=args.mapper_id,
-        descriptors=args.descriptors,
         circle_size=args.circle_size,
+        keycount=args.keycount,
+        hold_note_ratio=args.hold_note_ratio,
+        scroll_speed_ratio=args.scroll_speed_ratio,
+        descriptors=args.descriptors,
+        negative_descriptors=args.negative_descriptors,
     ), BeatmapConfig(
         title=args.title,
         artist=args.artist,
         title_unicode=args.title,
         artist_unicode=args.artist,
         audio_filename=Path(args.audio_path).name,
-        circle_size=args.circle_size,
+        circle_size=args.keycount if args.gamemode == 3 else args.circle_size,
         slider_multiplier=args.slider_multiplier,
         creator=args.creator,
         version=args.version,
@@ -92,6 +103,7 @@ def get_config(args: DictConfig):
         preview_time=args.preview_time,
         bpm=args.bpm,
         offset=args.offset,
+        mode=args.gamemode,
     )
 
 
@@ -138,7 +150,7 @@ def generate(
         timing = postprocessor.generate_timing(events)
         events = postprocessor.resnap_events(events, timing)
 
-    if args.generate_positions:
+    if args.generate_positions and args.gamemode in [0, 2]:
         diffusion_pipeline = DiffisionPipeline(args, diff_model, diff_tokenizer, refine_model)
         events = diffusion_pipeline.generate(
             events=events,

@@ -13,7 +13,8 @@ from tqdm import tqdm
 from transformers import LogitsProcessorList, LogitsProcessor
 
 from ..dataset import OsuParser
-from ..dataset.data_utils import update_event_times, remove_events_of_type
+from ..dataset.data_utils import update_event_times, remove_events_of_type, get_hold_note_ratio, get_scroll_speed_ratio, \
+    events_of_type
 from ..model import OsuT
 from ..tokenizer import Event, EventType, Tokenizer, ContextType
 
@@ -23,21 +24,31 @@ MILISECONDS_PER_STEP = 10
 
 @dataclass
 class GenerationConfig:
+    gamemode: int = -1
     beatmap_id: int = -1
     difficulty: float = -1
     mapper_id: int = -1
+    year: int = -1
+    circle_size: float = -1
+    keycount: int = -1
+    hold_note_ratio: float = -1
+    scroll_speed_ratio: float = -1
     descriptors: list[str] = None
     negative_descriptors: list[str] = None
-    circle_size: float = -1
 
 
 def generation_config_from_beatmap(beatmap: Beatmap, tokenizer: Tokenizer) -> GenerationConfig:
+    gamemode = int(beatmap.mode)
     return GenerationConfig(
+        gamemode=gamemode,
         beatmap_id=beatmap.beatmap_id,
         difficulty=float(beatmap.stars()),
         mapper_id=tokenizer.mapper_idx.get(beatmap.beatmap_id, -1),
-        descriptors=[tokenizer.descriptor_name(idx) for idx in tokenizer.beatmap_descriptors.get(beatmap.beatmap_id, [])],
         circle_size=beatmap.circle_size,
+        keycount=int(beatmap.circle_size),
+        hold_note_ratio=get_hold_note_ratio(beatmap) if gamemode == 3 else -1,
+        scroll_speed_ratio=get_scroll_speed_ratio(beatmap) if gamemode in [1, 3] else -1,
+        descriptors=[tokenizer.descriptor_name(idx) for idx in tokenizer.beatmap_descriptors.get(beatmap.beatmap_id, [])],
     )
 
 
@@ -70,12 +81,14 @@ class Processor(object):
         self.lookahead_time_range = range(tokenizer.encode(Event(EventType.TIME_SHIFT, int(self.lookahead_max_time / MILISECONDS_PER_STEP))), tokenizer.event_end[EventType.TIME_SHIFT])
         self.eos_time = (1 - args.osut5.data.lookahead) * self.miliseconds_per_sequence
         self.center_pad_decoder = args.osut5.data.center_pad_decoder
-        self.special_token_len = args.osut5.data.special_token_len
-        self.diff_token_index = args.osut5.data.diff_token_index
-        self.style_token_index = args.osut5.data.style_token_index
-        self.mapper_token_index = args.osut5.data.mapper_token_index
-        self.cs_token_index = args.osut5.data.cs_token_index
+        self.add_gamemode_token = args.osut5.data.add_gamemode_token
+        self.add_style_token = args.osut5.data.add_style_token
+        self.add_diff_token = args.osut5.data.add_diff_token
+        self.add_mapper_token = args.osut5.data.add_mapper_token
+        self.add_year_token = args.osut5.data.add_year_token
+        self.add_cs_token = args.osut5.data.add_cs_token
         self.add_descriptors = args.osut5.data.add_descriptors
+        self.add_kiai = args.osut5.data.add_kiai
         self.max_pre_token_len = args.osut5.data.max_pre_token_len
         self.add_pre_tokens = args.osut5.data.add_pre_tokens
         self.add_gd_context = args.osut5.data.add_gd_context
@@ -127,6 +140,8 @@ class Processor(object):
             beatmap = Beatmap.from_path(beatmap_path)
             data["events"], data["event_times"] = self.parser.parse(beatmap)
             data["class"] = self.get_class_vector(generation_config_from_beatmap(beatmap, self.tokenizer))
+            if self.add_kiai:
+                data["kiai_events"], data["kiai_event_times"] = events_of_type(data["events"], data["event_times"], EventType.KIAI)
         else:
             raise ValueError(f"Invalid context type {context}")
         return data
@@ -146,8 +161,41 @@ class Processor(object):
             config: GenerationConfig,
             verbose: bool = False,
     ):
+        cond_tokens = []
+
+        if self.add_gamemode_token:
+            gamemode_token = self.tokenizer.encode_gamemode(config.gamemode)
+            cond_tokens.append(gamemode_token)
+        if self.add_style_token:
+            style_token = self.tokenizer.encode_style(config.beatmap_id) if config.beatmap_id != -1 else self.tokenizer.style_unk
+            cond_tokens.append(style_token)
+            if config.beatmap_id != -1 and config.beatmap_id not in self.tokenizer.beatmap_idx and verbose:
+                print(f"Beatmap class {config.beatmap_id} not found. Using default.")
+        if self.add_diff_token:
+            diff_token = self.tokenizer.encode_diff(config.difficulty) if config.difficulty != -1 else self.tokenizer.diff_unk
+            cond_tokens.append(diff_token)
+        if self.add_mapper_token:
+            mapper_token = self.tokenizer.encode_mapper_id(config.mapper_id) if config.mapper_id != -1 else self.tokenizer.mapper_unk
+            cond_tokens.append(mapper_token)
+            if config.mapper_id != -1 and config.mapper_id not in self.tokenizer.mapper_idx and verbose:
+                print(f"Mapper class {config.mapper_id} not found. Using default.")
+        if self.add_year_token:
+            year_token = self.tokenizer.encode_year(config.year) if config.year != -1 else self.tokenizer.year_unk
+            cond_tokens.append(year_token)
+        if self.add_cs_token and config.gamemode in [0, 2]:
+            cs_token = self.tokenizer.encode_cs(config.circle_size) if config.circle_size != -1 else self.tokenizer.cs_unk
+            cond_tokens.append(cs_token)
+        if config.gamemode == 3:
+            keycount_token = self.tokenizer.encode(Event(EventType.MANIA_KEYCOUNT, config.keycount))
+            cond_tokens.append(keycount_token)
+            hold_note_ratio_token = self.tokenizer.encode_hold_note_ratio(config.hold_note_ratio) if config.hold_note_ratio != -1 else self.tokenizer.hold_note_ratio_unk
+            cond_tokens.append(hold_note_ratio_token)
+        if config.gamemode in [1, 3]:
+            scroll_speed_ratio_token = self.tokenizer.encode_scroll_speed_ratio(config.scroll_speed_ratio) if config.scroll_speed_ratio != -1 else self.tokenizer.scroll_speed_ratio_unk
+            cond_tokens.append(scroll_speed_ratio_token)
+
         descriptors = config.descriptors if config.descriptors is not None else []
-        descriptor_tokens = []
+        descriptors_added = 0
         if self.add_descriptors:
             if descriptors is not None and len(descriptors) > 0:
                 for descriptor in descriptors:
@@ -156,37 +204,20 @@ class Processor(object):
                             if verbose:
                                 print(f"Descriptor class {descriptor} not found. Skipping.")
                             continue
-                        descriptor_tokens.append(self.tokenizer.encode_descriptor_name(descriptor))
+                        cond_tokens.append(self.tokenizer.encode_descriptor_name(descriptor))
+                        descriptors_added += 1
                     elif isinstance(descriptor, int):
                         if descriptor < self.tokenizer.event_range[EventType.DESCRIPTOR].min_value or \
                                 descriptor > self.tokenizer.event_range[EventType.DESCRIPTOR].max_value:
                             if verbose:
                                 print(f"Descriptor idx {descriptor} out of range. Skipping.")
                             continue
-                        descriptor_tokens.append(self.tokenizer.encode_descriptor_idx(descriptor))
-            if descriptors is None or len(descriptors) == 0:
-                descriptor_tokens = [self.tokenizer.descriptor_unk]
+                        cond_tokens.append(self.tokenizer.encode_descriptor_idx(descriptor))
+                        descriptors_added += 1
+            if descriptors is None or descriptors_added == 0:
+                cond_tokens.append(self.tokenizer.descriptor_unk)
 
-        cond_tokens = torch.empty((1, self.special_token_len + len(descriptor_tokens)), dtype=torch.long, device=self.device)
-
-        if self.style_token_index >= 0:
-            style_token = self.tokenizer.encode_style(config.beatmap_id) if config.beatmap_id != -1 else self.tokenizer.style_unk
-            cond_tokens[:, self.style_token_index] = style_token
-            if config.beatmap_id != -1 and config.beatmap_id not in self.tokenizer.beatmap_idx and verbose:
-                print(f"Beatmap class {config.beatmap_id} not found. Using default.")
-        if self.diff_token_index >= 0:
-            diff_token = self.tokenizer.encode_diff(config.difficulty) if config.difficulty != -1 else self.tokenizer.diff_unk
-            cond_tokens[:, self.diff_token_index] = diff_token
-        if self.mapper_token_index >= 0:
-            mapper_token = self.tokenizer.encode_mapper_id(config.mapper_id) if config.mapper_id != -1 else self.tokenizer.mapper_unk
-            cond_tokens[:, self.mapper_token_index] = mapper_token
-            if config.mapper_id != -1 and config.mapper_id not in self.tokenizer.mapper_idx and verbose:
-                print(f"Mapper class {config.mapper_id} not found. Using default.")
-        if self.cs_token_index >= 0:
-            cs_token = self.tokenizer.encode_cs(config.circle_size) if config.circle_size != -1 else self.tokenizer.cs_unk
-            cond_tokens[:, self.cs_token_index] = cs_token
-        for i, descriptor_token in enumerate(descriptor_tokens):
-            cond_tokens[:, self.special_token_len + i] = descriptor_token
+        cond_tokens = torch.tensor(cond_tokens, dtype=torch.long, device=self.device).unsqueeze(0)
 
         return cond_tokens
 
@@ -230,24 +261,31 @@ class Processor(object):
         def get_context_tokens(context):
             context_type = context["context_type"]
             tokens = context["tokens"]
-            if "class" in context:
-                tokens = torch.concatenate([context["class"], tokens], dim=-1)
 
             # Trim tokens if they are too long
             max_context_length = self.tgt_seq_len // 2
             if tokens.shape[1] > max_context_length:
                 tokens = tokens[:, :max_context_length]
 
+            to_concat = []
             if context["add_type"]:
-                tokens = torch.concatenate([
-                    torch.tensor([[self.tokenizer.context_sos[context_type]]], dtype=torch.long, device=self.device),
-                    tokens,
-                    torch.tensor([[self.tokenizer.context_eos[context_type]]], dtype=torch.long, device=self.device)
-                ], dim=-1)
-            return tokens
+                to_concat.append(torch.tensor([[self.tokenizer.context_sos[context_type]]], dtype=torch.long, device=self.device))
 
-        def get_prompt(user_prompt, prev_tokens, post_tokens):
-            prefix = torch.concatenate([get_context_tokens(context) for context in in_context] + [user_prompt, prev_tokens], dim=-1)
+            if "class" in context:
+                to_concat.append(context["class"])
+
+            to_concat.append(context["extra_special_tokens"])
+            to_concat.append(tokens)
+
+            if context["add_type"]:
+                to_concat.append(torch.tensor([[self.tokenizer.context_eos[context_type]]], dtype=torch.long, device=self.device))
+
+            return torch.concatenate(to_concat, dim=-1)
+
+        def get_prompt(user_prompt, extra_special_tokens, prev_tokens, post_tokens):
+            to_concat = [get_context_tokens(context) for context in in_context] + [user_prompt, extra_special_tokens, prev_tokens]
+            prefix = torch.concatenate(to_concat, dim=-1)
+
             if self.center_pad_decoder:
                 prefix = F.pad(prefix, (self.tgt_seq_len // 2 - prefix.shape[1], 0), value=self.tokenizer.pad_id)
 
@@ -282,9 +320,23 @@ class Processor(object):
                     frame_time + self.miliseconds_per_sequence)
                 context["tokens"] = self._encode(context_events, frame_time)
 
+                # Prepare extra special tokens
+                context_extra_special_events = []
+                if self.add_kiai and "kiai_events" in context:
+                    last_kiai = self._kiai_before_time(context["kiai_events"], context["kiai_event_times"], frame_time)
+                    context_extra_special_events.append(last_kiai)
+                context["extra_special_tokens"] = self._encode(context_extra_special_events, frame_time)
+
+            # Prepare extra special tokens
+            extra_special_events = []
+            if self.add_kiai:
+                last_kiai = self._kiai_before_time(events, event_times, frame_time)
+                extra_special_events.append(last_kiai)
+            extra_special_tokens = self._encode(extra_special_events, frame_time)
+
             # Prepare classifier-free guidance
-            cond_prompt = get_prompt(cond_tokens, prev_tokens, post_tokens)
-            uncond_prompt = get_prompt(uncond_tokens, prev_tokens, post_tokens) if self.cfg_scale > 1 else None
+            cond_prompt = get_prompt(cond_tokens, extra_special_tokens, prev_tokens, post_tokens)
+            uncond_prompt = get_prompt(uncond_tokens, extra_special_tokens, prev_tokens, post_tokens) if self.cfg_scale > 1 else None
 
             # Make sure the prompt is not too long
             i = 0
@@ -294,8 +346,8 @@ class Processor(object):
                     raise ValueError("Prompt is too long.")
                 prev_tokens = prev_tokens[:, -(prev_tokens.shape[1] // 2):]
                 post_tokens = post_tokens[:, -(post_tokens.shape[1] // 2):]
-                cond_prompt = get_prompt(cond_tokens, prev_tokens, post_tokens)
-                uncond_prompt = get_prompt(uncond_tokens, prev_tokens, post_tokens) if self.cfg_scale > 1 else None
+                cond_prompt = get_prompt(cond_tokens, extra_special_tokens, prev_tokens, post_tokens)
+                uncond_prompt = get_prompt(uncond_tokens, extra_special_tokens, prev_tokens, post_tokens) if self.cfg_scale > 1 else None
 
             eos_token_id = [self.tokenizer.eos_id]
             if sequence_index != len(sequences) - 1:
@@ -336,9 +388,14 @@ class Processor(object):
                 lookahead_time = frame_time + self.lookahead_max_time
                 self._trim_events_after_time(events, event_times, lookahead_time)
 
+        # Post-process events
         # Rescale and unpack position events
         if self.add_positions:
             events = self._rescale_positions(events)
+
+        # Turn mania key column into X position
+        if generation_config.gamemode == 3:
+            events = self._convert_column_to_position(events, generation_config.keycount)
 
         # Make sure the time shifts are monotonically increasing
         time = 0
@@ -478,3 +535,20 @@ class Processor(object):
             if (token in self.time_range and token > latest_time + 1 and
                     0 <= i + beat_offset < len(context_tokens) and context_tokens[i + beat_offset] in self.beat_range):
                 return token
+
+    def _kiai_before_time(self, events, event_times, time) -> Event:
+        for i in range(len(events) - 1, -1, -1):
+            if events[i].type == EventType.KIAI and event_times[i] < time:
+                return events[i]
+        return Event(EventType.KIAI, 0)
+
+    def _convert_column_to_position(self, events, key_count) -> list[Event]:
+        new_events = []
+        for event in events:
+            if event.type == EventType.MANIA_COLUMN:
+                x = int((event.value + 0.5) * 512 / key_count)
+                new_events.append(Event(EventType.POS_X, x))
+                new_events.append(Event(EventType.POS_Y, 192))
+            else:
+                new_events.append(event)
+        return new_events
