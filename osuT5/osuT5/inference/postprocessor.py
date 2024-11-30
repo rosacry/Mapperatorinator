@@ -453,6 +453,53 @@ class Postprocessor(object):
 
         return resnapped_events
 
+    def resnap(self, time: float, timing: list[TimingPoint], snap_divisor: int) -> float:
+        """Resnap a time to the nearest beat divisor."""
+        ignore_ticks = {
+            1: [],
+            4: [2],
+            6: [2, 3],
+            8: [4],
+            9: [3],
+            10: [2, 5],
+            12: [4, 6],
+            14: [2, 7],
+            15: [3, 5],
+            16: [8],
+        }
+
+        before_tp = self.timing_point_at(timedelta(milliseconds=time), timing)
+        before_tp = before_tp if before_tp.parent is None else before_tp.parent
+        before_time = before_tp.offset.total_seconds() * 1000
+        after_tp = self.uninherited_timing_point_after(timedelta(milliseconds=time), timing)
+        after_time = after_tp.offset.total_seconds() * 1000 if after_tp is not None else None
+
+        def local_ticks(divisor: int) -> set[int]:
+            ms_per_tick = before_tp.ms_per_beat / divisor
+            remainder = (time - before_time) % ms_per_tick
+            return {
+                int(time - remainder - ms_per_tick + 1e-4),
+                int(time - remainder + 1e-4),
+                int(time - remainder + ms_per_tick + 1e-4),
+                int(time - remainder + 2 * ms_per_tick + 1e-4)
+            }
+
+        ticks = local_ticks(snap_divisor)
+
+        # Remove ticks that are from bigger snap divisors because we specifically want to snap to the snap_divisor
+        ignore_divisors = ignore_ticks.get(snap_divisor, [1])
+        for ignore_divisor in ignore_divisors:
+            ticks -= local_ticks(ignore_divisor)
+
+        # Find the closest tick to the original time
+        new_time = min(ticks, key=lambda x: abs(x - time))
+
+        # If the new time is too close to the next timing point, snap to the next timing point
+        if after_time is not None and new_time > before_time + 10 and new_time >= after_time - 10:
+            new_time = after_time
+
+        return new_time
+
     @dataclasses.dataclass
     class Marker:
         time: float
@@ -570,27 +617,6 @@ class Postprocessor(object):
                 counter = 0
 
         return timing
-
-    def resnap(self, time: float, timing: list[TimingPoint], snap_divisor: int, floor: bool = True) -> float:
-        """Resnap a time to the nearest beat divisor."""
-        before_tp = self.timing_point_at(timedelta(milliseconds=time), timing)
-        before_tp = before_tp if before_tp.parent is None else before_tp.parent
-        before_time = before_tp.offset.total_seconds() * 1000
-        after_tp = self.uninherited_timing_point_after(timedelta(milliseconds=time), timing)
-        after_time = after_tp.offset.total_seconds() * 1000 if after_tp is not None else None
-
-        d = before_tp.ms_per_beat / snap_divisor
-        remainder = (time - before_time) % d
-
-        if remainder < d / 2:
-            new_time = time - remainder
-        else:
-            new_time = time + d - remainder
-
-        if after_time is not None and new_time > before_time + 10 and new_time >= after_time - 10:
-            new_time = after_time
-
-        return math.floor(new_time + 1e-4) if floor else new_time
 
     def check_ms_per_beat(self, mpb_new: float, markers: list[Postprocessor.Marker], redline: TimingPoint):
         mpb_old = redline.ms_per_beat
