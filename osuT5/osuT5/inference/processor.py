@@ -146,8 +146,9 @@ class Processor(object):
         self.beat_range = [
             self.tokenizer.event_start[EventType.BEAT],
             self.tokenizer.event_start[EventType.MEASURE],
-            self.tokenizer.event_start[EventType.TIMING_POINT],
         ]
+        if args.osut5.data.add_timing_points:
+            self.beat_range.append(self.tokenizer.event_start[EventType.TIMING_POINT])
         self.types_first = args.osut5.data.types_first
 
         self.logit_processor = LogitsProcessorList()

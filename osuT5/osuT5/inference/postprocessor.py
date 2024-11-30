@@ -534,7 +534,7 @@ class Postprocessor(object):
                 markers.append(self.Marker(
                     int(events[i + step].value),
                     event.type == EventType.MEASURE,
-                    Event.type == EventType.TIMING_POINT,
+                    event.type == EventType.TIMING_POINT,
                     0 if event.type == EventType.TIMING_POINT else 1
                 ))
 
