@@ -295,8 +295,13 @@ class Processor(object):
         # Prepare unconditional prompt
         cond_tokens = self.get_class_vector(generation_config, verbose=verbose)
         uncond_tokens = self.get_class_vector(GenerationConfig(
+            gamemode=generation_config.gamemode,
             difficulty=generation_config.difficulty,
-            descriptors=generation_config.negative_descriptors
+            circle_size=generation_config.circle_size,
+            keycount=generation_config.keycount,
+            hold_note_ratio=generation_config.hold_note_ratio,
+            scroll_speed_ratio=generation_config.scroll_speed_ratio,
+            descriptors=generation_config.negative_descriptors,
         ))
 
         # Prepare context type indicator tokens
