@@ -504,6 +504,7 @@ class Postprocessor(object):
     class Marker:
         time: float
         is_measure: bool
+        is_redline: bool
         beats_from_last_marker: int = 1
 
     @staticmethod
@@ -530,22 +531,47 @@ class Postprocessor(object):
         for i, event in enumerate(events):
             if ((event.type == EventType.BEAT or event.type == EventType.MEASURE) and
                     i + step < len(events) and events[i + step].type == EventType.TIME_SHIFT):
-                markers.append(self.Marker(int(events[i + step].value), event.type == EventType.MEASURE))
+                markers.append(self.Marker(
+                    int(events[i + step].value),
+                    event.type == EventType.MEASURE,
+                    Event.type == EventType.TIMING_POINT,
+                    0 if event.type == EventType.TIMING_POINT else 1
+                ))
 
         if len(markers) == 0:
             return []
 
         markers.sort(key=lambda x: x.time)
 
-        timing: list[TimingPoint] = [
-            TimingPoint(timedelta(milliseconds=markers[0].time), 1000, 4, 2, 0, 100, None, False)
-        ]
+        timing: list[TimingPoint] = []
+
+        # Add redlines for each redline marker
+        for marker in markers:
+            if not marker.is_redline:
+                continue
+
+            time = marker.time
+            tp = TimingPoint(timedelta(milliseconds=time), 100, 4, 2, 0, 100, None, False)
+            tp_change = TimingPointsChange(tp, uninherited=True)
+            timing = tp_change.add_change(timing, True)
+
+        if len(timing) == 0:
+            timing = [
+                TimingPoint(timedelta(milliseconds=markers[0].time), 1000, 4, 2, 0, 100, None, False)
+            ]
 
         counter = 0
         last_measure_time = markers[0].time
 
+        # Add redlines to make sure the measure counter is correct
         for marker in markers:
             time = marker.time
+
+            if marker.is_redline:
+                counter = 0
+                last_measure_time = time
+                continue
+
             redline = self.timing_point_at(timedelta(milliseconds=time - 1), timing)
             redline = redline if redline.parent is None else redline.parent
             redline_offset = redline.offset.total_seconds() * 1000
@@ -573,6 +599,7 @@ class Postprocessor(object):
 
         counter = 0
 
+        # Add redlines to make sure each beat is snapped correctly
         for marker in markers:
             time = marker.time
             redline = self.timing_point_at(timedelta(milliseconds=time - 1), timing)
