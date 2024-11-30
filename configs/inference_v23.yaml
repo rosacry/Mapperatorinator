@@ -8,6 +8,7 @@ version: 'osuT5 V23'        # Beatmap version
 lookback: 0.5             # Fraction of audio sequence to fill with tokens from previous inference window
 lookahead: 0.4            # Fraction of audio sequence to skip at the end of the audio window
 in_context: ["none"]        # Context type of other beatmap
+timing_temperature: 0.1 # Sampling temperature for timing
 
 # Diffusion settings
 generate_positions: true      # Use diffusion to generate object positions
