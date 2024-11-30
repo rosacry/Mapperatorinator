@@ -83,6 +83,7 @@ def get_config(args: DictConfig):
         beatmap_id=args.beatmap_id,
         difficulty=args.difficulty,
         mapper_id=args.mapper_id,
+        year=args.year,
         circle_size=args.circle_size,
         keycount=args.keycount,
         hold_note_ratio=args.hold_note_ratio,
@@ -144,7 +145,7 @@ def generate(
     if ContextType.TIMING in args.in_context or (
             args.osut5.data.add_timing and any(t in args.in_context for t in [ContextType.GD, ContextType.NO_HS])):
         # Exact timing is provided in the other beatmap, so we don't need to generate it
-        timing = Beatmap.from_path(other_beatmap_path).timing_points
+        timing = [tp for tp in Beatmap.from_path(other_beatmap_path).timing_points if tp.parent is None]
         events = postprocessor.resnap_events(events, timing)
     elif args.osut5.data.add_timing or args.output_type == ContextType.TIMING:
         timing = postprocessor.generate_timing(events)
