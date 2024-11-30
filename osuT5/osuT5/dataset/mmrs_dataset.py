@@ -15,7 +15,7 @@ from pandas import Series, DataFrame
 from slider import Beatmap, HoldNote
 from torch.utils.data import IterableDataset
 
-from .data_utils import load_audio_file, remove_events_of_type
+from .data_utils import load_audio_file, remove_events_of_type, get_hold_note_ratio, get_scroll_speed_ratio
 from .osu_parser import OsuParser
 from ..tokenizer import Event, EventType, Tokenizer, ContextType
 
@@ -336,7 +336,7 @@ class BeatmapDatasetIterable:
                 sequence["pre_events"] = slice_events(out_context, frame_pre_idx, frame_start_idx)
 
             def add_last_kiai(sequence_context, id, last_kiai):
-                if sequence_context["context_type"] not in [ContextType.NO_HS, ContextType.GD, ContextType.MAP]:
+                if sequence_context["context_type"] not in [ContextType.GD, ContextType.MAP]:
                     return
                 if id in last_kiai:
                     sequence_context["last_kiai"] = last_kiai[id]
@@ -640,35 +640,6 @@ class BeatmapDatasetIterable:
         mi, ma = self.args.dt_augment_range
         return random.random() * (ma - mi) + mi if random.random() < self.args.dt_augment_prob else 1.0
 
-    def _get_hold_note_ratio(self, beatmap: Beatmap) -> float:
-        notes = beatmap.hit_objects(circles=True, hold_notes=True, stacking=False)
-        hold_note_count = 0
-        for note in notes:
-            if isinstance(note, HoldNote):
-                hold_note_count += 1
-        return hold_note_count / len(notes)
-
-    def _get_scroll_speed_ratio(self, beatmap: Beatmap) -> float:
-        # Number of scroll speed changes divided by number of distinct hit object times
-        notes = beatmap.hit_objects(circles=True, sliders=True, spinners=True, hold_notes=True, stacking=False)
-        last_time = -1
-        num_note_times = 0
-        for note in notes:
-            if note.time != last_time:
-                num_note_times += 1
-                last_time = note.time
-        last_scroll_speed = -1
-        num_scroll_speed_changes = 0
-        for timing_point in beatmap.timing_points:
-            if timing_point.parent is None:
-                last_scroll_speed = 1
-            else:
-                scroll_speed = -100 / timing_point.ms_per_beat
-                if scroll_speed != last_scroll_speed and last_scroll_speed != -1:
-                    num_scroll_speed_changes += 1
-                last_scroll_speed = scroll_speed
-        return num_scroll_speed_changes / num_note_times
-
     def _get_next_tracks(self) -> dict:
         for beatmapset_id in self.subset_ids:
             metadata = self.metadata.loc[beatmapset_id]
@@ -731,9 +702,9 @@ class BeatmapDatasetIterable:
                 data["extra"]["circle_size"] = beatmap.circle_size
             if gamemode == 3:
                 data["extra"]["keycount"] = int(beatmap.circle_size)
-                data["extra"]["hold_note_ratio"] = self._get_hold_note_ratio(beatmap)
+                data["extra"]["hold_note_ratio"] = get_hold_note_ratio(beatmap)
             if gamemode in [1, 3]:
-                data["extra"]["scroll_speed_ratio"] = self._get_scroll_speed_ratio(beatmap)
+                data["extra"]["scroll_speed_ratio"] = get_scroll_speed_ratio(beatmap)
 
         def get_context(context, add_type=True, force_special_data=False):
             data = {"extra": {"context_type": ContextType(context), "add_type": add_type}}

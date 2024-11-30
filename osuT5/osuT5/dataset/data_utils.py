@@ -7,6 +7,7 @@ import numpy as np
 from pydub import AudioSegment
 
 import numpy.typing as npt
+from slider import Beatmap, HoldNote
 
 from ..tokenizer import Event, EventType
 
@@ -65,6 +66,15 @@ def update_event_times(
         EventType.SLIDER_END,
         EventType.BEAT,
         EventType.MEASURE,
+        EventType.TIMING_POINT,
+        EventType.KIAI,
+        EventType.HOLD_NOTE,
+        EventType.HOLD_NOTE_END,
+        EventType.DRUMROLL,
+        EventType.DRUMROLL_END,
+        EventType.DENDEN,
+        EventType.DENDEN_END,
+        EventType.SCROLL_SPEED_CHANGE,
     ]
 
     start_index = len(event_times)
@@ -189,6 +199,25 @@ def remove_events_of_type(events: list[Event], event_times: list[int], event_typ
     return new_events, new_event_times
 
 
+def events_of_type(events: list[Event], event_times: list[int], event_type: EventType) -> tuple[list[Event], list[int]]:
+    """Get all events of a specific type from a list of events.
+
+    Args:
+        events: List of events.
+        event_type: Type of event to get.
+
+    Returns:
+        filtered_events: Filtered list of events.
+    """
+    new_events = []
+    new_event_times = []
+    for event, time in zip(events, event_times):
+        if event.type == event_type:
+            new_events.append(event)
+            new_event_times.append(time)
+    return new_events, new_event_times
+
+
 def speed_events(events: list[Event], event_times: list[int], speed: float) -> tuple[list[Event], list[int]]:
     """Change the speed of a list of events.
 
@@ -216,6 +245,7 @@ def speed_events(events: list[Event], event_times: list[int], speed: float) -> t
 @dataclasses.dataclass
 class Group:
     event_type: EventType = None
+    value: int = None
     time: int = 0
     distance: int = None
     x: float = None
@@ -225,6 +255,7 @@ class Group:
     samplesets: list[int] = dataclasses.field(default_factory=list)
     additions: list[int] = dataclasses.field(default_factory=list)
     volumes: list[int] = dataclasses.field(default_factory=list)
+    scroll_speed: float = None
 
 
 type_events = [
@@ -240,6 +271,15 @@ type_events = [
     EventType.SLIDER_END,
     EventType.BEAT,
     EventType.MEASURE,
+    EventType.TIMING_POINT,
+    EventType.KIAI,
+    EventType.HOLD_NOTE,
+    EventType.HOLD_NOTE_END,
+    EventType.DRUMROLL,
+    EventType.DRUMROLL_END,
+    EventType.DENDEN,
+    EventType.DENDEN_END,
+    EventType.SCROLL_SPEED_CHANGE,
 ]
 
 
@@ -268,16 +308,20 @@ def get_groups(
             group.additions.append(((event.value // 24) % 3) + 1)
         elif event.type == EventType.VOLUME:
             group.volumes.append(event.value)
+        elif event.type == EventType.SCROLL_SPEED:
+            group.scroll_speed = event.value / 100
         elif event.type in type_events:
             if types_first:
                 if group.event_type is not None:
                     groups.append(group)
                     group = Group()
                 group.event_type = event.type
+                group.value = event.value
                 if event_times is not None:
                     group.time = event_times[i]
             else:
                 group.event_type = event.type
+                group.value = event.value
                 if event_times is not None:
                     group.time = event_times[i]
                 groups.append(group)
@@ -310,3 +354,34 @@ def get_group_indices(events: list[Event], types_first: bool = False) -> list[li
             groups[-1].extend(indices)
 
     return groups
+
+
+def get_hold_note_ratio(beatmap: Beatmap) -> float:
+    notes = beatmap.hit_objects(circles=True, hold_notes=True, stacking=False)
+    hold_note_count = 0
+    for note in notes:
+        if isinstance(note, HoldNote):
+            hold_note_count += 1
+    return hold_note_count / len(notes)
+
+
+def get_scroll_speed_ratio(beatmap: Beatmap) -> float:
+    # Number of scroll speed changes divided by number of distinct hit object times
+    notes = beatmap.hit_objects(circles=True, sliders=True, spinners=True, hold_notes=True, stacking=False)
+    last_time = -1
+    num_note_times = 0
+    for note in notes:
+        if note.time != last_time:
+            num_note_times += 1
+            last_time = note.time
+    last_scroll_speed = -1
+    num_scroll_speed_changes = 0
+    for timing_point in beatmap.timing_points:
+        if timing_point.parent is None:
+            last_scroll_speed = 1
+        else:
+            scroll_speed = -100 / timing_point.ms_per_beat
+            if scroll_speed != last_scroll_speed and last_scroll_speed != -1:
+                num_scroll_speed_changes += 1
+            last_scroll_speed = scroll_speed
+    return num_scroll_speed_changes / num_note_times

@@ -28,6 +28,7 @@ class BeatmapConfig:
     # General
     audio_filename: str = ""
     preview_time: int = -1
+    mode: int = 0
 
     # Metadata
     title: str = ""
@@ -148,6 +149,9 @@ class Postprocessor(object):
         slider_head = None
         anchor_info = []
         last_anchor = None
+        hold_note_start = None
+        drumroll_start = None
+        denden_start = None
 
         if timing is None:
             timing = [TimingPoint(
@@ -173,13 +177,86 @@ class Postprocessor(object):
             if hit_type in [EventType.CIRCLE, EventType.SLIDER_HEAD, EventType.BEZIER_ANCHOR, EventType.PERFECT_ANCHOR, EventType.CATMULL_ANCHOR, EventType.RED_ANCHOR, EventType.LAST_ANCHOR, EventType.SLIDER_END]:
                 last_x, last_y = group.x, group.y
 
+            if beatmap_config.mode == 1:
+                group.x, group.y = 256, 192
+
+            if beatmap_config.mode == 3:
+                group.y = 192
+
             if hit_type == EventType.CIRCLE:
                 hitsound = group.hitsounds[0] if len(group.hitsounds) > 0 else 0
                 sampleset = group.samplesets[0] if len(group.samplesets) > 0 else 0
                 addition = group.additions[0] if len(group.additions) > 0 else 0
-                hit_object_strings.append(f"{int(round(group.x))},{int(round(group.y))},{int(round(group.time))},{5 if group.new_combo else 1},{hitsound},{sampleset}:{addition}:0:0:")
-                if len(group.volumes) > 0:
+                volume = group.volumes[0] if len(group.volumes) > 0 and beatmap_config.mode == 3 else 0
+                hit_object_strings.append(f"{int(round(group.x))},{int(round(group.y))},{int(round(group.time))},{5 if group.new_combo else 1},{hitsound},{sampleset}:{addition}:{volume}:0:")
+                if len(group.volumes) > 0 and beatmap_config.mode != 3:
                     timing = self.set_volume(timedelta(milliseconds=int(round(group.time))), group.volumes[0], timing)
+                if beatmap_config.mode == 1 and group.scroll_speed is not None:
+                    timing = self.set_sv(timedelta(milliseconds=int(round(group.time))), group.scroll_speed, timing)
+
+            elif hit_type == EventType.HOLD_NOTE:
+                hold_note_start = group
+
+            elif hit_type == EventType.HOLD_NOTE_END and hold_note_start is not None:
+                hitsound = hold_note_start.hitsounds[0] if len(hold_note_start.hitsounds) > 0 else 0
+                sampleset = hold_note_start.samplesets[0] if len(hold_note_start.samplesets) > 0 else 0
+                addition = hold_note_start.additions[0] if len(hold_note_start.additions) > 0 else 0
+                volume = hold_note_start.volumes[0] if len(hold_note_start.volumes) > 0 and beatmap_config.mode == 3 else 0
+                hit_object_strings.append(
+                    f"{int(round(hold_note_start.x))},{192},{int(round(hold_note_start.time))},{128},{hitsound},{int(round(group.time))}:{sampleset}:{addition}:{volume}:0:"
+                )
+                if len(hold_note_start.volumes) > 0 and beatmap_config.mode != 3:
+                    timing = self.set_volume(timedelta(milliseconds=int(round(hold_note_start.time))), hold_note_start.volumes[0], timing)
+                hold_note_start = None
+
+            elif hit_type == EventType.DRUMROLL:
+                drumroll_start = group
+
+            elif hit_type == EventType.DRUMROLL_END and drumroll_start is not None:
+                drumroll_start_time = int(round(drumroll_start.time))
+                duration = int(round(group.time)) - drumroll_start_time
+
+                if duration < 1:
+                    drumroll_start = None
+                    continue
+
+                hitsound = drumroll_start.hitsounds[0] if len(drumroll_start.hitsounds) > 0 else 0
+                sampleset = drumroll_start.samplesets[0] if len(drumroll_start.samplesets) > 0 else 0
+                addition = drumroll_start.additions[0] if len(drumroll_start.additions) > 0 else 0
+                if len(drumroll_start.volumes) > 0:
+                    timing = self.set_volume(timedelta(milliseconds=int(round(drumroll_start.time))), drumroll_start.volumes[0], timing)
+                if beatmap_config.mode == 1 and drumroll_start.scroll_speed is not None:
+                    timing = self.set_sv(timedelta(milliseconds=int(round(drumroll_start.time))), drumroll_start.scroll_speed, timing)
+
+                tp = self.timing_point_at(timedelta(milliseconds=drumroll_start_time), timing)
+                redline = tp if tp.parent is None else tp.parent
+                sv = 1 if tp.parent is None else -100 / tp.ms_per_beat
+                length = sv * duration * 100 / redline.ms_per_beat * beatmap_config.slider_multiplier
+
+                start_pos, *anchor_info = self.get_control_points_for_length(length)
+                control_points = "|".join(f"{cp[0]}:{cp[1]}" for cp in anchor_info)
+
+                hit_object_strings.append(
+                    f"{start_pos[0]},{start_pos[1]},{drumroll_start_time},{2},{hitsound},L|{control_points},{1},{length},0:0,0:0|0:0,{sampleset}:{addition}:0:0:"
+                )
+
+                drumroll_start = None
+
+            elif hit_type == EventType.DENDEN:
+                denden_start = group
+
+            elif hit_type == EventType.DENDEN_END and denden_start is not None:
+                hitsound = denden_start.hitsounds[0] if len(denden_start.hitsounds) > 0 else 0
+                sampleset = denden_start.samplesets[0] if len(denden_start.samplesets) > 0 else 0
+                addition = denden_start.additions[0] if len(denden_start.additions) > 0 else 0
+                hit_object_strings.append(
+                    f"{256},{192},{int(round(denden_start.time))},{12},{hitsound},{int(round(group.time))},{sampleset}:{addition}:0:0:"
+                )
+                if len(denden_start.volumes) > 0:
+                    timing = self.set_volume(timedelta(milliseconds=int(round(denden_start.time))), denden_start.volumes[0], timing)
+                if beatmap_config.mode == 1 and denden_start.scroll_speed is not None:
+                    timing = self.set_sv(timedelta(milliseconds=int(round(denden_start.time))), denden_start.scroll_speed, timing)
+                denden_start = None
 
             elif hit_type == EventType.SPINNER:
                 spinner_start = group
@@ -242,11 +319,11 @@ class Postprocessor(object):
                 redline = tp if tp.parent is None else tp.parent
                 last_sv = 1 if tp.parent is None else -100 / tp.ms_per_beat
 
-                sv, adjusted_length = self.get_human_sv_and_length(req_length, length, span_duration, last_sv, redline, slider_head.new_combo, beatmap_config.slider_multiplier)
+                sv, length = self.get_human_sv_and_length(req_length, length, span_duration, last_sv, redline, slider_head.new_combo, beatmap_config.slider_multiplier)
 
                 # If the adjusted length is too long, scale the control points to fit the length
-                if adjusted_length > length + 1e-4:
-                    scale = adjusted_length / length
+                if length > length + 1e-4:
+                    scale = length / length
                     anchor_info = [(cp[0], (cp[1] - slider_head.x) * scale + slider_head.x, (cp[2] - slider_head.y) * scale + slider_head.y) for cp in anchor_info]
 
                 if sv != last_sv:
@@ -266,7 +343,7 @@ class Postprocessor(object):
                 node_sampleset = "|".join(f"{s}:{a}" for s, a in zip(node_samplesets, node_additions))
 
                 hit_object_strings.append(
-                    f"{int(round(slider_head.x))},{int(round(slider_head.y))},{slider_start_time},{6 if slider_head.new_combo else 2},{body_hitsound},{curve_type}|{control_points},{slides},{adjusted_length},{node_hitsounds},{node_sampleset},{body_sampleset}:{body_addition}:0:0:"
+                    f"{int(round(slider_head.x))},{int(round(slider_head.y))},{slider_start_time},{6 if slider_head.new_combo else 2},{body_hitsound},{curve_type}|{control_points},{slides},{length},{node_hitsounds},{node_sampleset},{body_sampleset}:{body_addition}:0:0:"
                 )
 
                 # Set volume for each node sample
@@ -282,6 +359,12 @@ class Postprocessor(object):
                 slider_head = None
                 last_anchor = None
                 anchor_info = []
+
+            elif hit_type == EventType.KIAI:
+                timing = self.set_kiai(timedelta(milliseconds=group.time), bool(group.value), timing)
+
+            elif hit_type == EventType.SCROLL_SPEED_CHANGE:
+                timing = self.set_sv(timedelta(milliseconds=group.time), group.scroll_speed, timing)
 
         # Write .osu file
         with open(OSU_TEMPLATE_PATH, "r") as tf:
@@ -312,6 +395,22 @@ class Postprocessor(object):
         tp = TimingPoint(time, -100 / sv, 4, 2, 0, 100, None, False)
         tp_change = TimingPointsChange(tp, mpb=True)
         return tp_change.add_change(timing, True)
+
+    @staticmethod
+    def set_kiai(time: timedelta, kiai: bool, timing: list[TimingPoint]) -> list[TimingPoint]:
+        """Set the kiai mode at a specific time."""
+        tp = TimingPoint(time, -100, 4, 2, 0, 100, None, kiai)
+        tp_change = TimingPointsChange(tp, kiai=True)
+        return tp_change.add_change(timing, True)
+
+    def get_control_points_for_length(self, length: float) -> list[tuple[int, int]]:
+        # Constructs a slider that zigzags back and forth to cover the required length
+        control_points = [(0, 192)]
+        y = 192
+        for i in range(np.ceil(length / 512)):
+            x = 512 if i % 2 == 0 else 0
+            control_points.append((x, y))
+        return control_points
 
     def get_human_sv_and_length(self, req_length, length, span_duration, last_sv, redline, new_combo, slider_multiplier):
         # Only change sv if the difference is more than 10%
