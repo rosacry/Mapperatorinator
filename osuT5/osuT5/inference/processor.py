@@ -63,6 +63,36 @@ class TimeshiftBias(LogitsProcessor):
         return scores_processed
 
 
+class ConditionalTemperatureLogitsWarper(LogitsProcessor):
+    def __init__(self, temperature: float, timing_temperature: float, beat_range: list[int], types_first: bool = True):
+        if not isinstance(temperature, float) or not (temperature > 0):
+            except_msg = (
+                f"`temperature` (={temperature}) has to be a strictly positive float, otherwise your next token "
+                "scores will be invalid."
+            )
+            raise ValueError(except_msg)
+        if not isinstance(timing_temperature, float) or not (timing_temperature > 0):
+            except_msg = (
+                f"`timing_temperature` (={timing_temperature}) has to be a strictly positive float, otherwise your next token "
+                "scores will be invalid."
+            )
+            raise ValueError(except_msg)
+
+        self.temperature = temperature
+        self.timing_temperature = timing_temperature
+        self.beat_range = beat_range
+
+        if not types_first and timing_temperature != temperature:
+            print("WARNING: timing_temperature is not supported for types_first=False. Ignoring.")
+            self.timing_temperature = temperature
+
+    def __call__(self, input_ids: torch.LongTensor, scores: torch.FloatTensor) -> torch.Tensor:
+        if input_ids.shape[1] > 0 and input_ids[0, -1] in self.beat_range:
+            return scores / self.timing_temperature
+        else:
+            return scores / self.temperature
+
+
 class Processor(object):
     def __init__(self, args: DictConfig, model: OsuT, tokenizer: Tokenizer):
         """Model inference stage that processes sequences."""
@@ -108,14 +138,25 @@ class Processor(object):
 
         self.cfg_scale = args.cfg_scale
         self.temperature = args.temperature
+        self.timing_temperature = args.timing_temperature
         self.top_p = args.top_p
 
         self.timeshift_bias = args.timeshift_bias
         self.time_range = range(tokenizer.event_start[EventType.TIME_SHIFT], tokenizer.event_end[EventType.TIME_SHIFT])
-        self.beat_range = [self.tokenizer.event_start[EventType.BEAT], self.tokenizer.event_start[EventType.MEASURE]]
+        self.beat_range = [
+            self.tokenizer.event_start[EventType.BEAT],
+            self.tokenizer.event_start[EventType.MEASURE],
+            self.tokenizer.event_start[EventType.TIMING_POINT],
+        ]
         self.types_first = args.osut5.data.types_first
 
         self.logit_processor = LogitsProcessorList()
+        self.logit_processor.append(ConditionalTemperatureLogitsWarper(
+            self.temperature,
+            self.timing_temperature,
+            self.beat_range,
+            self.types_first
+        ))
         if self.timeshift_bias != 0:
             self.logit_processor.append(TimeshiftBias(self.timeshift_bias, self.time_range))
 
@@ -358,7 +399,6 @@ class Processor(object):
                 decoder_input_ids=cond_prompt,
                 beatmap_idx=beatmap_idx,
                 logits_processor=self.logit_processor,
-                temperature=self.temperature,
                 top_p=self.top_p,
                 guidance_scale=self.cfg_scale,
                 negative_prompt_ids=uncond_prompt,
