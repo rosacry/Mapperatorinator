@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import dataclasses
-import math
 import os
 import uuid
 from datetime import timedelta
@@ -15,7 +14,7 @@ from slider import TimingPoint, Beatmap
 
 from .slider_path import SliderPath
 from .timing_points_change import TimingPointsChange, sort_timing_points
-from ..dataset.data_utils import get_groups
+from ..dataset.data_utils import get_groups, Group
 from ..tokenizer import Event, EventType
 
 OSU_FILE_EXTENSION = ".osu"
@@ -160,6 +159,8 @@ class Postprocessor(object):
 
         groups = get_groups(events, types_first=self.types_first)
         last_x, last_y = 256, 192
+
+        self.snap_near_perfect_overlaps(groups)
 
         # Convert to .osu format
         for group in groups:
@@ -717,3 +718,33 @@ class Postprocessor(object):
     @staticmethod
     def is_snapped(time: float, resnapped_time: float, leniency: float):
         return abs(time - resnapped_time) <= leniency
+
+    def snap_near_perfect_overlaps(self, groups: list[Group]):
+        snappable_types = {
+            EventType.CIRCLE,
+            EventType.SLIDER_HEAD,
+            EventType.RED_ANCHOR,
+            EventType.LAST_ANCHOR,
+            EventType.SLIDER_END,
+        }
+        space_leniency = 2
+        time_leniency = 1000
+        prev_groups: list[Group] = []
+
+        for i, group in enumerate(groups):
+            if group.event_type not in snappable_types:
+                continue
+
+            if group.x is None or group.y is None:
+                continue
+
+            # Filter previous groups to only include groups that are close in time
+            prev_groups = [prev_group for prev_group in prev_groups if abs(group.time - prev_group.time) <= time_leniency]
+
+            for prev_group in prev_groups:
+                if np.linalg.norm(np.array([group.x, group.y]) - np.array([prev_group.x, prev_group.y])) < space_leniency:
+                    group.x = prev_group.x
+                    group.y = prev_group.y
+                    break
+
+            prev_groups.append(group)
