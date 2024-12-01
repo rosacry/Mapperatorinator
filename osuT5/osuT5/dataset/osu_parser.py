@@ -114,20 +114,24 @@ class OsuParser:
         """Extract all scroll speed changes from a beatmap."""
         events = []
         event_times = []
+        last_scroll_speed = -1
 
         for tp in beatmap.timing_points:
             if tp.parent is None:
-                continue
-
-            self._add_group(
-                EventType.SCROLL_SPEED_CHANGE,
-                tp.offset,
-                events,
-                event_times,
-                beatmap,
-                time_event=True,
-                scroll_speed=self.tp_to_scroll_speed(tp),
-            )
+                last_scroll_speed = 1
+            else:
+                scroll_speed = -100 / tp.ms_per_beat
+                if scroll_speed != last_scroll_speed and last_scroll_speed != -1:
+                    self._add_group(
+                        EventType.SCROLL_SPEED_CHANGE,
+                        tp.offset,
+                        events,
+                        event_times,
+                        beatmap,
+                        time_event=True,
+                        scroll_speed=self.tp_to_scroll_speed(tp),
+                    )
+                last_scroll_speed = scroll_speed
 
         return events, event_times
 
