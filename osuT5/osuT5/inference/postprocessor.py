@@ -364,7 +364,7 @@ class Postprocessor(object):
             elif hit_type == EventType.KIAI:
                 timing = self.set_kiai(timedelta(milliseconds=group.time), bool(group.value), timing)
 
-            elif hit_type == EventType.SCROLL_SPEED_CHANGE:
+            elif hit_type == EventType.SCROLL_SPEED_CHANGE and group.scroll_speed is not None:
                 timing = self.set_sv(timedelta(milliseconds=group.time), group.scroll_speed, timing)
 
         # Write .osu file
