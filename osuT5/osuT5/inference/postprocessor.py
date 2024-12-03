@@ -727,7 +727,7 @@ class Postprocessor(object):
             EventType.LAST_ANCHOR,
             EventType.SLIDER_END,
         }
-        space_leniency = 2
+        space_leniency = 3.8
         time_leniency = 1000
         prev_groups: list[Group] = []
 
