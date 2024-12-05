@@ -479,10 +479,10 @@ class Postprocessor(object):
             ms_per_tick = before_tp.ms_per_beat / divisor
             remainder = (time - before_time) % ms_per_tick
             return {
-                int(time - remainder - ms_per_tick + 1e-4),
-                int(time - remainder + 1e-4),
-                int(time - remainder + ms_per_tick + 1e-4),
-                int(time - remainder + 2 * ms_per_tick + 1e-4)
+                int(time - remainder - ms_per_tick),
+                int(time - remainder),
+                int(time - remainder + ms_per_tick),
+                int(time - remainder + 2 * ms_per_tick)
             }
 
         ticks = local_ticks(snap_divisor)
