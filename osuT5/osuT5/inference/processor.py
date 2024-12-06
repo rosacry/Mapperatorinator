@@ -93,6 +93,24 @@ class ConditionalTemperatureLogitsWarper(LogitsProcessor):
             return scores / self.temperature
 
 
+class ManiaLogitsWarper(LogitsProcessor):
+    def __init__(self, temperature: float, tokenizer: Tokenizer):
+        self.temperature = temperature
+        self.mania_type_tokens = [
+            tokenizer.event_start[EventType.CIRCLE],
+            tokenizer.event_start[EventType.HOLD_NOTE],
+            tokenizer.event_start[EventType.HOLD_NOTE_END],
+        ]
+
+    def __call__(self, input_ids: torch.LongTensor, scores: torch.FloatTensor) -> torch.Tensor:
+        if input_ids.shape[1] >= 3 and input_ids[0, -3] in self.mania_type_tokens:
+            # We expect a mania column token
+            # We want to make sure that the column does not overlap with any previous notes
+            return scores / self.temperature
+        else:
+            return scores
+
+
 class Processor(object):
     def __init__(self, args: DictConfig, model: OsuT, tokenizer: Tokenizer):
         """Model inference stage that processes sequences."""
@@ -158,6 +176,11 @@ class Processor(object):
             self.beat_range,
             self.types_first
         ))
+        if 3 in args.osut5.data.gamemodes:
+            self.logit_processor.append(ManiaLogitsWarper(
+                args.mania_column_temperature,
+                tokenizer,
+            ))
         if self.timeshift_bias != 0:
             self.logit_processor.append(TimeshiftBias(self.timeshift_bias, self.time_range))
 
