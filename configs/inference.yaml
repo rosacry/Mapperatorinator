@@ -23,7 +23,8 @@ seed: 0                 # Random seed
 cfg_scale: 1.0              # Scale of classifier-free guidance
 temperature: 1.0        # Sampling temperature
 timing_temperature: 1.0 # Sampling temperature for timing
-mania_column_temperature: 0.1 # Sampling temperature for mania columns
+mania_column_temperature: 0.5 # Sampling temperature for mania columns
+taiko_hit_temperature: 0.5    # Sampling temperature for taiko hit types
 top_p: 0.95              # Top-p sampling threshold
 timeshift_bias: 0.0        # Logit bias for sampling timeshift tokens
 
