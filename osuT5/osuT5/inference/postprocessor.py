@@ -408,7 +408,7 @@ class Postprocessor(object):
         # Constructs a slider that zigzags back and forth to cover the required length
         control_points = [(0, 192)]
         y = 192
-        for i in range(np.ceil(length / 512)):
+        for i in range(int(np.ceil(length / 512))):
             x = 512 if i % 2 == 0 else 0
             control_points.append((x, y))
         return control_points
