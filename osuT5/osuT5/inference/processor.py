@@ -37,6 +37,28 @@ class GenerationConfig:
     negative_descriptors: list[str] = None
 
 
+def get_beat_type_tokens(tokenizer: Tokenizer) -> list[int]:
+    beat_range = [
+        tokenizer.event_start[EventType.BEAT],
+        tokenizer.event_start[EventType.MEASURE],
+    ]
+    if EventType.TIMING_POINT in tokenizer.event_start:
+        beat_range.append(tokenizer.event_start[EventType.TIMING_POINT])
+    return beat_range
+
+
+def get_mania_type_tokens(tokenizer: Tokenizer) -> list[int]:
+    return [
+        tokenizer.event_start[EventType.CIRCLE],
+        tokenizer.event_start[EventType.HOLD_NOTE],
+        tokenizer.event_start[EventType.HOLD_NOTE_END],
+    ] if EventType.HOLD_NOTE_END in tokenizer.event_start else []
+
+
+def get_scroll_speed_tokens(tokenizer: Tokenizer) -> range:
+    return range(tokenizer.event_start[EventType.SCROLL_SPEED], tokenizer.event_end[EventType.SCROLL_SPEED])
+
+
 def generation_config_from_beatmap(beatmap: Beatmap, tokenizer: Tokenizer) -> GenerationConfig:
     gamemode = int(beatmap.mode)
     return GenerationConfig(
@@ -64,57 +86,44 @@ class TimeshiftBias(LogitsProcessor):
 
 
 class ConditionalTemperatureLogitsWarper(LogitsProcessor):
-    def __init__(self, temperature: float, timing_temperature: float, beat_range: list[int], types_first: bool = True):
-        if not isinstance(temperature, float) or not (temperature > 0):
-            except_msg = (
-                f"`temperature` (={temperature}) has to be a strictly positive float, otherwise your next token "
-                "scores will be invalid."
-            )
-            raise ValueError(except_msg)
-        if not isinstance(timing_temperature, float) or not (timing_temperature > 0):
-            except_msg = (
-                f"`timing_temperature` (={timing_temperature}) has to be a strictly positive float, otherwise your next token "
-                "scores will be invalid."
-            )
-            raise ValueError(except_msg)
+    def __init__(
+            self,
+            args: DictConfig,
+            tokenizer: Tokenizer,
+            gamemode: int,
+    ):
+        self.gamemode = gamemode
+        self.temperature = args.temperature
+        self.conditionals = []
 
-        self.temperature = temperature
-        self.timing_temperature = timing_temperature
-        self.beat_range = beat_range
+        if args.osut5.data.add_timing:
+            self.conditionals.append((args.timing_temperature, get_beat_type_tokens(tokenizer), 1))
+        if gamemode == 3:
+            self.conditionals.append((args.mania_column_temperature, get_mania_type_tokens(tokenizer), 3))
+        if gamemode == 1:
+            self.conditionals.append((args.taiko_hit_temperature, get_scroll_speed_tokens(tokenizer), 1))
 
-        if not types_first and timing_temperature != temperature:
-            print("WARNING: timing_temperature is not supported for types_first=False. Ignoring.")
-            self.timing_temperature = temperature
+        if not args.osut5.data.types_first:
+            print("WARNING: Conditional temperature is not supported for types_first=False. Ignoring.")
+            self.conditionals = []
 
-    def __call__(self, input_ids: torch.LongTensor, scores: torch.FloatTensor) -> torch.Tensor:
-        if input_ids.shape[1] > 0 and input_ids[0, -1] in self.beat_range:
-            return scores / self.timing_temperature
-        else:
-            return scores / self.temperature
-
-
-class ManiaLogitsWarper(LogitsProcessor):
-    def __init__(self, temperature: float, tokenizer: Tokenizer):
-        self.temperature = temperature
-        self.mania_type_tokens = [
-            tokenizer.event_start[EventType.CIRCLE],
-            tokenizer.event_start[EventType.HOLD_NOTE],
-            tokenizer.event_start[EventType.HOLD_NOTE_END],
-        ]
+        self.max_offset = max([offset for _, _, offset in self.conditionals], default=0)
 
     def __call__(self, input_ids: torch.LongTensor, scores: torch.FloatTensor) -> torch.Tensor:
-        if input_ids.shape[1] >= 3 and input_ids[0, -3] in self.mania_type_tokens:
-            # We expect a mania column token
-            # We want to make sure that the column does not overlap with any previous notes
-            return scores / self.temperature
-        else:
-            return scores
+        if len(self.conditionals) > 0:
+            lookback = input_ids[0, -self.max_offset:].cpu()
+            for temperature, tokens, offset in self.conditionals:
+                if len(lookback) >= offset and lookback[-offset] in tokens:
+                    return scores / temperature
+
+        return scores / self.temperature
 
 
 class Processor(object):
     def __init__(self, args: DictConfig, model: OsuT, tokenizer: Tokenizer):
         """Model inference stage that processes sequences."""
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.args = args
         self.model = model
         self.tokenizer = tokenizer
         self.tgt_seq_len = args.osut5.data.tgt_seq_len
@@ -155,32 +164,14 @@ class Processor(object):
             self.x_count = self.x_max - self.x_min + 1
 
         self.cfg_scale = args.cfg_scale
-        self.temperature = args.temperature
-        self.timing_temperature = args.timing_temperature
         self.top_p = args.top_p
 
         self.timeshift_bias = args.timeshift_bias
         self.time_range = range(tokenizer.event_start[EventType.TIME_SHIFT], tokenizer.event_end[EventType.TIME_SHIFT])
-        self.beat_range = [
-            self.tokenizer.event_start[EventType.BEAT],
-            self.tokenizer.event_start[EventType.MEASURE],
-        ]
-        if args.osut5.data.add_timing_points:
-            self.beat_range.append(self.tokenizer.event_start[EventType.TIMING_POINT])
+        self.beat_type_tokens = get_beat_type_tokens(tokenizer)
         self.types_first = args.osut5.data.types_first
 
         self.logit_processor = LogitsProcessorList()
-        self.logit_processor.append(ConditionalTemperatureLogitsWarper(
-            self.temperature,
-            self.timing_temperature,
-            self.beat_range,
-            self.types_first
-        ))
-        if 3 in args.osut5.data.gamemodes:
-            self.logit_processor.append(ManiaLogitsWarper(
-                args.mania_column_temperature,
-                tokenizer,
-            ))
         if self.timeshift_bias != 0:
             self.logit_processor.append(TimeshiftBias(self.timeshift_bias, self.time_range))
 
@@ -310,6 +301,13 @@ class Processor(object):
         events = []
         event_times = []
 
+        # Prepare logit processors
+        logit_processor = self.logit_processor + [ConditionalTemperatureLogitsWarper(
+            self.args,
+            self.tokenizer,
+            generation_config.gamemode,
+        )]
+
         # Prepare special tokens
         beatmap_idx = torch.tensor([self.tokenizer.num_classes], dtype=torch.long, device=self.device)
         if self.need_beatmap_idx:
@@ -427,7 +425,7 @@ class Processor(object):
                 frames,
                 decoder_input_ids=cond_prompt,
                 beatmap_idx=beatmap_idx,
-                logits_processor=self.logit_processor,
+                logits_processor=logit_processor,
                 top_p=self.top_p,
                 guidance_scale=self.cfg_scale,
                 negative_prompt_ids=uncond_prompt,
@@ -559,14 +557,14 @@ class Processor(object):
         for i in range(len(generated_tokens) - 1, -1, -1):
             token = generated_tokens[i]
             if (token in self.time_range and
-                    0 <= i + beat_offset < len(generated_tokens) and generated_tokens[i + beat_offset] in self.beat_range):
+                    0 <= i + beat_offset < len(generated_tokens) and generated_tokens[i + beat_offset] in self.beat_type_tokens):
                 latest_time = token
                 break
 
         # Search context tokens in order for the first time shift token after latest_time which is followed by a beat or measure token
         for i, token in enumerate(context_tokens):
             if (token in self.time_range and token > latest_time + 1 and
-                    0 <= i + beat_offset < len(context_tokens) and context_tokens[i + beat_offset] in self.beat_range):
+                    0 <= i + beat_offset < len(context_tokens) and context_tokens[i + beat_offset] in self.beat_type_tokens):
                 return token
 
     def _kiai_before_time(self, events, event_times, time) -> Event:
