@@ -300,7 +300,8 @@ class Postprocessor(object):
                 span_duration = last_anchor.time - slider_head.time
                 total_duration = group.time - slider_head.time
 
-                if total_duration == 0 or span_duration == 0:
+                if total_duration <= 0 or span_duration <= 0:
+                    print(f"Warning: Invalid slider duration at {slider_start_time}")
                     continue
 
                 slides = max(int(round(total_duration / span_duration)), 1)
