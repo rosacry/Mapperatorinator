@@ -475,6 +475,10 @@ class Postprocessor(object):
         after_tp = self.uninherited_timing_point_after(timedelta(milliseconds=time), timing)
         after_time = after_tp.offset.total_seconds() * 1000 if after_tp is not None else None
 
+        # If the new time is too close to the next timing point, snap to the next timing point
+        if after_time is not None and time > before_time + 10 and time >= after_time - 10:
+            return after_time
+
         def local_ticks(divisor: int) -> set[int]:
             ms_per_tick = before_tp.ms_per_beat / divisor
             remainder = (time - before_time) % ms_per_tick
@@ -494,10 +498,6 @@ class Postprocessor(object):
 
         # Find the closest tick to the original time
         new_time = min(ticks, key=lambda x: abs(x - time))
-
-        # If the new time is too close to the next timing point, snap to the next timing point
-        if after_time is not None and new_time > before_time + 10 and new_time >= after_time - 10:
-            new_time = after_time
 
         return new_time
 
