@@ -302,11 +302,11 @@ class Processor(object):
         event_times = []
 
         # Prepare logit processors
-        logit_processor = self.logit_processor + [ConditionalTemperatureLogitsWarper(
+        logit_processor = LogitsProcessorList(self.logit_processor + [ConditionalTemperatureLogitsWarper(
             self.args,
             self.tokenizer,
             generation_config.gamemode,
-        )]
+        )])
 
         # Prepare special tokens
         beatmap_idx = torch.tensor([self.tokenizer.num_classes], dtype=torch.long, device=self.device)
