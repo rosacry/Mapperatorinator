@@ -464,13 +464,6 @@ class Processor(object):
         if generation_config.gamemode == 3:
             events = self._convert_column_to_position(events, generation_config.keycount)
 
-        # Make sure the time shifts are monotonically increasing
-        time = 0
-        for i, event in enumerate(events):
-            if event.type == EventType.TIME_SHIFT:
-                time = max(time, event.value)
-                events[i] = Event(EventType.TIME_SHIFT, time)
-
         return events
 
     def _get_events_time_range(self, events: list[Event], event_times: list[float], start_time: float, end_time: float):
