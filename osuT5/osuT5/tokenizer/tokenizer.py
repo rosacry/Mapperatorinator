@@ -381,11 +381,7 @@ class Tokenizer:
 
     def encode_hold_note_ratio(self, hold_note_ratio: float) -> int:
         """Converts hold note ratio into token id."""
-        value = np.clip(round(hold_note_ratio * 10), 0, 10)
-        if hold_note_ratio <= 0:
-            value = -1
-        elif hold_note_ratio >= 1:
-            value = 11
+        value = self.ratio_to_value(hold_note_ratio, 10)
         return self.encode(Event(type=EventType.HOLD_NOTE_RATIO, value=value))
 
     @property
@@ -395,12 +391,16 @@ class Tokenizer:
 
     def encode_scroll_speed_ratio(self, scroll_speed_ratio: float) -> int:
         """Converts scroll speed ratio into token id."""
-        value = np.clip(round(scroll_speed_ratio * 10), 0, 10)
-        if scroll_speed_ratio <= 0:
-            value = -1
-        elif scroll_speed_ratio >= 1:
-            value = 11
+        value = self.ratio_to_value(scroll_speed_ratio, 10)
         return self.encode(Event(type=EventType.SCROLL_SPEED_RATIO, value=value))
+
+    def ratio_to_value(self, ratio: float, resolution: int) -> int:
+        value = np.clip(round(ratio * resolution), 0, resolution)
+        if ratio <= 0:
+            value = -1
+        elif ratio >= 1:
+            value = resolution + 1
+        return value
 
     def _init_beatmap_idx(self, args: DictConfig) -> None:
         """Initializes and caches the beatmap index."""
