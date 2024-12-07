@@ -65,7 +65,7 @@ def generation_config_from_beatmap(beatmap: Beatmap, tokenizer: Tokenizer) -> Ge
         gamemode=gamemode,
         beatmap_id=beatmap.beatmap_id,
         difficulty=float(beatmap.stars()),
-        mapper_id=tokenizer.mapper_idx.get(beatmap.beatmap_id, -1),
+        mapper_id=tokenizer.beatmap_mapper.get(beatmap.beatmap_id, -1),
         circle_size=beatmap.circle_size,
         keycount=int(beatmap.circle_size),
         hold_note_ratio=get_hold_note_ratio(beatmap) if gamemode == 3 else -1,
@@ -233,7 +233,7 @@ class Processor(object):
         if self.add_mapper_token:
             mapper_token = self.tokenizer.encode_mapper_id(config.mapper_id) if config.mapper_id != -1 else self.tokenizer.mapper_unk
             cond_tokens.append(mapper_token)
-            if config.mapper_id != -1 and config.mapper_id not in self.tokenizer.mapper_idx and verbose:
+            if config.mapper_id != -1 and config.mapper_id not in self.tokenizer.beatmap_mapper and verbose:
                 print(f"Mapper class {config.mapper_id} not found. Using default.")
         if self.add_year_token:
             year_token = self.tokenizer.encode_year(config.year) if config.year != -1 else self.tokenizer.year_unk

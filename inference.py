@@ -53,7 +53,7 @@ def get_args_from_beatmap(args: DictConfig, tokenizer: Tokenizer):
     if args.difficulty == -1 and len(beatmap.hit_objects(stacking=False)) > 0:
         args.difficulty = generation_config.difficulty
         print(f"Using difficulty {args.difficulty}")
-    if args.mapper_id == -1 and beatmap.beatmap_id in tokenizer.mapper_idx:
+    if args.mapper_id == -1 and beatmap.beatmap_id in tokenizer.beatmap_mapper:
         args.mapper_id = generation_config.mapper_id
         print(f"Using mapper ID {args.mapper_id}")
     if len(args.descriptors) == 0 and beatmap.beatmap_id in tokenizer.beatmap_descriptors:
