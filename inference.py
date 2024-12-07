@@ -12,7 +12,7 @@ import routed_pickle
 from diffusion_pipeline import DiffisionPipeline
 from osuT5.osuT5.inference import Preprocessor, Processor, Postprocessor, BeatmapConfig, GenerationConfig, \
     generation_config_from_beatmap, beatmap_config_from_beatmap, background_line
-from osuT5.osuT5.tokenizer import Tokenizer, ContextType
+from osuT5.osuT5.tokenizer import Tokenizer, ContextType, EventType, Event
 from osuT5.osuT5.utils import get_model
 from osu_diffusion import DiT_models
 
@@ -158,6 +158,13 @@ def generate(
             generation_config=generation_config,
             verbose=verbose,
         )
+
+    # Make sure the time shifts are monotonically increasing
+    time = 0
+    for i, event in enumerate(events):
+        if event.type == EventType.TIME_SHIFT:
+            time = max(time, event.value)
+            events[i] = Event(EventType.TIME_SHIFT, time)
 
     result = postprocessor.generate(
         events=events,
