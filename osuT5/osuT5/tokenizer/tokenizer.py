@@ -382,9 +382,9 @@ class Tokenizer:
     def encode_hold_note_ratio(self, hold_note_ratio: float) -> int:
         """Converts hold note ratio into token id."""
         value = np.clip(round(hold_note_ratio * 10), 0, 10)
-        if hold_note_ratio == 0:
+        if hold_note_ratio <= 0:
             value = -1
-        elif hold_note_ratio == 1:
+        elif hold_note_ratio >= 1:
             value = 11
         return self.encode(Event(type=EventType.HOLD_NOTE_RATIO, value=value))
 
@@ -396,9 +396,9 @@ class Tokenizer:
     def encode_scroll_speed_ratio(self, scroll_speed_ratio: float) -> int:
         """Converts scroll speed ratio into token id."""
         value = np.clip(round(scroll_speed_ratio * 10), 0, 10)
-        if scroll_speed_ratio == 0:
+        if scroll_speed_ratio <= 0:
             value = -1
-        elif scroll_speed_ratio == 1:
+        elif scroll_speed_ratio >= 1:
             value = 11
         return self.encode(Event(type=EventType.SCROLL_SPEED_RATIO, value=value))
 
