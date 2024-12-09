@@ -14,7 +14,7 @@ from transformers import LogitsProcessorList, LogitsProcessor
 
 from ..dataset import OsuParser
 from ..dataset.data_utils import update_event_times, remove_events_of_type, get_hold_note_ratio, get_scroll_speed_ratio, \
-    events_of_type
+    events_of_type, get_hitsounded_status
 from ..model import OsuT
 from ..tokenizer import Event, EventType, Tokenizer, ContextType
 
@@ -29,12 +29,29 @@ class GenerationConfig:
     difficulty: float = -1
     mapper_id: int = -1
     year: int = -1
+    hitsounded: bool = True
     circle_size: float = -1
     keycount: int = -1
     hold_note_ratio: float = -1
     scroll_speed_ratio: float = -1
     descriptors: list[str] = None
     negative_descriptors: list[str] = None
+
+
+def generation_config_from_beatmap(beatmap: Beatmap, tokenizer: Tokenizer) -> GenerationConfig:
+    gamemode = int(beatmap.mode)
+    return GenerationConfig(
+        gamemode=gamemode,
+        beatmap_id=beatmap.beatmap_id,
+        difficulty=float(beatmap.stars()),
+        mapper_id=tokenizer.beatmap_mapper.get(beatmap.beatmap_id, -1),
+        circle_size=beatmap.circle_size,
+        hitsounded=get_hitsounded_status(beatmap),
+        keycount=int(beatmap.circle_size),
+        hold_note_ratio=get_hold_note_ratio(beatmap) if gamemode == 3 else -1,
+        scroll_speed_ratio=get_scroll_speed_ratio(beatmap) if gamemode in [1, 3] else -1,
+        descriptors=[tokenizer.descriptor_name(idx) for idx in tokenizer.beatmap_descriptors.get(beatmap.beatmap_id, [])],
+    )
 
 
 def get_beat_type_tokens(tokenizer: Tokenizer) -> list[int]:
@@ -57,21 +74,6 @@ def get_mania_type_tokens(tokenizer: Tokenizer) -> list[int]:
 
 def get_scroll_speed_tokens(tokenizer: Tokenizer) -> range:
     return range(tokenizer.event_start[EventType.SCROLL_SPEED], tokenizer.event_end[EventType.SCROLL_SPEED])
-
-
-def generation_config_from_beatmap(beatmap: Beatmap, tokenizer: Tokenizer) -> GenerationConfig:
-    gamemode = int(beatmap.mode)
-    return GenerationConfig(
-        gamemode=gamemode,
-        beatmap_id=beatmap.beatmap_id,
-        difficulty=float(beatmap.stars()),
-        mapper_id=tokenizer.beatmap_mapper.get(beatmap.beatmap_id, -1),
-        circle_size=beatmap.circle_size,
-        keycount=int(beatmap.circle_size),
-        hold_note_ratio=get_hold_note_ratio(beatmap) if gamemode == 3 else -1,
-        scroll_speed_ratio=get_scroll_speed_ratio(beatmap) if gamemode in [1, 3] else -1,
-        descriptors=[tokenizer.descriptor_name(idx) for idx in tokenizer.beatmap_descriptors.get(beatmap.beatmap_id, [])],
-    )
 
 
 class TimeshiftBias(LogitsProcessor):
@@ -143,6 +145,7 @@ class Processor(object):
         self.add_diff_token = args.osut5.data.add_diff_token
         self.add_mapper_token = args.osut5.data.add_mapper_token
         self.add_year_token = args.osut5.data.add_year_token
+        self.add_hitsounded_token = args.osut5.data.add_hitsounded_token
         self.add_cs_token = args.osut5.data.add_cs_token
         self.add_descriptors = args.osut5.data.add_descriptors
         self.add_kiai = args.osut5.data.add_kiai
@@ -238,6 +241,9 @@ class Processor(object):
         if self.add_year_token:
             year_token = self.tokenizer.encode_year(config.year) if config.year != -1 else self.tokenizer.year_unk
             cond_tokens.append(year_token)
+        if self.add_hitsounded_token:
+            hitsounded_token = self.tokenizer.encode(Event(EventType.HITSOUNDED, int(config.hitsounded)))
+            cond_tokens.append(hitsounded_token)
         if self.add_cs_token and config.gamemode in [0, 2]:
             cs_token = self.tokenizer.encode_cs(config.circle_size) if config.circle_size != -1 else self.tokenizer.cs_unk
             cond_tokens.append(cs_token)
@@ -319,6 +325,7 @@ class Processor(object):
             gamemode=generation_config.gamemode,
             difficulty=generation_config.difficulty,
             circle_size=generation_config.circle_size,
+            hitsounded=generation_config.hitsounded,
             keycount=generation_config.keycount,
             hold_note_ratio=generation_config.hold_note_ratio,
             scroll_speed_ratio=generation_config.scroll_speed_ratio,

@@ -42,6 +42,7 @@ data:                  # Data settings
   add_mapper_token: false
   add_cs_token: false
   add_year_token: false
+  add_hitsounded_token: false  # Add token for whether the map has hitsounds
   add_descriptors: false
   add_empty_sequences: true
   add_empty_sequences_at_step: -1

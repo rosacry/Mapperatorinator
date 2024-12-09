@@ -30,6 +30,7 @@ class EventType(Enum):
     MAPPER = "mapper"
     CS = "cs"
     YEAR = "year"
+    HITSOUNDED = "hitsounded"
     MANIA_KEYCOUNT = "keycount"
     HOLD_NOTE_RATIO = "hold_note_ratio"
     SCROLL_SPEED_RATIO = "scroll_speed_ratio"

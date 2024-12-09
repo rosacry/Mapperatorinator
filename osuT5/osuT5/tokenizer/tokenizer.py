@@ -118,6 +118,9 @@ class Tokenizer:
             if args.data.add_year_token:
                 self.input_event_ranges.append(EventRange(EventType.YEAR, 2007, 2077))
 
+            if args.data.add_hitsounded_token:
+                self.input_event_ranges.append(EventRange(EventType.HITSOUNDED, 0, 1))
+
             if args.data.add_descriptors:
                 self._init_descriptor_idx(args)
                 self.input_event_ranges.append(EventRange(EventType.DESCRIPTOR, 0, self.num_descriptor_classes))
