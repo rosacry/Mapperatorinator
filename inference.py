@@ -10,6 +10,7 @@ from slider import Beatmap
 import osu_diffusion
 import routed_pickle
 from diffusion_pipeline import DiffisionPipeline
+from osuT5.osuT5.dataset.data_utils import get_song_length
 from osuT5.osuT5.inference import Preprocessor, Processor, Postprocessor, BeatmapConfig, GenerationConfig, \
     generation_config_from_beatmap, beatmap_config_from_beatmap, background_line
 from osuT5.osuT5.tokenizer import Tokenizer, ContextType, EventType, Event
@@ -84,6 +85,7 @@ def get_config(args: DictConfig):
         difficulty=args.difficulty,
         mapper_id=args.mapper_id,
         year=args.year,
+        hitsounded=args.hitsounded,
         circle_size=args.circle_size,
         keycount=args.keycount,
         hold_note_ratio=args.hold_note_ratio,
@@ -132,7 +134,7 @@ def generate(
     # TODO: Auto generate timing if not provided in in_context and required for the model and this output_type
     audio = preprocessor.load(audio_path)
     sequences = preprocessor.segment(audio)
-    in_context = processor.get_in_context(args.in_context, other_beatmap_path)
+    in_context = processor.get_in_context(args.in_context, other_beatmap_path, get_song_length(audio, args.osut5.data.sample_rate))
     events = processor.generate(
         sequences=sequences,
         generation_config=generation_config,
