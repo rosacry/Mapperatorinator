@@ -146,6 +146,8 @@ class Processor(object):
         self.add_mapper_token = args.osut5.data.add_mapper_token
         self.add_year_token = args.osut5.data.add_year_token
         self.add_hitsounded_token = args.osut5.data.add_hitsounded_token
+        self.add_song_length_token = args.osut5.data.add_song_length_token
+        self.add_song_position_token = args.osut5.data.add_song_position_token
         self.add_cs_token = args.osut5.data.add_cs_token
         self.add_descriptors = args.osut5.data.add_descriptors
         self.add_kiai = args.osut5.data.add_kiai
@@ -178,7 +180,7 @@ class Processor(object):
         if self.timeshift_bias != 0:
             self.logit_processor.append(TimeshiftBias(self.timeshift_bias, self.time_range))
 
-    def get_context(self, context: ContextType, beatmap_path, add_type=True):
+    def get_context(self, context: ContextType, beatmap_path, song_length: float, add_type=True):
         beatmap_path = Path(beatmap_path)
         if context != ContextType.NONE and not beatmap_path.is_file():
             raise FileNotFoundError(f"Beatmap file {beatmap_path} not found.")
@@ -189,7 +191,7 @@ class Processor(object):
             data["events"], data["event_times"] = [], []
         elif context == ContextType.TIMING:
             beatmap = Beatmap.from_path(beatmap_path)
-            data["events"], data["event_times"] = self.parser.parse_timing(beatmap)
+            data["events"], data["event_times"] = self.parser. parse_timing(beatmap)
         elif context == ContextType.NO_HS:
             beatmap = Beatmap.from_path(beatmap_path)
             hs_events, hs_event_times = self.parser.parse(beatmap)
@@ -198,7 +200,7 @@ class Processor(object):
         elif context == ContextType.GD:
             beatmap = Beatmap.from_path(beatmap_path)
             data["events"], data["event_times"] = self.parser.parse(beatmap)
-            data["class"] = self.get_class_vector(generation_config_from_beatmap(beatmap, self.tokenizer))
+            data["class"] = self.get_class_vector(generation_config_from_beatmap(beatmap, self.tokenizer), song_length)
             if self.add_kiai:
                 data["kiai_events"], data["kiai_event_times"] = events_of_type(data["events"], data["event_times"], EventType.KIAI)
         else:
@@ -208,16 +210,18 @@ class Processor(object):
     def get_in_context(
             self,
             in_context: list[ContextType],
-            beatmap_path: Path
+            beatmap_path: Path,
+            song_length: float,
     ) -> list[dict[str, Any]]:
-        in_context = [self.get_context(context, beatmap_path) for context in in_context]
+        in_context = [self.get_context(context, beatmap_path, song_length) for context in in_context]
         if self.add_gd_context:
-            in_context.append(self.get_context(ContextType.GD, beatmap_path, add_type=False))
+            in_context.append(self.get_context(ContextType.GD, beatmap_path, song_length, add_type=False))
         return in_context
 
     def get_class_vector(
             self,
             config: GenerationConfig,
+            song_length: float,
             verbose: bool = False,
     ):
         cond_tokens = []
@@ -244,6 +248,9 @@ class Processor(object):
         if self.add_hitsounded_token:
             hitsounded_token = self.tokenizer.encode(Event(EventType.HITSOUNDED, int(config.hitsounded)))
             cond_tokens.append(hitsounded_token)
+        if self.add_song_length_token:
+            song_length_token = self.tokenizer.encode_song_length(song_length)
+            cond_tokens.append(song_length_token)
         if self.add_cs_token and config.gamemode in [0, 2]:
             cs_token = self.tokenizer.encode_cs(config.circle_size) if config.circle_size != -1 else self.tokenizer.cs_unk
             cond_tokens.append(cs_token)
@@ -306,6 +313,7 @@ class Processor(object):
 
         events = []
         event_times = []
+        song_length = (len(sequences) - 1) * self.miliseconds_per_stride + self.miliseconds_per_sequence
 
         # Prepare logit processors
         logit_processor = LogitsProcessorList(self.logit_processor + [ConditionalTemperatureLogitsWarper(
@@ -320,7 +328,7 @@ class Processor(object):
             beatmap_idx = torch.tensor([self.tokenizer.beatmap_idx[generation_config.beatmap_id]], dtype=torch.long, device=self.device)
 
         # Prepare unconditional prompt
-        cond_tokens = self.get_class_vector(generation_config, verbose=verbose)
+        cond_tokens = self.get_class_vector(generation_config, song_length, verbose=verbose)
         uncond_tokens = self.get_class_vector(GenerationConfig(
             gamemode=generation_config.gamemode,
             difficulty=generation_config.difficulty,
@@ -330,7 +338,7 @@ class Processor(object):
             hold_note_ratio=generation_config.hold_note_ratio,
             scroll_speed_ratio=generation_config.scroll_speed_ratio,
             descriptors=generation_config.negative_descriptors,
-        ))
+        ), song_length)
 
         # Prepare context type indicator tokens
         def get_context_tokens(context):
@@ -400,6 +408,8 @@ class Processor(object):
                 if self.add_kiai and "kiai_events" in context:
                     last_kiai = self._kiai_before_time(context["kiai_events"], context["kiai_event_times"], frame_time)
                     context_extra_special_events.append(last_kiai)
+                if self.add_song_position_token and "class" in context:
+                    context_extra_special_events.append(self.tokenizer.encode_song_position_event(frame_time, song_length))
                 context["extra_special_tokens"] = self._encode(context_extra_special_events, frame_time)
 
             # Prepare extra special tokens
@@ -407,6 +417,8 @@ class Processor(object):
             if self.add_kiai:
                 last_kiai = self._kiai_before_time(events, event_times, frame_time)
                 extra_special_events.append(last_kiai)
+            if self.add_song_position_token:
+                extra_special_events.append(self.tokenizer.encode_song_position_event(frame_time, song_length))
             extra_special_tokens = self._encode(extra_special_events, frame_time)
 
             # Prepare classifier-free guidance

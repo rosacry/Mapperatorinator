@@ -31,6 +31,8 @@ class EventType(Enum):
     CS = "cs"
     YEAR = "year"
     HITSOUNDED = "hitsounded"
+    SONG_LENGTH = "song_length"
+    SONG_POSITION = "song_position"
     MANIA_KEYCOUNT = "keycount"
     HOLD_NOTE_RATIO = "hold_note_ratio"
     SCROLL_SPEED_RATIO = "scroll_speed_ratio"
