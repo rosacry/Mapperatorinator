@@ -12,10 +12,11 @@ import pandas as pd
 import torch
 from omegaconf import DictConfig
 from pandas import Series, DataFrame
-from slider import Beatmap, HoldNote
+from slider import Beatmap
 from torch.utils.data import IterableDataset
 
-from .data_utils import load_audio_file, remove_events_of_type, get_hold_note_ratio, get_scroll_speed_ratio
+from .data_utils import load_audio_file, remove_events_of_type, get_hold_note_ratio, get_scroll_speed_ratio, \
+    get_hitsounded_status
 from .osu_parser import OsuParser
 from ..tokenizer import Event, EventType, Tokenizer, ContextType
 
@@ -435,6 +436,9 @@ class BeatmapDatasetIterable:
                     special_tokens.append(self.tokenizer.encode_year(context["year"])
                                           if random.random() >= self.args.year_dropout_prob else self.tokenizer.year_unk)
 
+                if self.args.add_hitsounded_token:
+                    special_tokens.append(self.tokenizer.encode(Event(EventType.HITSOUNDED, int(context["hitsounded"]))))
+
                 if self.args.add_cs_token and "circle_size" in context:
                     special_tokens.append(self.tokenizer.encode_cs(context["circle_size"])
                                           if random.random() >= self.args.cs_dropout_prob else self.tokenizer.cs_unk)
@@ -698,6 +702,7 @@ class BeatmapDatasetIterable:
             data["extra"]["beatmap_idx"] = beatmap_metadata["BeatmapIdx"]
             data["extra"]["difficulty"] = self._get_difficulty(beatmap_metadata, speed)
             data["extra"]["year"] = beatmap_metadata["SubmittedDate"].year
+            data["extra"]["hitsounded"] = get_hitsounded_status(beatmap)
             if gamemode in [0, 2]:
                 data["extra"]["circle_size"] = beatmap.circle_size
             if gamemode == 3:

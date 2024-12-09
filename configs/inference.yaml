@@ -10,6 +10,7 @@ beatmap_id: -1          # Beatmap ID to use as style
 difficulty: -1          # Difficulty star rating to map
 mapper_id: -1           # Mapper ID to use as style
 year: -1                # Year to use as style
+hitsounded: true        # Whether the beatmap has hitsounds
 circle_size: -1         # Circle size to use for style
 keycount: 4             # Number of keys to use for mania
 hold_note_ratio: -1     # Ratio of how many hold notes to generate in mania
