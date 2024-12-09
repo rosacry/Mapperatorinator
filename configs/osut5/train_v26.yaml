@@ -22,6 +22,8 @@ data:                  # Data settings
   add_cs_token: true
   add_year_token: true
   add_hitsounded_token: true  # Add token for whether the map has hitsounds
+  add_song_length_token: true  # Add token for the length of the song
+  add_song_position_token: true  # Add token for the position of the song in the mapset
   add_descriptors: true
   timing_random_offset: 2
   src_seq_len: 1024

@@ -393,3 +393,8 @@ def get_hitsounded_status(beatmap: Beatmap) -> bool:
         if note.hitsound != 0:
             return True
     return False
+
+
+def get_song_length(samples: npt.ArrayLike, sample_rate: int) -> float:
+    # Length of the audio in milliseconds
+    return len(samples) / sample_rate * MILISECONDS_PER_SECOND

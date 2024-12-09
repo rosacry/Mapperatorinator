@@ -16,7 +16,7 @@ from slider import Beatmap
 from torch.utils.data import IterableDataset
 
 from .data_utils import load_audio_file, remove_events_of_type, get_hold_note_ratio, get_scroll_speed_ratio, \
-    get_hitsounded_status
+    get_hitsounded_status, get_song_length
 from .osu_parser import OsuParser
 from ..tokenizer import Event, EventType, Tokenizer, ContextType
 
@@ -321,11 +321,12 @@ class BeatmapDatasetIterable:
                 return context["events"][event_start_idx:event_end_idx]
 
             def slice_context(context, frame_start_idx, frame_end_idx):
-                return {"events": slice_events(context, frame_start_idx, frame_end_idx)} | context["extra"]
+                result = {"events": slice_events(context, frame_start_idx, frame_end_idx)} | context["extra"]
+                result["time"] = frame_times[frame_start_idx]
+                return result
 
             # Create the sequence
             sequence = {
-                           "time": frame_times[frame_start_idx],
                            "frames": frames[frame_start_idx:frame_end_idx],
                            "labels_offset": gen_start_idx - event_start_idx,
                            "out_context": slice_context(out_context, frame_start_idx, gen_end_frame),
@@ -336,17 +337,17 @@ class BeatmapDatasetIterable:
             if self.args.add_pre_tokens or self.args.add_pre_tokens_at_step >= 0:
                 sequence["pre_events"] = slice_events(out_context, frame_pre_idx, frame_start_idx)
 
-            def add_last_kiai(sequence_context, id, last_kiai):
+            def add_last_kiai(sequence_context, ids, last_kiai):
                 if sequence_context["context_type"] not in [ContextType.GD, ContextType.MAP]:
                     return
-                if id in last_kiai:
-                    sequence_context["last_kiai"] = last_kiai[id]
+                if ids in last_kiai:
+                    sequence_context["last_kiai"] = last_kiai[ids]
                 else:
                     sequence_context["last_kiai"] = Event(EventType.KIAI, 0)
                 # Find the last kiai event in the out context
                 for event in reversed(sequence_context["events"]):
                     if event.type == EventType.KIAI:
-                        last_kiai[id] = event
+                        last_kiai[ids] = event
                         break
 
             if self.args.add_kiai:
@@ -384,16 +385,13 @@ class BeatmapDatasetIterable:
 
             return events
 
-        start_time = sequence["time"]
-        del sequence["time"]
-
-        sequence["out_context"]["events"] = process(sequence["out_context"]["events"], start_time)
+        sequence["out_context"]["events"] = process(sequence["out_context"]["events"], sequence["out_context"]["time"])
 
         if "pre_events" in sequence:
-            sequence["pre_events"] = process(sequence["pre_events"], start_time)
+            sequence["pre_events"] = process(sequence["pre_events"], sequence["out_context"]["time"])
 
         for context in sequence["in_context"]:
-            context["events"] = process(context["events"], start_time)
+            context["events"] = process(context["events"], context["time"])
 
         return sequence
 
@@ -439,6 +437,9 @@ class BeatmapDatasetIterable:
                 if self.args.add_hitsounded_token:
                     special_tokens.append(self.tokenizer.encode(Event(EventType.HITSOUNDED, int(context["hitsounded"]))))
 
+                if self.args.add_song_length_token:
+                    special_tokens.append(self.tokenizer.encode_song_length(context["song_length"]))
+
                 if self.args.add_cs_token and "circle_size" in context:
                     special_tokens.append(self.tokenizer.encode_cs(context["circle_size"])
                                           if random.random() >= self.args.cs_dropout_prob else self.tokenizer.cs_unk)
@@ -460,6 +461,9 @@ class BeatmapDatasetIterable:
 
                 if "last_kiai" in context:
                     special_tokens.append(self.tokenizer.encode(context["last_kiai"]))
+
+                if self.args.add_song_position_token:
+                    special_tokens.append(self.tokenizer.encode_song_position(context["time"], context["song_length"]))
 
             context["special_tokens"] = special_tokens
 
@@ -703,6 +707,7 @@ class BeatmapDatasetIterable:
             data["extra"]["difficulty"] = self._get_difficulty(beatmap_metadata, speed)
             data["extra"]["year"] = beatmap_metadata["SubmittedDate"].year
             data["extra"]["hitsounded"] = get_hitsounded_status(beatmap)
+            data["extra"]["song_length"] = get_song_length(audio_samples, self.args.sample_rate)
             if gamemode in [0, 2]:
                 data["extra"]["circle_size"] = beatmap.circle_size
             if gamemode == 3:

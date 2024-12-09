@@ -121,6 +121,14 @@ class Tokenizer:
             if args.data.add_hitsounded_token:
                 self.input_event_ranges.append(EventRange(EventType.HITSOUNDED, 0, 1))
 
+            if args.data.add_song_length_token:
+                # Resolution is 10 seconds per token, so max length is 600 seconds (10 minutes)
+                self.input_event_ranges.append(EventRange(EventType.SONG_LENGTH, 0, 60))
+
+            if args.data.add_song_position_token:
+                # Percentage of the song position, resolution is 1% per token
+                self.input_event_ranges.append(EventRange(EventType.SONG_POSITION, -1, 101))
+
             if args.data.add_descriptors:
                 self._init_descriptor_idx(args)
                 self.input_event_ranges.append(EventRange(EventType.DESCRIPTOR, 0, self.num_descriptor_classes))
@@ -404,6 +412,24 @@ class Tokenizer:
         elif ratio >= 1:
             value = resolution + 1
         return value
+
+    def encode_song_length_event(self, song_length: float) -> Event:
+        """Converts song length in milliseconds into event."""
+        value = int(np.clip(song_length // 10000, 0, 60))
+        return Event(type=EventType.SONG_LENGTH, value=value)
+
+    def encode_song_length(self, song_length: float) -> int:
+        """Converts song length in milliseconds into token id."""
+        return self.encode(self.encode_song_length_event(song_length))
+
+    def encode_song_position_event(self, song_position: float, song_length: float) -> Event:
+        """Converts song position in milliseconds into event."""
+        value = self.ratio_to_value(song_position / song_length, 100)
+        return Event(type=EventType.SONG_POSITION, value=value)
+
+    def encode_song_position(self, song_position: float, song_length: float) -> int:
+        """Converts song position in milliseconds into token id."""
+        return self.encode(self.encode_song_position_event(song_position, song_length))
 
     def _init_beatmap_idx(self, args: DictConfig) -> None:
         """Initializes and caches the beatmap index."""
