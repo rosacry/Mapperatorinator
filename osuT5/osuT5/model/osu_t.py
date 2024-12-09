@@ -50,7 +50,8 @@ def get_backbone_config(args, tokenizer: Tokenizer):
         config.max_length = args.data.tgt_seq_len
         config.suppress_tokens = None
         config.top_k = 0
-        # config._attn_implementation = "flash_attention_2"
+        if args.flash_attention:
+            config._attn_implementation = "flash_attention_2"
     else:
         raise NotImplementedError
 
