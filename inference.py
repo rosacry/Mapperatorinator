@@ -63,6 +63,9 @@ def get_args_from_beatmap(args: DictConfig, tokenizer: Tokenizer):
     if args.circle_size == -1:
         args.circle_size = generation_config.circle_size
         print(f"Using circle size {args.circle_size}")
+    if args.slider_multiplier == -1:
+        args.slider_multiplier = generation_config.slider_multiplier
+        print(f"Using slider multiplier {args.slider_multiplier}")
     if args.keycount == -1 and args.gamemode == 3:
         args.keycount = int(generation_config.keycount)
         print(f"Using keycount {args.keycount}")
@@ -73,7 +76,6 @@ def get_args_from_beatmap(args: DictConfig, tokenizer: Tokenizer):
     args.artist = beatmap_config.artist
     args.bpm = beatmap_config.bpm
     args.offset = beatmap_config.offset
-    args.slider_multiplier = beatmap_config.slider_multiplier
     args.background = beatmap.background
     args.preview_time = beatmap_config.preview_time
 
@@ -86,6 +88,7 @@ def get_config(args: DictConfig):
         mapper_id=args.mapper_id,
         year=args.year,
         hitsounded=args.hitsounded,
+        slider_multiplier=args.slider_multiplier,
         circle_size=args.circle_size,
         keycount=args.keycount,
         hold_note_ratio=args.hold_note_ratio,

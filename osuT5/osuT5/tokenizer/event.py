@@ -33,6 +33,7 @@ class EventType(Enum):
     HITSOUNDED = "hitsounded"
     SONG_LENGTH = "song_length"
     SONG_POSITION = "song_position"
+    GLOBAL_SV = "global_sv"
     MANIA_KEYCOUNT = "keycount"
     HOLD_NOTE_RATIO = "hold_note_ratio"
     SCROLL_SPEED_RATIO = "scroll_speed_ratio"
