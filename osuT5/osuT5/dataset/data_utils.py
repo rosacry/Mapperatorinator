@@ -403,6 +403,7 @@ def get_song_length(samples: npt.ArrayLike, sample_rate: int) -> float:
 def get_median_mpb_beatmap(beatmap: Beatmap) -> float:
     # Not include last slider's end time
     last_time = max(ho.end_time if isinstance(ho, HoldNote) else ho.time for ho in beatmap.hit_objects(stacking=False))
+    last_time = int(last_time.seconds * MILISECONDS_PER_SECOND)
     return get_median_mpb(beatmap.timing_points, last_time)
 
 
