@@ -158,6 +158,9 @@ class Tokenizer:
                 self.input_event_ranges.append(EventRange(EventType.SCROLL_SPEED_RATIO, -1, 12))
                 self.event_ranges.append(EventRange(EventType.SCROLL_SPEED, 0, 1000))
 
+            if args.data.add_sv:
+                self.event_ranges.append(EventRange(EventType.GLOBAL_SV, 40, 360))
+
         self.event_ranges: list[EventRange] = self.event_ranges + [
             EventRange(EventType.NEW_COMBO, 0, 0),
             EventRange(EventType.HITSOUND, 0, 2 ** 3 * 3 * 3),
@@ -430,6 +433,10 @@ class Tokenizer:
     def encode_song_position(self, song_position: float, song_length: float) -> int:
         """Converts song position in milliseconds into token id."""
         return self.encode(self.encode_song_position_event(song_position, song_length))
+
+    def encode_global_sv(self, global_sv: float) -> int:
+        """Converts global sv into token id."""
+        return self.encode(Event(type=EventType.GLOBAL_SV, value=int(np.clip(global_sv, 0.4, 3.6) * 100)))
 
     def _init_beatmap_idx(self, args: DictConfig) -> None:
         """Initializes and caches the beatmap index."""

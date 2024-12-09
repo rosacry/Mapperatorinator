@@ -30,6 +30,7 @@ class GenerationConfig:
     mapper_id: int = -1
     year: int = -1
     hitsounded: bool = True
+    slider_multiplier: float = 1.4
     circle_size: float = -1
     keycount: int = -1
     hold_note_ratio: float = -1
@@ -45,6 +46,7 @@ def generation_config_from_beatmap(beatmap: Beatmap, tokenizer: Tokenizer) -> Ge
         beatmap_id=beatmap.beatmap_id,
         difficulty=float(beatmap.stars()),
         mapper_id=tokenizer.beatmap_mapper.get(beatmap.beatmap_id, -1),
+        slider_multiplier=beatmap.slider_multiplier,
         circle_size=beatmap.circle_size,
         hitsounded=get_hitsounded_status(beatmap),
         keycount=int(beatmap.circle_size),
@@ -158,6 +160,8 @@ class Processor(object):
         self.parser = OsuParser(args.osut5, self.tokenizer)
         self.need_beatmap_idx = args.osut5.model.do_style_embed
         self.add_positions = args.osut5.data.add_positions
+        self.add_sv_special_token = args.osut5.data.add_sv_special_token
+        self.add_sv = args.osut5.data.add_sv
 
         if self.add_positions:
             self.position_precision = args.osut5.data.position_precision
@@ -203,6 +207,8 @@ class Processor(object):
             data["class"] = self.get_class_vector(generation_config_from_beatmap(beatmap, self.tokenizer), song_length)
             if self.add_kiai:
                 data["kiai_events"], data["kiai_event_times"] = events_of_type(data["events"], data["event_times"], EventType.KIAI)
+            if self.add_sv_special_token:
+                data["sv_events"], data["sv_event_times"] = events_of_type(data["events"], data["event_times"], EventType.SCROLL_SPEED)
         else:
             raise ValueError(f"Invalid context type {context}")
         return data
@@ -251,6 +257,9 @@ class Processor(object):
         if self.add_song_length_token:
             song_length_token = self.tokenizer.encode_song_length(song_length)
             cond_tokens.append(song_length_token)
+        if self.add_sv and config.gamemode in [0, 2]:
+            global_sv_token = self.tokenizer.encode_global_sv(config.slider_multiplier)
+            cond_tokens.append(global_sv_token)
         if self.add_cs_token and config.gamemode in [0, 2]:
             cs_token = self.tokenizer.encode_cs(config.circle_size) if config.circle_size != -1 else self.tokenizer.cs_unk
             cond_tokens.append(cs_token)
@@ -334,6 +343,7 @@ class Processor(object):
             difficulty=generation_config.difficulty,
             circle_size=generation_config.circle_size,
             hitsounded=generation_config.hitsounded,
+            slider_multiplier=generation_config.slider_multiplier,
             keycount=generation_config.keycount,
             hold_note_ratio=generation_config.hold_note_ratio,
             scroll_speed_ratio=generation_config.scroll_speed_ratio,
@@ -408,6 +418,9 @@ class Processor(object):
                 if self.add_kiai and "kiai_events" in context:
                     last_kiai = self._kiai_before_time(context["kiai_events"], context["kiai_event_times"], frame_time)
                     context_extra_special_events.append(last_kiai)
+                if self.add_sv_special_token and "sv_events" in context:
+                    last_sv = self._sv_before_time(context["sv_events"], context["sv_event_times"], frame_time)
+                    context_extra_special_events.append(last_sv)
                 if self.add_song_position_token and "class" in context:
                     context_extra_special_events.append(self.tokenizer.encode_song_position_event(frame_time, song_length))
                 context["extra_special_tokens"] = self._encode(context_extra_special_events, frame_time)
@@ -417,6 +430,9 @@ class Processor(object):
             if self.add_kiai:
                 last_kiai = self._kiai_before_time(events, event_times, frame_time)
                 extra_special_events.append(last_kiai)
+            if self.add_sv_special_token:
+                last_sv = self._sv_before_time(events, event_times, frame_time)
+                extra_special_events.append(last_sv)
             if self.add_song_position_token:
                 extra_special_events.append(self.tokenizer.encode_song_position_event(frame_time, song_length))
             extra_special_tokens = self._encode(extra_special_events, frame_time)
@@ -584,6 +600,12 @@ class Processor(object):
             if events[i].type == EventType.KIAI and event_times[i] < time:
                 return events[i]
         return Event(EventType.KIAI, 0)
+
+    def _sv_before_time(self, events, event_times, time) -> Event:
+        for i in range(len(events) - 1, -1, -1):
+            if events[i].type == EventType.SCROLL_SPEED and event_times[i] < time:
+                return events[i]
+        return Event(EventType.SCROLL_SPEED, 100)
 
     def _convert_column_to_position(self, events, key_count) -> list[Event]:
         new_events = []

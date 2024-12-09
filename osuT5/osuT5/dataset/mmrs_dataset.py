@@ -300,6 +300,7 @@ class BeatmapDatasetIterable:
         n_frames = len(frames)
         offset = random.randint(0, self.frame_seq_len)
         last_kiai = {}
+        last_sv = {}
         # Divide audio frames into splits
         for frame_start_idx in range(offset, n_frames - self.gen_start_frame, self.frame_seq_len):
             frame_end_idx = min(frame_start_idx + self.frame_seq_len, n_frames)
@@ -354,6 +355,24 @@ class BeatmapDatasetIterable:
                 add_last_kiai(sequence["out_context"], "out_context", last_kiai)
                 for i, sequence_context in enumerate(sequence["in_context"]):
                     add_last_kiai(sequence_context, i, last_kiai)
+
+            def add_last_sv(sequence_context, ids, last_sv):
+                if sequence_context["context_type"] not in [ContextType.GD, ContextType.MAP]:
+                    return
+                if ids in last_sv:
+                    sequence_context["last_sv"] = last_sv[ids]
+                else:
+                    sequence_context["last_sv"] = Event(EventType.SCROLL_SPEED, 100)
+                # Find the last sv event in the out context
+                for event in reversed(sequence_context["events"]):
+                    if event.type == EventType.SCROLL_SPEED:
+                        last_sv[ids] = event
+                        break
+
+            if self.args.add_sv_special_token:
+                add_last_sv(sequence["out_context"], "out_context", last_sv)
+                for i, sequence_context in enumerate(sequence["in_context"]):
+                    add_last_sv(sequence_context, i, last_sv)
 
             sequences.append(sequence)
 
@@ -440,6 +459,9 @@ class BeatmapDatasetIterable:
                 if self.args.add_song_length_token:
                     special_tokens.append(self.tokenizer.encode_song_length(context["song_length"]))
 
+                if self.args.add_sv and "global_sv" in context:
+                    special_tokens.append(self.tokenizer.encode_global_sv(context["global_sv"]))
+
                 if self.args.add_cs_token and "circle_size" in context:
                     special_tokens.append(self.tokenizer.encode_cs(context["circle_size"])
                                           if random.random() >= self.args.cs_dropout_prob else self.tokenizer.cs_unk)
@@ -461,6 +483,9 @@ class BeatmapDatasetIterable:
 
                 if "last_kiai" in context:
                     special_tokens.append(self.tokenizer.encode(context["last_kiai"]))
+
+                if "last_sv" in context:
+                    special_tokens.append(self.tokenizer.encode(context["last_sv"]))
 
                 if self.args.add_song_position_token:
                     special_tokens.append(self.tokenizer.encode_song_position(context["time"], context["song_length"]))
@@ -709,6 +734,7 @@ class BeatmapDatasetIterable:
             data["extra"]["hitsounded"] = get_hitsounded_status(beatmap)
             data["extra"]["song_length"] = get_song_length(audio_samples, self.args.sample_rate)
             if gamemode in [0, 2]:
+                data["extra"]["global_sv"] = beatmap.slider_multiplier
                 data["extra"]["circle_size"] = beatmap.circle_size
             if gamemode == 3:
                 data["extra"]["keycount"] = int(beatmap.circle_size)

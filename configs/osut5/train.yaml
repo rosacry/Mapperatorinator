@@ -77,6 +77,8 @@ data:                  # Data settings
   add_kiai: false        # Model kiai times
   gamemodes: [0]  # List of gamemodes to include in the dataset
   mania_bpm_normalized_scroll_speed: false  # Normalize mania scroll speed by BPM
+  add_sv_special_token: false  # Add extra special token for current SV
+  add_sv: false  # Model slider velocity in std and ctb
 
 
 dataloader:             # Dataloader settings

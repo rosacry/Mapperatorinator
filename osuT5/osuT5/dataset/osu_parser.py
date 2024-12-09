@@ -23,6 +23,7 @@ class OsuParser:
         self.add_distances = args.data.add_distances
         self.add_positions = args.data.add_positions
         self.add_kiai = args.data.add_kiai
+        self.add_sv = args.data.add_sv
         self.mania_bpm_normalized_scroll_speed = args.data.mania_bpm_normalized_scroll_speed
         if self.add_positions:
             self.position_precision = args.data.position_precision
@@ -419,6 +420,7 @@ class OsuParser:
             hitsound_ref_times=[slider.time],
             hitsounds=[slider.edge_sounds[0] if len(slider.edge_sounds) > 0 else 0],
             additions=[slider.edge_additions[0] if len(slider.edge_additions) > 0 else '0:0'],
+            scroll_speed=self.scroll_speed_at(slider.time, beatmap) if self.add_sv else None,
         )
 
         duration: timedelta = (slider.end_time - slider.time) / slider.repeat
