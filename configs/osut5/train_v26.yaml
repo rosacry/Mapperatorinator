@@ -51,6 +51,7 @@ data:                  # Data settings
   types_first: true       # Put the type token at the start of the group before the timeshift token
   add_kiai: true        # Model kiai times
   gamemodes: [0, 1, 2, 3]  # List of gamemodes to include in the dataset
+  mania_bpm_normalized_scroll_speed: true  # Normalize mania scroll speed by BPM
 
 dataloader:             # Dataloader settings
   num_workers: 8

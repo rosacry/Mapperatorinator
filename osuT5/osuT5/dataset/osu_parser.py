@@ -10,7 +10,7 @@ from slider import Beatmap, Circle, Slider, Spinner, HoldNote, TimingPoint
 from slider.curve import Linear, Catmull, Perfect, MultiBezier
 
 from ..tokenizer import Event, EventType, Tokenizer
-from .data_utils import merge_events, speed_events
+from .data_utils import merge_events, speed_events, get_median_mpb_beatmap
 
 
 class OsuParser:
@@ -23,6 +23,7 @@ class OsuParser:
         self.add_distances = args.data.add_distances
         self.add_positions = args.data.add_positions
         self.add_kiai = args.data.add_kiai
+        self.mania_bpm_normalized_scroll_speed = args.data.mania_bpm_normalized_scroll_speed
         if self.add_positions:
             self.position_precision = args.data.position_precision
             self.position_split_axes = args.data.position_split_axes
@@ -94,7 +95,7 @@ class OsuParser:
         events, event_times = zip(*sorted(zip(events, event_times), key=lambda x: x[1]))
 
         if beatmap.mode == 3:
-            scroll_speed_events, scroll_speed_times = self.parse_scroll_speeds(beatmap)
+            scroll_speed_events, scroll_speed_times = self.parse_scroll_speeds(beatmap, self.mania_bpm_normalized_scroll_speed)
             events, event_times = merge_events(scroll_speed_events, scroll_speed_times, events, event_times)
 
         if self.add_kiai:
@@ -110,18 +111,25 @@ class OsuParser:
 
         return events, event_times
 
-    def parse_scroll_speeds(self, beatmap: Beatmap) -> tuple[list[Event], list[int]]:
-        """Extract all scroll speed changes from a beatmap."""
+    def parse_scroll_speeds(self, beatmap: Beatmap, normalized: bool) -> tuple[list[Event], list[int]]:
+        """Extract all BPM-normalized scroll speed changes from a beatmap."""
         events = []
         event_times = []
-        last_scroll_speed = -1
+        median_mpb = get_median_mpb_beatmap(beatmap)
+        mpb = median_mpb
+        last_normalized_scroll_speed = -1
 
-        for tp in beatmap.timing_points:
+        for i, tp in enumerate(beatmap.timing_points):
             if tp.parent is None:
-                last_scroll_speed = 1
+                mpb = tp.ms_per_beat
+                scroll_speed = 1
             else:
                 scroll_speed = -100 / tp.ms_per_beat
-                if scroll_speed != last_scroll_speed and last_scroll_speed != -1:
+
+            if i == len(beatmap.timing_points) - 1 or beatmap.timing_points[i + 1].offset > tp.offset:
+                normalized_scroll_speed = scroll_speed * median_mpb / mpb if normalized else scroll_speed
+
+                if normalized_scroll_speed != last_normalized_scroll_speed or last_normalized_scroll_speed == -1:
                     self._add_group(
                         EventType.SCROLL_SPEED_CHANGE,
                         tp.offset,
@@ -129,9 +137,9 @@ class OsuParser:
                         event_times,
                         beatmap,
                         time_event=True,
-                        scroll_speed=self.tp_to_scroll_speed(tp),
+                        scroll_speed=normalized_scroll_speed,
                     )
-                last_scroll_speed = scroll_speed
+                last_normalized_scroll_speed = normalized_scroll_speed
 
         return events, event_times
 
@@ -210,16 +218,16 @@ class OsuParser:
         hs_query = time + timedelta(milliseconds=5)
         return beatmap.timing_point_at(hs_query)
 
-    def scroll_speed_at(self, time: timedelta, beatmap: Beatmap) -> int:
+    def scroll_speed_at(self, time: timedelta, beatmap: Beatmap) -> float:
         query = time
         tp = beatmap.timing_point_at(query)
         return self.tp_to_scroll_speed(tp)
 
-    def tp_to_scroll_speed(self, tp: TimingPoint) -> int:
+    def tp_to_scroll_speed(self, tp: TimingPoint) -> float:
         if tp.parent is None or tp.ms_per_beat >= 0 or np.isnan(tp.ms_per_beat):
-            return 100
+            return 1
         else:
-            return int(np.clip(-100 / tp.ms_per_beat, 0.01, 10) * 100)
+            return np.clip(-100 / tp.ms_per_beat, 0.01, 10)
 
     def _add_time_event(self, time: timedelta, beatmap: Beatmap, events: list[Event], event_times: list[int], add_snap: bool = True) -> None:
         """Add a snapping event to the event list.
@@ -323,7 +331,7 @@ class OsuParser:
             hitsound_ref_times: list[timedelta] = None,
             hitsounds: list[int] = None,
             additions: list[str] = None,
-            scroll_speed: Optional[int] = None,
+            scroll_speed: Optional[float] = None,
     ) -> npt.NDArray:
         """Add a group of events to the event list."""
         time_ms = int(time.total_seconds() * 1000) if time is not None else None
@@ -345,7 +353,7 @@ class OsuParser:
             events.append(Event(EventType.NEW_COMBO))
             event_times.append(time_ms)
         if scroll_speed is not None:
-            events.append(Event(EventType.SCROLL_SPEED, scroll_speed))
+            events.append(Event(EventType.SCROLL_SPEED, int(np.clip(scroll_speed, 0.01, 10) * 100)))
             event_times.append(time_ms)
         if hitsound_ref_times is not None:
             for i, ref_time in enumerate(hitsound_ref_times):

@@ -7,7 +7,7 @@ import numpy as np
 from pydub import AudioSegment
 
 import numpy.typing as npt
-from slider import Beatmap, HoldNote
+from slider import Beatmap, HoldNote, TimingPoint
 
 from ..tokenizer import Event, EventType
 
@@ -398,3 +398,43 @@ def get_hitsounded_status(beatmap: Beatmap) -> bool:
 def get_song_length(samples: npt.ArrayLike, sample_rate: int) -> float:
     # Length of the audio in milliseconds
     return len(samples) / sample_rate * MILISECONDS_PER_SECOND
+
+
+def get_median_mpb_beatmap(beatmap: Beatmap) -> float:
+    # Not include last slider's end time
+    last_time = max(ho.end_time if isinstance(ho, HoldNote) else ho.time for ho in beatmap.hit_objects(stacking=False))
+    return get_median_mpb(beatmap.timing_points, last_time)
+
+
+def get_median_mpb(timing_points: list[TimingPoint], last_time: float) -> float:
+    # This is identical to osu! stable implementation
+    this_beat_length = 0
+
+    bpm_durations = {}
+
+    for i in range(len(timing_points) - 1, -1, -1):
+        tp = timing_points[i]
+        offset = int(tp.offset.seconds * 1000)
+
+        if tp.parent is None:
+            this_beat_length = tp.ms_per_beat
+
+        if this_beat_length == 0 or offset > last_time or (tp.parent is not None and i > 0):
+            continue
+
+        if this_beat_length in bpm_durations:
+            bpm_durations[this_beat_length] += int(last_time - (0 if i == 0 else offset))
+        else:
+            bpm_durations[this_beat_length] = int(last_time - (0 if i == 0 else offset))
+
+        last_time = offset
+
+    longest_time = 0
+    median = 0
+
+    for bpm, duration in bpm_durations.items():
+        if duration > longest_time:
+            longest_time = duration
+            median = bpm
+
+    return median

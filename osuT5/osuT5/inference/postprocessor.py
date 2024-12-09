@@ -14,7 +14,7 @@ from slider import TimingPoint, Beatmap
 
 from .slider_path import SliderPath
 from .timing_points_change import TimingPointsChange, sort_timing_points
-from ..dataset.data_utils import get_groups, Group
+from ..dataset.data_utils import get_groups, Group, get_median_mpb
 from ..tokenizer import Event, EventType
 
 OSU_FILE_EXTENSION = ".osu"
@@ -124,6 +124,7 @@ class Postprocessor(object):
         self.timing_leniency = args.timing_leniency
         self.types_first = args.osut5.data.types_first
         self.has_pos = args.osut5.data.add_positions
+        self.mania_bpm_normalized_scroll_speed = args.data.mania_bpm_normalized_scroll_speed
 
     def generate(
             self,
@@ -161,6 +162,10 @@ class Postprocessor(object):
         last_x, last_y = 256, 192
 
         self.snap_near_perfect_overlaps(groups)
+
+        # Prepare unnormalizing scroll speed changes in mania
+        last_time = max(group.time for group in groups)
+        median_mpb = get_median_mpb(timing, last_time)
 
         # Convert to .osu format
         for group in groups:
@@ -366,6 +371,12 @@ class Postprocessor(object):
                 timing = self.set_kiai(timedelta(milliseconds=group.time), bool(group.value), timing)
 
             elif hit_type == EventType.SCROLL_SPEED_CHANGE and group.scroll_speed is not None:
+                if self.mania_bpm_normalized_scroll_speed:
+                    # Unnormalize scroll speed changes in mania
+                    tp = self.timing_point_at(timedelta(milliseconds=group.time), timing)
+                    redline = tp if tp.parent is None else tp.parent
+                    group.scroll_speed = group.scroll_speed * redline.ms_per_beat / median_mpb
+
                 timing = self.set_sv(timedelta(milliseconds=group.time), group.scroll_speed, timing)
 
         # Write .osu file
