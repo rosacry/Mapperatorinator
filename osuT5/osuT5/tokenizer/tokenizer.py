@@ -436,7 +436,7 @@ class Tokenizer:
 
     def encode_global_sv(self, global_sv: float) -> int:
         """Converts global sv into token id."""
-        return self.encode(Event(type=EventType.GLOBAL_SV, value=int(np.clip(global_sv, 0.4, 3.6) * 100)))
+        return self.encode(Event(type=EventType.GLOBAL_SV, value=round(np.clip(global_sv, 0.4, 3.6) * 100)))
 
     def _init_beatmap_idx(self, args: DictConfig) -> None:
         """Initializes and caches the beatmap index."""

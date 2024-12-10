@@ -354,7 +354,7 @@ class OsuParser:
             events.append(Event(EventType.NEW_COMBO))
             event_times.append(time_ms)
         if scroll_speed is not None:
-            events.append(Event(EventType.SCROLL_SPEED, int(np.clip(scroll_speed, 0.01, 10) * 100)))
+            events.append(Event(EventType.SCROLL_SPEED, round(np.clip(scroll_speed, 0.01, 10) * 100)))
             event_times.append(time_ms)
         if hitsound_ref_times is not None:
             for i, ref_time in enumerate(hitsound_ref_times):
