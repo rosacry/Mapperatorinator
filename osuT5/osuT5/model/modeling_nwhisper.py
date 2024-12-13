@@ -1833,22 +1833,6 @@ class NWhisperModel(NWhisperPreTrainedModel):
         # Initialize weights and apply final processing
         self.post_init()
 
-    @torch.no_grad()
-    def norm_weights_(self):
-        for module in self.modules():
-            if not isinstance(module, NormLinear):
-                continue
-
-            module.norm_weights_()
-
-    def register_step_post_hook(self, optimizer):
-        assert hasattr(optimizer, 'register_step_post_hook')
-
-        def hook(*_):
-            self.norm_weights_()
-
-        return optimizer.register_step_post_hook(hook)
-
     def get_input_embeddings(self):
         return self.decoder.embed_tokens
 
