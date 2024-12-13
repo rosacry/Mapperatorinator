@@ -21,7 +21,7 @@ from typing import Optional, Tuple, Union
 import numpy as np
 import torch
 import torch.utils.checkpoint
-from einops import rearrange
+from functorch.einops import rearrange
 from torch import nn
 from torch.nn import CrossEntropyLoss, Module
 from torch.nn.utils.parametrize import register_parametrization
@@ -485,11 +485,9 @@ class NWhisperAttention(nn.Module):
         # maybe query key norm
 
         if self.norm_qk:
-            query_states, key_states = map(self.l2norm, (query_states, key_states))
-
-        # scaling queries and keys - this would line up with the popular use of qk rmsnorm from Google deepmind and now black forest labs - will use multihead rmsnorm
-
-        query_states = query_states * rearrange(self.qk_scale(), '(h d) -> h 1 d', h=self.num_heads)
+            sqk = rearrange(self.qk_scale(), '(h d) -> h 1 d', h=self.num_heads)
+            query_states = sqk * self.l2norm(query_states)
+            key_states = self.l2norm(key_states)
 
         attn_weights = torch.matmul(query_states, key_states.transpose(2, 3))
 
@@ -597,11 +595,9 @@ class NWhisperFlashAttention2(NWhisperAttention):
         # maybe query key norm
 
         if self.norm_qk:
-            query_states, key_states = map(self.l2norm, (query_states, key_states))
-
-        # scaling queries and keys - this would line up with the popular use of qk rmsnorm from Google deepmind and now black forest labs - will use multihead rmsnorm
-
-        query_states = query_states * rearrange(self.qk_scale(), '(h d) -> h 1 d', h=self.num_heads)
+            sqk = rearrange(self.qk_scale(), '(h d) -> h 1 d', h=self.num_heads)
+            query_states = sqk * self.l2norm(query_states)
+            key_states = self.l2norm(key_states)
 
         # TODO: These transpose are quite inefficient but Flash Attention requires the layout [batch_size, sequence_length, num_heads, head_dim]
         #  We would need to refactor the KV cache to be able to avoid many of these transpose/reshape/view.
@@ -722,11 +718,9 @@ class NWhisperSdpaAttention(NWhisperAttention):
         # maybe query key norm
 
         if self.norm_qk:
-            query_states, key_states = map(self.l2norm, (query_states, key_states))
-
-        # scaling queries and keys - this would line up with the popular use of qk rmsnorm from Google deepmind and now black forest labs - will use multihead rmsnorm
-
-        query_states = query_states * rearrange(self.qk_scale(), '(h d) -> h 1 d', h=self.num_heads)
+            sqk = rearrange(self.qk_scale(), '(h d) -> h 1 d', h=self.num_heads)
+            query_states = sqk * self.l2norm(query_states)
+            key_states = self.l2norm(key_states)
 
         causal_mask = attention_mask
         if attention_mask is not None:  # no matter the length, we just slice it
