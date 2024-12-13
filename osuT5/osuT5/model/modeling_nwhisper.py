@@ -181,10 +181,11 @@ class NormLinear(Module):
             norm_dim_in=True,
             parametrize=True,
             norm_eps=0.,
-            groups=1
+            groups=1,
+            bias=False
     ):
         super().__init__()
-        self.linear = nn.Linear(dim, dim_out, bias=False)
+        self.linear = nn.Linear(dim, dim_out, bias=bias)
 
         self.scale = groups ** -1
         self.parametrize = parametrize
@@ -421,10 +422,10 @@ class NWhisperAttention(nn.Module):
             )
         self.layer_idx = layer_idx
 
-        self.k_proj = NormLinear_(embed_dim, embed_dim)
-        self.v_proj = NormLinear_(embed_dim, embed_dim)
-        self.q_proj = NormLinear_(embed_dim, embed_dim)
-        self.out_proj = NormLinear_(embed_dim, embed_dim, norm_dim_in=False)
+        self.k_proj = NormLinear_(embed_dim, embed_dim, bias=False)
+        self.v_proj = NormLinear_(embed_dim, embed_dim, bias=bias)
+        self.q_proj = NormLinear_(embed_dim, embed_dim, bias=bias)
+        self.out_proj = NormLinear_(embed_dim, embed_dim, bias=bias, norm_dim_in=False)
 
         self.norm_qk = config.attn_norm_qk
         self.qk_scale = Scale(embed_dim, s_qk_init, default(s_qk_scale, embed_dim ** -1))
@@ -2009,7 +2010,7 @@ class NWhisperForConditionalGeneration(WhisperGenerationMixin, NWhisperPreTraine
                               groups=config.num_hyperspheres)
 
         self.model = NWhisperModel(config)
-        self.proj_out = NormLinear_(config.d_model, config.vocab_size)
+        self.proj_out = NormLinear_(config.d_model, config.vocab_size, bias=False)
         self.logit_scale = Scale(config.vocab_size, config.s_logit_init, default(config.s_logit_scale, config.d_model ** -0.5))
         self.max_target_positions = config.max_target_positions
 
