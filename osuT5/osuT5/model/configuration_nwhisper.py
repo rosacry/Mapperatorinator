@@ -47,7 +47,7 @@ class NWhisperConfig(WhisperConfig):
             manual_norm_weights=False,
             num_hyperspheres=1,
             # below are all the scale related hyperparameters, for controlling effective relative learning rates throughout the network
-            alpha_init: float | None = None,
+            alpha_init: float | None = 1.,
             # this would set the alpha init for all residuals, but would be overridden by alpha_attn_init and alpha_ff_init if they are specified
             s_logit_init: float = 1.,
             s_logit_scale: float | None = None,
@@ -112,7 +112,6 @@ class NWhisperConfig(WhisperConfig):
             encoder_layerdrop=encoder_layerdrop,
             decoder_layerdrop=decoder_layerdrop,
             use_cache=use_cache,
-            num_hidden_layers=encoder_layers,
             scale_embedding=scale_embedding,
             max_source_positions=max_source_positions,
             max_target_positions=max_target_positions,
