@@ -21,7 +21,7 @@ from typing import Optional, Tuple, Union
 import numpy as np
 import torch
 import torch.utils.checkpoint
-from functorch.einops import rearrange
+from einops import rearrange
 from torch import nn
 from torch.nn import CrossEntropyLoss, Module
 from torch.nn.utils.parametrize import register_parametrization
@@ -152,6 +152,7 @@ class Residual(Module):
             out, *rest = out
 
         out = self.l2norm(out)
+        out = out.to(residual.dtype)
         out = self.l2norm(residual.lerp(out, self.branch_scale()))
 
         if tuple_output:
@@ -487,7 +488,7 @@ class NWhisperAttention(nn.Module):
         if self.norm_qk:
             sqk = rearrange(self.qk_scale(), '(h d) -> h 1 d', h=self.num_heads)
             query_states = sqk * self.l2norm(query_states)
-            key_states = self.l2norm(key_states)
+            key_states = sqk * self.l2norm(key_states)
 
         attn_weights = torch.matmul(query_states, key_states.transpose(2, 3))
 
@@ -597,7 +598,7 @@ class NWhisperFlashAttention2(NWhisperAttention):
         if self.norm_qk:
             sqk = rearrange(self.qk_scale(), '(h d) -> h 1 d', h=self.num_heads)
             query_states = sqk * self.l2norm(query_states)
-            key_states = self.l2norm(key_states)
+            key_states = sqk * self.l2norm(key_states)
 
         # TODO: These transpose are quite inefficient but Flash Attention requires the layout [batch_size, sequence_length, num_heads, head_dim]
         #  We would need to refactor the KV cache to be able to avoid many of these transpose/reshape/view.
@@ -643,6 +644,7 @@ class NWhisperFlashAttention2(NWhisperAttention):
             dropout=self.dropout if self.training else 0.0,
             is_causal=self.is_causal,
             use_top_left_mask=self._flash_attn_uses_top_left_mask,
+            softmax_scale=self.scaling,
         )
 
         attn_output = attn_output.reshape(bsz, tgt_len, -1)
@@ -720,7 +722,7 @@ class NWhisperSdpaAttention(NWhisperAttention):
         if self.norm_qk:
             sqk = rearrange(self.qk_scale(), '(h d) -> h 1 d', h=self.num_heads)
             query_states = sqk * self.l2norm(query_states)
-            key_states = self.l2norm(key_states)
+            key_states = sqk * self.l2norm(key_states)
 
         causal_mask = attention_mask
         if attention_mask is not None:  # no matter the length, we just slice it
@@ -740,6 +742,7 @@ class NWhisperSdpaAttention(NWhisperAttention):
             attn_mask=causal_mask,
             dropout_p=self.dropout if self.training else 0.0,
             is_causal=is_causal,
+            scale=self.scaling,
         )
 
         if attn_output.size() != (bsz, self.num_heads, tgt_len, self.head_dim):
@@ -800,8 +803,8 @@ class NWhisperEncoderLayer(nn.Module):
             alpha_attn_scale=None,
             alpha_ff_init=None,
             alpha_ff_scale=None,
-            s_sq_init=1.,
-            s_sq_scale=None,
+            s_qk_init=1.,
+            s_qk_scale=None,
     ):
         super().__init__()
         self.embed_dim = config.d_model
@@ -812,8 +815,8 @@ class NWhisperEncoderLayer(nn.Module):
             num_heads=config.encoder_attention_heads,
             dropout=config.attention_dropout,
             config=config,
-            s_sq_init=s_sq_init,
-            s_sq_scale=s_sq_scale,
+            s_qk_init=s_qk_init,
+            s_qk_scale=s_qk_scale,
         )
         ff = FeedForward(self.embed_dim, config.encoder_ffn_dim, config)
 
@@ -850,7 +853,7 @@ class NWhisperEncoderLayer(nn.Module):
                 returned tensors for more detail.
         """
         hidden_states, attn_weights, _ = self.attn_with_residual(
-            hidden_states=hidden_states,
+            hidden_states,
             attention_mask=attention_mask,
             layer_head_mask=layer_head_mask,
             output_attentions=output_attentions,
@@ -883,10 +886,10 @@ class NWhisperDecoderLayer(nn.Module):
             alpha_cross_attn_scale=None,
             alpha_ff_init=None,
             alpha_ff_scale=None,
-            s_sq_init=1.,
-            s_sq_scale=None,
-            cross_s_sq_init=1.,
-            cross_s_sq_scale=None,
+            s_qk_init=1.,
+            s_qk_scale=None,
+            cross_s_qk_init=1.,
+            cross_s_qk_scale=None,
     ):
         super().__init__()
         self.embed_dim = config.d_model
@@ -900,8 +903,8 @@ class NWhisperDecoderLayer(nn.Module):
             is_causal=True,
             layer_idx=layer_idx,
             config=config,
-            s_sq_init=s_sq_init,
-            s_sq_scale=s_sq_scale,
+            s_qk_init=s_qk_init,
+            s_qk_scale=s_qk_scale,
         )
 
         encoder_attn = WHISPER_ATTENTION_CLASSES[config._attn_implementation](
@@ -911,8 +914,8 @@ class NWhisperDecoderLayer(nn.Module):
             is_decoder=True,
             layer_idx=layer_idx,
             config=config,
-            s_sq_init=cross_s_sq_init,
-            s_sq_scale=cross_s_sq_scale,
+            s_qk_init=cross_s_qk_init,
+            s_qk_scale=cross_s_qk_scale,
         )
 
         ff = FeedForward(self.embed_dim, config.decoder_ffn_dim, config)
@@ -971,7 +974,7 @@ class NWhisperDecoderLayer(nn.Module):
         """
         # Self Attention
         hidden_states, self_attn_weights, present_key_value = self.self_attn_with_residual(
-            hidden_states=hidden_states,
+            hidden_states,
             past_key_value=past_key_value,
             attention_mask=attention_mask,
             layer_head_mask=layer_head_mask,
@@ -983,8 +986,8 @@ class NWhisperDecoderLayer(nn.Module):
         # Cross-Attention Block
         cross_attn_weights = None
         if encoder_hidden_states is not None:
-            hidden_states, cross_attn_weights, cross_attn_present_key_value = self.encoder_attn(
-                hidden_states=hidden_states,
+            hidden_states, cross_attn_weights, cross_attn_present_key_value = self.encoder_attn_with_residual(
+                hidden_states,
                 key_value_states=encoder_hidden_states,
                 attention_mask=encoder_attention_mask,
                 layer_head_mask=cross_attn_layer_head_mask,
@@ -1242,8 +1245,8 @@ class NWhisperEncoder(NWhisperPreTrainedModel):
             alpha_attn_scale=alpha_attn_scale_,
             alpha_ff_init=alpha_ff_init_,
             alpha_ff_scale=alpha_ff_scale_,
-            s_sq_init=s_qk_init_,
-            s_sq_scale=s_qk_scale_,
+            s_qk_init=s_qk_init_,
+            s_qk_scale=s_qk_scale_,
         ) for (
             alpha_attn_init_,
             alpha_attn_scale_,
@@ -1426,10 +1429,10 @@ class NWhisperDecoder(NWhisperPreTrainedModel):
             alpha_cross_attn_scale=alpha_cross_attn_scale_,
             alpha_ff_init=alpha_ff_init_,
             alpha_ff_scale=alpha_ff_scale_,
-            s_sq_init=s_qk_init_,
-            s_sq_scale=s_qk_scale_,
-            cross_s_sq_init=cross_s_qk_init_,
-            cross_s_sq_scale=cross_s_qk_scale_,
+            s_qk_init=s_qk_init_,
+            s_qk_scale=s_qk_scale_,
+            cross_s_qk_init=cross_s_qk_init_,
+            cross_s_qk_scale=cross_s_qk_scale_,
         ) for (
             layer_idx,
             alpha_attn_init_,
@@ -1916,6 +1919,9 @@ class NWhisperModel(NWhisperPreTrainedModel):
             return_dict: Optional[bool] = None,
             cache_position: Optional[torch.LongTensor] = None,
     ) -> Union[Tuple[torch.Tensor], Seq2SeqModelOutput]:
+        r"""
+        Returns:
+        """
         output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
         output_hidden_states = (
             output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
