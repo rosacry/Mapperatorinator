@@ -1,0 +1,8 @@
+defaults:
+  - model
+  - _self_
+
+name: 'olibomby/nwhisper-base'
+config_base: 'openai/whisper-base'
+input_features: true
+do_style_embed: false
