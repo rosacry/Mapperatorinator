@@ -10,6 +10,8 @@ from transformers import T5Config, T5ForConditionalGeneration, WhisperForConditi
 from transformers.modeling_outputs import Seq2SeqLMOutput
 from transformers.models.whisper.modeling_whisper import WhisperEncoder
 
+from .configuration_nwhisper import NWhisperConfig
+from .modeling_nwhisper import NWhisperForConditionalGeneration
 from ..model.spectrogram import MelSpectrogram
 from ..tokenizer import Tokenizer, EventType
 
@@ -21,10 +23,13 @@ def get_backbone_config(args, tokenizer: Tokenizer):
         config = T5Config.from_pretrained(args.model.name)
     elif args.model.name.startswith("openai/whisper"):
         config = WhisperConfig.from_pretrained(args.model.name)
+    elif args.model.name.startswith("olibomby/nwhisper"):
+        config = NWhisperConfig.from_pretrained(args.model.config_base)
     else:
         raise NotImplementedError
 
     config.vocab_size = tokenizer.vocab_size_out
+    config.tie_word_embeddings = False
 
     if hasattr(args.model, "overwrite"):
         for k, v in args.model.overwrite.items():
@@ -36,7 +41,7 @@ def get_backbone_config(args, tokenizer: Tokenizer):
             assert not hasattr(config, k), f"config already has attribute {k}"
             setattr(config, k, v)
 
-    if args.model.name.startswith("openai/whisper"):
+    if isinstance(config, WhisperConfig):
         config.num_mel_bins = config.d_model
         config.pad_token_id = tokenizer.pad_id
         config.bos_token_id = tokenizer.sos_id
@@ -61,6 +66,8 @@ def get_backbone_config(args, tokenizer: Tokenizer):
 def get_backbone_model(config):
     if isinstance(config, T5Config):
         model = T5ForConditionalGeneration(config)
+    elif isinstance(config, NWhisperConfig):
+        model = NWhisperForConditionalGeneration(config)
     elif isinstance(config, WhisperConfig):
         model = WhisperForConditionalGeneration(config)
     else:
