@@ -11,3 +11,4 @@ wandb
 matplotlib
 pandas
 pyarrow
+einops
