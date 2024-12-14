@@ -44,7 +44,7 @@ def generation_config_from_beatmap(beatmap: Beatmap, tokenizer: Tokenizer) -> Ge
     return GenerationConfig(
         gamemode=gamemode,
         beatmap_id=beatmap.beatmap_id,
-        difficulty=float(beatmap.stars()),
+        difficulty=float(beatmap.stars()) if gamemode == 0 else -1,  # We don't have diffcalc for other gamemodes
         mapper_id=tokenizer.beatmap_mapper.get(beatmap.beatmap_id, -1),
         slider_multiplier=beatmap.slider_multiplier,
         circle_size=beatmap.circle_size,

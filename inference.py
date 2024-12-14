@@ -51,7 +51,7 @@ def get_args_from_beatmap(args: DictConfig, tokenizer: Tokenizer):
     if args.beatmap_id == -1 and generation_config.beatmap_id:
         args.beatmap_id = generation_config.beatmap_id
         print(f"Using beatmap ID {args.beatmap_id}")
-    if args.difficulty == -1 and len(beatmap.hit_objects(stacking=False)) > 0:
+    if args.difficulty == -1 and generation_config.difficulty != -1 and len(beatmap.hit_objects(stacking=False)) > 0:
         args.difficulty = generation_config.difficulty
         print(f"Using difficulty {args.difficulty}")
     if args.mapper_id == -1 and beatmap.beatmap_id in tokenizer.beatmap_mapper:
@@ -69,6 +69,12 @@ def get_args_from_beatmap(args: DictConfig, tokenizer: Tokenizer):
     if args.keycount == -1 and args.gamemode == 3:
         args.keycount = int(generation_config.keycount)
         print(f"Using keycount {args.keycount}")
+    if args.hold_note_ratio == -1 and args.gamemode == 3:
+        args.hold_note_ratio = generation_config.hold_note_ratio
+        print(f"Using hold note ratio {args.hold_note_ratio}")
+    if args.scroll_speed_ratio == -1 and args.gamemode == 3:
+        args.scroll_speed_ratio = generation_config.scroll_speed_ratio
+        print(f"Using scroll speed ratio {args.scroll_speed_ratio}")
 
     beatmap_config = beatmap_config_from_beatmap(beatmap)
 
