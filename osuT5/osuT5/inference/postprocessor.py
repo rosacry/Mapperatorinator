@@ -124,7 +124,7 @@ class Postprocessor(object):
         self.timing_leniency = args.timing_leniency
         self.types_first = args.osut5.data.types_first
         self.has_pos = args.osut5.data.add_positions
-        self.mania_bpm_normalized_scroll_speed = args.data.mania_bpm_normalized_scroll_speed
+        self.mania_bpm_normalized_scroll_speed = args.osut5.data.mania_bpm_normalized_scroll_speed
 
     def generate(
             self,
