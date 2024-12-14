@@ -3,6 +3,9 @@ defaults:
   - _self_
 
 name: 'olibomby/nwhisper-base'
-config_base: 'openai/whisper-base'
 input_features: true
 do_style_embed: false
+config_base: 'openai/whisper-base'
+overwrite:
+  tie_word_embeddings: false
+  manual_norm_weights: true

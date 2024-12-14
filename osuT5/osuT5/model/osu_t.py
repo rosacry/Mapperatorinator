@@ -29,7 +29,6 @@ def get_backbone_config(args, tokenizer: Tokenizer):
         raise NotImplementedError
 
     config.vocab_size = tokenizer.vocab_size_out
-    config.tie_word_embeddings = False
 
     if hasattr(args.model, "overwrite"):
         for k, v in args.model.overwrite.items():

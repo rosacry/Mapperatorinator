@@ -62,3 +62,5 @@ optim:                  # Optimizer settings
   base_lr: 1e-2         # Should not be scaled with the number of devices present
   batch_size: 128
   grad_acc: 8
+  name: adamw
+  warmup_steps: 0
