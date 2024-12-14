@@ -63,7 +63,7 @@ def get_optimizer(model: OsuT, args: DictConfig) -> Optimizer:
     ]
 
     if args.optim.name == 'adamw':
-        from transformers import AdamW
+        from torch.optim import AdamW
         optimizer = AdamW(
             optimizer_grouped_parameters,
             lr=args.optim.base_lr,
@@ -75,11 +75,10 @@ def get_optimizer(model: OsuT, args: DictConfig) -> Optimizer:
             lr=args.optim.base_lr,
         )
     elif args.optim.name == 'adafactor':
-        from transformers import Adafactor
+        from torch.optim import Adafactor
         optimizer = Adafactor(
             optimizer_grouped_parameters,
             lr=args.optim.base_lr,
-            relative_step=False,
         )
     else:
         raise NotImplementedError

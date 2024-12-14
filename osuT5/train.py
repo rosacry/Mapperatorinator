@@ -63,6 +63,10 @@ def main(args: DictConfig):
         else:
             model.load_state_dict(state_dict)
 
+    if hasattr(model.transformer, "register_step_post_hook"):
+        print("Registering step post hook")
+        model.transformer.register_step_post_hook(optimizer)
+
     # noinspection PyTypeChecker
     (
         model,
@@ -75,10 +79,6 @@ def main(args: DictConfig):
     )
 
     accelerator.register_for_checkpointing(tokenizer)
-
-    if hasattr(model, "register_step_post_hook"):
-        print("Registering step post hook")
-        model.register_step_post_hook(optimizer)
 
     if args.checkpoint_path:
         accelerator.load_state(args.checkpoint_path)
