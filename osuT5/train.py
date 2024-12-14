@@ -76,6 +76,10 @@ def main(args: DictConfig):
 
     accelerator.register_for_checkpointing(tokenizer)
 
+    if hasattr(model, "register_step_post_hook"):
+        print("Registering step post hook")
+        model.register_step_post_hook(optimizer)
+
     if args.checkpoint_path:
         accelerator.load_state(args.checkpoint_path)
         shared.current_train_step = scheduler.scheduler.last_epoch // accelerator.num_processes + 1
