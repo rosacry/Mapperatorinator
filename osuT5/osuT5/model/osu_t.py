@@ -29,6 +29,7 @@ def get_backbone_config(args, tokenizer: Tokenizer):
         raise NotImplementedError
 
     config.vocab_size = tokenizer.vocab_size_out
+    config.use_cache = False
 
     if hasattr(args.model, "overwrite"):
         for k, v in args.model.overwrite.items():
@@ -56,6 +57,8 @@ def get_backbone_config(args, tokenizer: Tokenizer):
         config.top_k = 0
         if args.flash_attention:
             config._attn_implementation = "flash_attention_2"
+    if isinstance(config, NWhisperConfig):
+        config.input_vocab_size = tokenizer.vocab_size_in
     else:
         raise NotImplementedError
 
@@ -97,9 +100,11 @@ class OsuT(PreTrainedModel):
 
         self.num_classes = tokenizer.num_classes
         self.input_features = args.model.input_features
+        self.embed_decoder_input = args.model.embed_decoder_input
 
-        self.decoder_embedder = nn.Embedding(tokenizer.vocab_size_in, d_model)
-        self.decoder_embedder.weight.data.normal_(mean=0.0, std=1.0)
+        if self.embed_decoder_input:
+            self.decoder_embedder = nn.Embedding(tokenizer.vocab_size_in, d_model)
+            self.decoder_embedder.weight.data.normal_(mean=0.0, std=1.0)
         # self.class_ids = Parameter(torch.full([self.num_classes + 1], -1, dtype=torch.long), requires_grad=False)
 
         self.spectrogram = MelSpectrogram(
@@ -154,19 +159,22 @@ class OsuT(PreTrainedModel):
             else:
                 inputs_embeds = self.encoder_embedder(frames)
 
-        decoder_inputs_embeds = self.decoder_embedder(decoder_input_ids)
+        inputs = dict(
+            inputs_embeds=inputs_embeds,
+            decoder_input_ids=decoder_input_ids,
+            decoder_attention_mask=decoder_attention_mask,
+            encoder_outputs=encoder_outputs, labels=labels, **kwargs
+        )
+
+        if self.embed_decoder_input:
+            inputs["decoder_inputs_embeds"] = self.decoder_embedder(decoder_input_ids)
+            del inputs["decoder_input_ids"]
+
         if self.input_features:
-            input_features = torch.swapaxes(inputs_embeds, 1, 2) if inputs_embeds is not None else None
-            # noinspection PyTypeChecker
-            output = self.transformer.forward(input_features=input_features,
-                                              decoder_inputs_embeds=decoder_inputs_embeds,
-                                              decoder_attention_mask=decoder_attention_mask,
-                                              encoder_outputs=encoder_outputs, labels=labels, **kwargs)
-        else:
-            output = self.transformer.forward(inputs_embeds=inputs_embeds, decoder_inputs_embeds=decoder_inputs_embeds,
-                                              decoder_attention_mask=decoder_attention_mask,
-                                              encoder_outputs=encoder_outputs, labels=labels, **kwargs)
-        # output = self.transformer.forward(inputs_embeds=inputs_embeds, decoder_input_ids=decoder_input_ids,encoder_outputs=encoder_outputs, **kwargs)
+            inputs["input_features"] = torch.swapaxes(inputs_embeds, 1, 2) if inputs_embeds is not None else None
+            del inputs["inputs_embeds"]
+
+        output = self.transformer.forward(**inputs)
 
         if labels is not None:
             unreduced_loss = self.loss_fn(torch.swapaxes(output.logits, 1, -1), labels)

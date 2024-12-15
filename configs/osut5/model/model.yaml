@@ -1,5 +1,7 @@
 input_features: false
 do_style_embed: true
+embed_decoder_input: true
+manual_norm_weights: false
 
 spectrogram:
   sample_rate: 16000

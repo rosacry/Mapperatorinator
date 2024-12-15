@@ -63,9 +63,10 @@ def main(args: DictConfig):
         else:
             model.load_state_dict(state_dict)
 
-    if hasattr(model.transformer, "register_step_post_hook"):
-        print("Registering step post hook")
+    if args.model.manual_norm_weights:
+        print("Manually normalizing model weights")
         model.transformer.register_step_post_hook(optimizer)
+        model.transformer.norm_weights_()
 
     # noinspection PyTypeChecker
     (

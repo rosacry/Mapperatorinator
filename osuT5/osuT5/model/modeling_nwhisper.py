@@ -151,8 +151,7 @@ class Residual(Module):
         if tuple_output:
             out, *rest = out
 
-        out = self.l2norm(out)
-        out = out.to(residual.dtype)
+        out = self.l2norm(out).to(residual.dtype)
         out = self.l2norm(residual.lerp(out, self.branch_scale()))
 
         if tuple_output:
@@ -217,6 +216,50 @@ class NormLinear(Module):
 
     def forward(self, x):
         return self.linear(x) * self.scale
+
+
+class NormEmbedding(Module):
+    def __init__(
+            self,
+            num_embeddings,
+            embedding_dim,
+            parametrize=True,
+            norm_eps=0.,
+            groups=1,
+            **kwargs
+    ):
+        super().__init__()
+        self.embedding = nn.Embedding(num_embeddings, embedding_dim, **kwargs)
+
+        self.scale = groups ** -1
+        self.parametrize = parametrize
+        self.l2norm = L2Norm(dim=-1, norm_eps=norm_eps, groups=groups)
+
+        if parametrize:
+            register_parametrization(
+                self.embedding,
+                'weight',
+                self.l2norm
+            )
+
+        self.norm_weights_()
+
+    @torch.no_grad()
+    def norm_weights_(self):
+        if self.parametrize:
+            normed = self.weight
+            original = self.embedding.parametrizations.weight.original
+
+            original.copy_(normed)
+        else:
+            self.weight.copy_(self.l2norm(self.weight))
+
+    @property
+    def weight(self):
+        return self.embedding.weight
+
+    def forward(self, x):
+        return self.embedding(x) * self.scale
 
 
 def sinusoids(length: int, channels: int, max_timescale: float = 10000) -> torch.Tensor:
@@ -1050,7 +1093,7 @@ class NWhisperPreTrainedModel(PreTrainedModel):
     @torch.no_grad()
     def norm_weights_(self):
         for module in self.modules():
-            if not isinstance(module, NormLinear):
+            if not (isinstance(module, NormLinear) or isinstance(module, NormEmbedding)):
                 continue
 
             module.norm_weights_()
@@ -1227,6 +1270,8 @@ class NWhisperEncoder(NWhisperPreTrainedModel):
 
         self.embed_positions = nn.Embedding(self.max_source_positions, embed_dim)
         self.embed_positions.requires_grad_(False)
+        self.alpha_positions = Scale(config.d_model, default(config.encoder_alpha_pos_init, config.alpha_init),
+                                     default(config.encoder_alpha_pos_scale, config.d_model ** -0.5))
 
         scale_hparams = (
             config.encoder_alpha_attn_init,
@@ -1321,10 +1366,10 @@ class NWhisperEncoder(NWhisperPreTrainedModel):
         inputs_embeds = nn.functional.gelu(self.conv2(inputs_embeds))
 
         inputs_embeds = inputs_embeds.permute(0, 2, 1)
+        inputs_embeds = self.l2_norm(inputs_embeds).to(torch.float32)
         embed_pos = self.embed_positions.weight
 
-        hidden_states = inputs_embeds + embed_pos
-        hidden_states = self.l2_norm(hidden_states)
+        hidden_states = self.l2_norm(inputs_embeds.lerp(embed_pos.to(inputs_embeds.device), self.alpha_positions()))
         hidden_states = nn.functional.dropout(hidden_states, p=self.dropout, training=self.training)
 
         encoder_states = () if output_hidden_states else None
@@ -1393,6 +1438,8 @@ class NWhisperDecoder(NWhisperPreTrainedModel):
     def __init__(self, config: NWhisperConfig):
         super().__init__(config)
         self.l2_norm = L2Norm(dim=-1, norm_eps=config.norm_eps, groups=config.num_hyperspheres)
+        NormEmbedding_ = partial(NormEmbedding, parametrize=not config.manual_norm_weights, norm_eps=config.norm_eps,
+                                 groups=config.num_hyperspheres)
 
         self.dropout = config.dropout
         self.layerdrop = config.decoder_layerdrop
@@ -1401,8 +1448,11 @@ class NWhisperDecoder(NWhisperPreTrainedModel):
         self.max_source_positions = config.max_source_positions
         self.embed_scale = math.sqrt(config.d_model) if config.scale_embedding else 1.0
 
-        self.embed_tokens = nn.Embedding(config.d_model, config.vocab_size, padding_idx=config.pad_token_id)
+        vocab_size = config.input_vocab_size if config.input_vocab_size is not None else config.vocab_size
+        self.embed_tokens = NormEmbedding_(vocab_size, config.d_model, padding_idx=config.pad_token_id)
         self.embed_positions = NWhisperPositionalEmbedding(self.max_target_positions, config.d_model)
+        self.alpha_positions = Scale(config.d_model, default(config.decoder_alpha_pos_init, config.alpha_init),
+                                     default(config.decoder_alpha_pos_scale, config.d_model ** -0.5))
 
         scale_hparams = (
             tuple(range(config.decoder_layers)),
@@ -1560,7 +1610,7 @@ class NWhisperDecoder(NWhisperPreTrainedModel):
             raise ValueError("You have to specify either decoder_input_ids or decoder_inputs_embeds")
 
         if inputs_embeds is None:
-            inputs_embeds = self.embed_tokens(input_ids)
+            inputs_embeds = self.embed_tokens(input_ids).to(torch.float32)
 
         return_legacy_cache = False
         return_self_attention_cache = False
@@ -1601,8 +1651,7 @@ class NWhisperDecoder(NWhisperPreTrainedModel):
                 inputs_embeds, past_key_values_length=past_key_values_length, position_ids=position_ids
             )
 
-        hidden_states = inputs_embeds + positions.to(inputs_embeds.device)
-        hidden_states = self.l2_norm(hidden_states)
+        hidden_states = self.l2_norm(inputs_embeds.lerp(positions.to(inputs_embeds.device), self.alpha_positions()))
         hidden_states = nn.functional.dropout(hidden_states, p=self.dropout, training=self.training)
 
         causal_mask = self._update_causal_mask(

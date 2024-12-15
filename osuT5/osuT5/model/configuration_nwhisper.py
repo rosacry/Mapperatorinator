@@ -2,7 +2,7 @@ from transformers import WhisperConfig
 
 
 class NWhisperConfig(WhisperConfig):
-    model_type = "nwhisper"
+    model_type = "whisper"
 
     def __init__(
             self,
@@ -51,23 +51,28 @@ class NWhisperConfig(WhisperConfig):
             # this would set the alpha init for all residuals, but would be overridden by alpha_attn_init and alpha_ff_init if they are specified
             s_logit_init: float = 1.,
             s_logit_scale: float | None = None,
-            encoder_alpha_attn_init: float | tuple[float, ...] | None = None,
+            encoder_alpha_pos_init: float | None = 0.1,
+            encoder_alpha_pos_scale: float | None = None,
+            encoder_alpha_attn_init: float | tuple[float, ...] | None = 0.05,
             encoder_alpha_attn_scale: float | tuple[float, ...] | None = None,
-            encoder_alpha_ff_init: float | tuple[float, ...] | None = None,
+            encoder_alpha_ff_init: float | tuple[float, ...] | None = 0.05,
             encoder_alpha_ff_scale: float | tuple[float, ...] | None = None,
             encoder_s_qk_init: float | tuple[float, ...] = 1.,
             encoder_s_qk_scale: float | tuple[float, ...] | None = None,
-            decoder_alpha_attn_init: float | tuple[float, ...] | None = None,
+            decoder_alpha_pos_init: float | None = 0.1,
+            decoder_alpha_pos_scale: float | None = None,
+            decoder_alpha_attn_init: float | tuple[float, ...] | None = 0.05,
             decoder_alpha_attn_scale: float | tuple[float, ...] | None = None,
-            decoder_alpha_cross_attn_init: float | tuple[float, ...] | None = None,
+            decoder_alpha_cross_attn_init: float | tuple[float, ...] | None = 0.05,
             decoder_alpha_cross_attn_scale: float | tuple[float, ...] | None = None,
-            decoder_alpha_ff_init: float | tuple[float, ...] | None = None,
+            decoder_alpha_ff_init: float | tuple[float, ...] | None = 0.05,
             decoder_alpha_ff_scale: float | tuple[float, ...] | None = None,
             decoder_s_qk_init: float | tuple[float, ...] = 1.,
             decoder_s_qk_scale: float | tuple[float, ...] | None = None,
             decoder_cross_s_qk_init: float | tuple[float, ...] = 1.,
             decoder_cross_s_qk_scale: float | tuple[float, ...] | None = None,
             norm_eps=0.,  # greater than 0 allows the norm to be around (1. - norm_eps) to (1. + norm_eps)
+            input_vocab_size=None,
             ** kwargs,
     ):
         self.attn_norm_qk = attn_norm_qk
@@ -76,12 +81,16 @@ class NWhisperConfig(WhisperConfig):
         self.alpha_init = alpha_init
         self.s_logit_init = s_logit_init
         self.s_logit_scale = s_logit_scale
+        self.encoder_alpha_pos_init = encoder_alpha_pos_init
+        self.encoder_alpha_pos_scale = encoder_alpha_pos_scale
         self.encoder_alpha_attn_init = encoder_alpha_attn_init
         self.encoder_alpha_attn_scale = encoder_alpha_attn_scale
         self.encoder_alpha_ff_init = encoder_alpha_ff_init
         self.encoder_alpha_ff_scale = encoder_alpha_ff_scale
         self.encoder_s_qk_init = encoder_s_qk_init
         self.encoder_s_qk_scale = encoder_s_qk_scale
+        self.decoder_alpha_pos_init = decoder_alpha_pos_init
+        self.decoder_alpha_pos_scale = decoder_alpha_pos_scale
         self.decoder_alpha_attn_init = decoder_alpha_attn_init
         self.decoder_alpha_attn_scale = decoder_alpha_attn_scale
         self.decoder_alpha_cross_attn_init = decoder_alpha_cross_attn_init
@@ -93,6 +102,7 @@ class NWhisperConfig(WhisperConfig):
         self.decoder_cross_s_qk_init = decoder_cross_s_qk_init
         self.decoder_cross_s_qk_scale = decoder_cross_s_qk_scale
         self.norm_eps = norm_eps
+        self.input_vocab_size = input_vocab_size
 
         super().__init__(
             vocab_size=vocab_size,
