@@ -57,10 +57,8 @@ def get_backbone_config(args, tokenizer: Tokenizer):
         config.top_k = 0
         if args.flash_attention:
             config._attn_implementation = "flash_attention_2"
-    elif isinstance(config, NWhisperConfig):
+    if isinstance(config, NWhisperConfig):
         config.input_vocab_size = tokenizer.vocab_size_in
-    else:
-        raise NotImplementedError
 
     return config
 
