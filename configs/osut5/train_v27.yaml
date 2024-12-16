@@ -61,7 +61,7 @@ dataloader:             # Dataloader settings
 optim:                  # Optimizer settings
   base_lr: 15e-4         # Should not be scaled with the number of devices present
   final_cosine: 0        # As per nGPT paper
-  batch_size: 128
-  grad_acc: 8
+  batch_size: 120
+  grad_acc: 10
   name: adamw
   warmup_steps: 0
