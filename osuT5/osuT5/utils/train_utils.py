@@ -14,6 +14,7 @@ from torch.optim.lr_scheduler import LRScheduler
 from torch.utils.data import DataLoader
 
 from ..dataset.ors_dataset import LABEL_IGNORE_ID
+from ..model.modeling_nwhisper import NWhisperForConditionalGeneration
 from ..tokenizer import Tokenizer, EventType, ContextType
 from ..model import OsuT
 from .log_utils import Averager
@@ -30,7 +31,10 @@ def forward(model: OsuT, batch):
 
 
 def forward_eval(model: OsuT, batch):
-    outputs = model(**batch)
+    if isinstance(model.transformer, NWhisperForConditionalGeneration):
+        outputs = torch.compiler.disable(model.forward)(**batch)
+    else:
+        outputs = model.transformer(**batch)
     return outputs
 
 
