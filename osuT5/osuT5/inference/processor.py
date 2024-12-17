@@ -465,6 +465,7 @@ class Processor(object):
                 guidance_scale=self.cfg_scale,
                 negative_prompt_ids=uncond_prompt,
                 eos_token_id=eos_token_id,
+                use_cache=True,
                 cache_implementation="static",
             )
             # Only support batch size 1 for now
