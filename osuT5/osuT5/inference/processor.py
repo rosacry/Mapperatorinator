@@ -180,16 +180,22 @@ class Processor(object):
         self.beat_type_tokens = get_beat_type_tokens(tokenizer)
         self.types_first = args.osut5.data.types_first
 
-        self.logit_processor = LogitsProcessorList()
+        self.base_logit_processor = LogitsProcessorList()
         if self.timeshift_bias != 0:
-            self.logit_processor.append(TimeshiftBias(self.timeshift_bias, self.time_range))
+            self.base_logit_processor.append(TimeshiftBias(self.timeshift_bias, self.time_range))
 
-    def get_context(self, context: ContextType, beatmap_path, song_length: float, add_type=True):
-        beatmap_path = Path(beatmap_path)
-        if context != ContextType.NONE and not beatmap_path.is_file():
-            raise FileNotFoundError(f"Beatmap file {beatmap_path} not found.")
+    def get_context(self, context: ContextType, beatmap_path, song_length: float, add_type=True, add_pre_tokens=False):
+        if context != ContextType.NONE:
+            beatmap_path = Path(beatmap_path)
+            if not beatmap_path.is_file():
+                raise FileNotFoundError(f"Beatmap file {beatmap_path} not found.")
 
-        data = {"context_type": ContextType(context), "add_type": add_type}
+        data = {
+            "context_type": ContextType(context),
+            "add_type": add_type,
+            "add_pre_tokens": self.add_pre_tokens,
+            "song_length": song_length,
+        }
 
         if context == ContextType.NONE:
             data["events"], data["event_times"] = [], []
@@ -205,10 +211,6 @@ class Processor(object):
             beatmap = Beatmap.from_path(beatmap_path)
             data["events"], data["event_times"] = self.parser.parse(beatmap)
             data["class"] = self.get_class_vector(generation_config_from_beatmap(beatmap, self.tokenizer), song_length)
-            if self.add_kiai:
-                data["kiai_events"], data["kiai_event_times"] = events_of_type(data["events"], data["event_times"], EventType.KIAI)
-            if self.add_sv_special_token:
-                data["sv_events"], data["sv_event_times"] = events_of_type(data["events"], data["event_times"], EventType.SCROLL_SPEED)
         else:
             raise ValueError(f"Invalid context type {context}")
         return data
@@ -320,25 +322,11 @@ class Processor(object):
             event_times: Corresponding event times of Event object lists in miliseconds.
         """
 
-        events = []
-        event_times = []
+        # Prepare output context
         song_length = (len(sequences) - 1) * self.miliseconds_per_stride + self.miliseconds_per_sequence
-
-        # Prepare logit processors
-        logit_processor = LogitsProcessorList(self.logit_processor + [ConditionalTemperatureLogitsWarper(
-            self.args,
-            self.tokenizer,
-            generation_config.gamemode,
-        )])
-
-        # Prepare special tokens
-        beatmap_idx = torch.tensor([self.tokenizer.num_classes], dtype=torch.long, device=self.device)
-        if self.need_beatmap_idx:
-            beatmap_idx = torch.tensor([self.tokenizer.beatmap_idx[generation_config.beatmap_id]], dtype=torch.long, device=self.device)
-
-        # Prepare unconditional prompt
-        cond_tokens = self.get_class_vector(generation_config, song_length, verbose=verbose)
-        uncond_tokens = self.get_class_vector(GenerationConfig(
+        out = self.get_context(ContextType.NONE, None, song_length, False, self.add_pre_tokens)
+        out["class"] = self.get_class_vector(generation_config, song_length, verbose=verbose)
+        out["negative_class"] = self.get_class_vector(GenerationConfig(
             gamemode=generation_config.gamemode,
             difficulty=generation_config.difficulty,
             circle_size=generation_config.circle_size,
@@ -350,113 +338,31 @@ class Processor(object):
             descriptors=generation_config.negative_descriptors,
         ), song_length)
 
-        # Prepare context type indicator tokens
-        def get_context_tokens(context):
-            context_type = context["context_type"]
-            tokens = context["tokens"]
+        # Prepare logit processors
+        logit_processor = self.get_logits_processor(generation_config)
 
-            # Trim tokens if they are too long
-            max_context_length = self.tgt_seq_len // 2
-            if tokens.shape[1] > max_context_length:
-                tokens = tokens[:, :max_context_length]
-
-            to_concat = []
-            if context["add_type"]:
-                to_concat.append(torch.tensor([[self.tokenizer.context_sos[context_type]]], dtype=torch.long, device=self.device))
-
-            if "class" in context:
-                to_concat.append(context["class"])
-
-            to_concat.append(context["extra_special_tokens"])
-            to_concat.append(tokens)
-
-            if context["add_type"]:
-                to_concat.append(torch.tensor([[self.tokenizer.context_eos[context_type]]], dtype=torch.long, device=self.device))
-
-            return torch.concatenate(to_concat, dim=-1)
-
-        def get_prompt(user_prompt, extra_special_tokens, prev_tokens, post_tokens):
-            to_concat = [get_context_tokens(context) for context in in_context] + [user_prompt, extra_special_tokens, prev_tokens]
-            prefix = torch.concatenate(to_concat, dim=-1)
-
-            if self.center_pad_decoder:
-                prefix = F.pad(prefix, (self.tgt_seq_len // 2 - prefix.shape[1], 0), value=self.tokenizer.pad_id)
-
-            prompt = torch.tensor([[self.tokenizer.sos_id]], dtype=torch.long, device=self.device)
-            prompt = torch.concatenate([prefix, prompt, post_tokens], dim=-1)
-            return prompt
+        # Prepare special input for legacy model
+        beatmap_idx = torch.tensor([self.tokenizer.num_classes], dtype=torch.long, device=self.device)
+        if self.need_beatmap_idx:
+            beatmap_idx = torch.tensor(
+                [self.tokenizer.beatmap_idx[generation_config.beatmap_id]], dtype=torch.long, device=self.device)
 
         # Start generation
         iterator = tqdm(sequences) if verbose else sequences
         for sequence_index, frames in enumerate(iterator):
+            last_sequence = sequence_index == len(sequences) - 1
             # noinspection PyUnresolvedReferences
             frames = frames.to(self.device).unsqueeze(0)
-
-            # Get tokens of previous frame
             frame_time = sequence_index * self.miliseconds_per_stride
 
-            prev_events = self._get_events_time_range(
-                events, event_times, frame_time - self.miliseconds_per_sequence, frame_time) \
-                if self.add_pre_tokens else []
-            prev_tokens = self._encode(prev_events, frame_time)
-            if 0 <= self.max_pre_token_len < prev_tokens.shape[1]:
-                prev_tokens = prev_tokens[:, -self.max_pre_token_len:]
-
-            post_events = self._get_events_time_range(
-                events, event_times, frame_time, frame_time + self.miliseconds_per_sequence)
-            post_tokens = self._encode(post_events, frame_time)
-
-            # Get context tokens
+            # Get relevant tokens for current frame
+            self.prepare_context_sequence(out, frame_time)
             for context in in_context:
-                context_events = self._get_events_time_range(
-                    context["events"], context["event_times"], frame_time,
-                    frame_time + self.miliseconds_per_sequence)
-                context["tokens"] = self._encode(context_events, frame_time)
+                self.prepare_context_sequence(context, frame_time)
 
-                # Prepare extra special tokens
-                context_extra_special_events = []
-                if self.add_kiai and "kiai_events" in context:
-                    last_kiai = self._kiai_before_time(context["kiai_events"], context["kiai_event_times"], frame_time)
-                    context_extra_special_events.append(last_kiai)
-                if self.add_sv_special_token and "sv_events" in context:
-                    last_sv = self._sv_before_time(context["sv_events"], context["sv_event_times"], frame_time)
-                    context_extra_special_events.append(last_sv)
-                if self.add_song_position_token and "class" in context:
-                    context_extra_special_events.append(self.tokenizer.encode_song_position_event(frame_time, song_length))
-                context["extra_special_tokens"] = self._encode(context_extra_special_events, frame_time)
+            cond_prompt, uncond_prompt = self.get_prompts(in_context, out)
 
-            # Prepare extra special tokens
-            extra_special_events = []
-            if self.add_kiai:
-                last_kiai = self._kiai_before_time(events, event_times, frame_time)
-                extra_special_events.append(last_kiai)
-            if self.add_sv_special_token:
-                last_sv = self._sv_before_time(events, event_times, frame_time)
-                extra_special_events.append(last_sv)
-            if self.add_song_position_token:
-                extra_special_events.append(self.tokenizer.encode_song_position_event(frame_time, song_length))
-            extra_special_tokens = self._encode(extra_special_events, frame_time)
-
-            # Prepare classifier-free guidance
-            cond_prompt = get_prompt(cond_tokens, extra_special_tokens, prev_tokens, post_tokens)
-            uncond_prompt = get_prompt(uncond_tokens, extra_special_tokens, prev_tokens, post_tokens) if self.cfg_scale > 1 else None
-
-            # Make sure the prompt is not too long
-            i = 0
-            while cond_prompt.shape[1] >= self.tgt_seq_len:
-                i += 1
-                if i > 10:
-                    raise ValueError("Prompt is too long.")
-                prev_tokens = prev_tokens[:, -(prev_tokens.shape[1] // 2):]
-                post_tokens = post_tokens[:, -(post_tokens.shape[1] // 2):]
-                cond_prompt = get_prompt(cond_tokens, extra_special_tokens, prev_tokens, post_tokens)
-                uncond_prompt = get_prompt(uncond_tokens, extra_special_tokens, prev_tokens, post_tokens) if self.cfg_scale > 1 else None
-
-            eos_token_id = [self.tokenizer.eos_id]
-            if sequence_index != len(sequences) - 1:
-                eos_token_id += self.lookahead_time_range
-
-            predicted_tokens = self.model.generate(
+            result = self.model.generate(
                 frames,
                 decoder_input_ids=cond_prompt,
                 beatmap_idx=beatmap_idx,
@@ -464,43 +370,151 @@ class Processor(object):
                 top_p=self.top_p,
                 guidance_scale=self.cfg_scale,
                 negative_prompt_ids=uncond_prompt,
-                eos_token_id=eos_token_id,
+                eos_token_id=self.get_eos_token_id(last_sequence),
                 use_cache=True,
                 cache_implementation="static",
             )
+
             # Only support batch size 1 for now
-            predicted_tokens = predicted_tokens[0].cpu()
-
-            # Trim prompt and eos tokens
-            predicted_tokens = predicted_tokens[cond_prompt.shape[1]:]
-            if predicted_tokens[-1] == self.tokenizer.eos_id:
-                predicted_tokens = predicted_tokens[:-1]
-            elif sequence_index != len(sequences) - 1 and predicted_tokens[-1] in self.lookahead_time_range:
-                # If the type token comes before the timeshift token we should remove the type token too
-                if self.types_first:
-                    predicted_tokens = predicted_tokens[:-2]
-                else:
-                    predicted_tokens = predicted_tokens[:-1]
-
-            result = self._decode(predicted_tokens, frame_time)
-            events += result
-            update_event_times(events, event_times, frame_time + self.eos_time, self.types_first)
-
-            # Trim events which are in the lookahead window
-            if sequence_index != len(sequences) - 1:
-                lookahead_time = frame_time + self.lookahead_max_time
-                self._trim_events_after_time(events, event_times, lookahead_time)
+            predicted_tokens = result[0].cpu()[cond_prompt.shape[1]:]
+            self.add_predicted_tokens_to_context(out, predicted_tokens, frame_time, last_sequence)
 
         # Post-process events
         # Rescale and unpack position events
         if self.add_positions:
-            events = self._rescale_positions(events)
+            out["events"] = self._rescale_positions(out["events"])
 
         # Turn mania key column into X position
         if generation_config.gamemode == 3:
-            events = self._convert_column_to_position(events, generation_config.keycount)
+            out["events"] = self._convert_column_to_position(out["events"], generation_config.keycount)
 
-        return events
+        return out["events"]
+
+    def get_logits_processor(self, generation_config: GenerationConfig) -> LogitsProcessorList:
+        return LogitsProcessorList(self.base_logit_processor + [ConditionalTemperatureLogitsWarper(
+            self.args,
+            self.tokenizer,
+            generation_config.gamemode,
+        )])
+
+    def add_predicted_tokens_to_context(self, context, predicted_tokens, frame_time, last_sequence):
+        # Trim prompt and eos tokens
+        if predicted_tokens[-1] == self.tokenizer.eos_id:
+            predicted_tokens = predicted_tokens[:-1]
+        elif not last_sequence and predicted_tokens[-1] in self.lookahead_time_range:
+            # If the type token comes before the timeshift token we should remove the type token too
+            if self.types_first:
+                predicted_tokens = predicted_tokens[:-2]
+            else:
+                predicted_tokens = predicted_tokens[:-1]
+
+        result = self._decode(predicted_tokens, frame_time)
+        context["events"] += result
+        update_event_times(context["events"], context["event_times"], frame_time + self.eos_time, self.types_first)
+
+        # Trim events which are in the lookahead window
+        if not last_sequence:
+            lookahead_time = frame_time + self.lookahead_max_time
+            self._trim_events_after_time(context["events"], context["event_times"], lookahead_time)
+
+    def get_eos_token_id(self, last_sequence: bool):
+        eos_token_id = [self.tokenizer.eos_id]
+        if not last_sequence:
+            eos_token_id += self.lookahead_time_range
+        return eos_token_id
+
+    def prepare_context_sequence(self, context, frame_time):
+        if context["add_pre_tokens"]:
+            context_pre_events = self._get_events_time_range(
+                context["events"], context["event_times"],
+                frame_time - self.miliseconds_per_sequence, frame_time)
+            pre_tokens = self._encode(context_pre_events, frame_time)
+            if 0 <= self.max_pre_token_len < pre_tokens.shape[1]:
+                pre_tokens = pre_tokens[:, -self.max_pre_token_len:]
+            context["pre_tokens"] = pre_tokens
+
+        context_events = self._get_events_time_range(
+            context["events"], context["event_times"], frame_time,
+            frame_time + self.miliseconds_per_sequence)
+        context["tokens"] = self._encode(context_events, frame_time)
+
+        # Prepare extra special tokens
+        context_extra_special_events = []
+        if "class" in context:
+            if self.add_kiai:
+                last_kiai = self._kiai_before_time(context["events"], context["event_times"], frame_time)
+                context_extra_special_events.append(last_kiai)
+            if self.add_sv_special_token:
+                last_sv = self._sv_before_time(context["events"], context["event_times"], frame_time)
+                context_extra_special_events.append(last_sv)
+            if self.add_song_position_token:
+                context_extra_special_events.append(
+                    self.tokenizer.encode_song_position_event(frame_time, context["song_length"]))
+        context["extra_special_tokens"] = self._encode(context_extra_special_events, frame_time)
+
+    # Prepare context type indicator tokens
+    def get_context_tokens(self, context):
+        context_type = context["context_type"]
+        tokens = context["tokens"]
+
+        # Trim tokens if they are too long
+        max_context_length = self.tgt_seq_len // 2
+        if tokens.shape[1] > max_context_length:
+            tokens = tokens[:, :max_context_length]
+
+        to_concat = []
+        if context["add_type"]:
+            to_concat.append(torch.tensor([[self.tokenizer.context_sos[context_type]]], dtype=torch.long, device=self.device))
+
+        if "class" in context:
+            to_concat.append(context["class"])
+
+        to_concat.append(context["extra_special_tokens"])
+        to_concat.append(tokens)
+
+        if context["add_type"]:
+            to_concat.append(torch.tensor([[self.tokenizer.context_eos[context_type]]], dtype=torch.long, device=self.device))
+
+        return torch.concatenate(to_concat, dim=-1)
+
+    def get_prompt(self, in_context, out_context, negative=False, max_token_length=None):
+        user_prompt = out_context["negative_class"] if negative else out_context["class"]
+        extra_special_tokens = out_context["extra_special_tokens"]
+        pre_tokens = out_context["pre_tokens"] if "pre_tokens" in out_context else torch.tensor([[]], dtype=torch.long, device=self.device)
+        post_tokens = out_context["tokens"]
+
+        if max_token_length is not None:
+            pre_tokens = pre_tokens[:, -max_token_length:]
+            post_tokens = post_tokens[:, -max_token_length:]
+
+        to_concat = [self.get_context_tokens(context) for context in in_context] + [user_prompt, extra_special_tokens, pre_tokens]
+        prefix = torch.concatenate(to_concat, dim=-1)
+
+        if self.center_pad_decoder:
+            prefix = F.pad(prefix, (self.tgt_seq_len // 2 - prefix.shape[1], 0), value=self.tokenizer.pad_id)
+
+        prompt = torch.tensor([[self.tokenizer.sos_id]], dtype=torch.long, device=self.device)
+        prompt = torch.concatenate([prefix, prompt, post_tokens], dim=-1)
+        return prompt
+
+    def get_prompts(self, in_context, out_context):
+        # Prepare classifier-free guidance
+        cond_prompt = self.get_prompt(in_context, out_context)
+        uncond_prompt = self.get_prompt(in_context, out_context, negative=True) if self.cfg_scale > 1 else None
+
+        # Make sure the prompt is not too long
+        i = 0
+        max_length = out_context["tokens"].shape[1]
+        while cond_prompt.shape[1] >= self.tgt_seq_len:
+            i += 1
+            if i > 10:
+                raise ValueError("Prompt is too long.")
+            max_length = max_length // 2
+            cond_prompt = self.get_prompt(in_context, out_context, max_token_length=max_length)
+            uncond_prompt = self.get_prompt(in_context, out_context, negative=True,
+                                            max_token_length=max_length) if self.cfg_scale > 1 else None
+
+        return cond_prompt, uncond_prompt
 
     def _get_events_time_range(self, events: list[Event], event_times: list[float], start_time: float, end_time: float):
         # Look from the end of the list
