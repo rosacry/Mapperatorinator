@@ -136,8 +136,8 @@ def generate(
     audio_path = args.audio_path if audio_path is None else audio_path
     other_beatmap_path = args.other_beatmap_path if other_beatmap_path is None else other_beatmap_path
 
-    preprocessor = Preprocessor(args)
-    processor = Processor(args, model, tokenizer)
+    preprocessor = Preprocessor(args, parallel=args.parallel)
+    processor = Processor(args, model, tokenizer, parallel=args.parallel)
     postprocessor = Postprocessor(args)
 
     # TODO: Auto generate timing if not provided in in_context and required for the model and this output_type

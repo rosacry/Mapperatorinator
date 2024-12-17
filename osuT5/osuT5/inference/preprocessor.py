@@ -12,15 +12,15 @@ from ..dataset.data_utils import load_audio_file
 
 
 class Preprocessor(object):
-    def __init__(self, args: DictConfig):
+    def __init__(self, args: DictConfig, parallel: bool = False):
         """Preprocess audio data into sequences."""
         self.frame_seq_len = args.osut5.data.src_seq_len - 1
         self.frame_size = args.osut5.data.hop_length
         self.sample_rate = args.osut5.data.sample_rate
         self.samples_per_sequence = self.frame_seq_len * self.frame_size
         self.sequence_stride = int(self.samples_per_sequence * (1 - args.lookback - args.lookahead))
-        self.parallel = args.parallel
-        if self.parallel:
+        self.parallel = parallel
+        if parallel:
             self.sequence_stride = self.samples_per_sequence
 
     def load(self, path: PathLike) -> npt.ArrayLike:
