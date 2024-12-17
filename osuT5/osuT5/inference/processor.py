@@ -124,7 +124,7 @@ class ConditionalTemperatureLogitsWarper(LogitsProcessor):
 
 
 class Processor(object):
-    def __init__(self, args: DictConfig, model: OsuT, tokenizer: Tokenizer):
+    def __init__(self, args: DictConfig, model: OsuT, tokenizer: Tokenizer, parallel: bool = False):
         """Model inference stage that processes sequences."""
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.args = args
@@ -136,8 +136,8 @@ class Processor(object):
         self.sample_rate = args.osut5.model.spectrogram.sample_rate
         self.samples_per_sequence = self.frame_seq_len * self.frame_size
         self.sequence_stride = int(self.samples_per_sequence * (1 - args.lookback - args.lookahead))
-        self.parallel = args.parallel
-        if self.parallel:
+        self.parallel = parallel
+        if parallel:
             self.sequence_stride = self.samples_per_sequence
         self.miliseconds_per_sequence = self.samples_per_sequence * MILISECONDS_PER_SECOND / self.sample_rate
         self.miliseconds_per_stride = self.sequence_stride * MILISECONDS_PER_SECOND / self.sample_rate
