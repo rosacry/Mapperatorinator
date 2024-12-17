@@ -136,6 +136,9 @@ class Processor(object):
         self.sample_rate = args.osut5.model.spectrogram.sample_rate
         self.samples_per_sequence = self.frame_seq_len * self.frame_size
         self.sequence_stride = int(self.samples_per_sequence * (1 - args.lookback - args.lookahead))
+        self.parallel = args.parallel
+        if self.parallel:
+            self.sequence_stride = self.samples_per_sequence
         self.miliseconds_per_sequence = self.samples_per_sequence * MILISECONDS_PER_SECOND / self.sample_rate
         self.miliseconds_per_stride = self.sequence_stride * MILISECONDS_PER_SECOND / self.sample_rate
         self.lookahead_max_time = (1 - args.lookahead) * self.miliseconds_per_sequence
@@ -323,6 +326,136 @@ class Processor(object):
         """
 
         # Prepare output context
+        out_context = self.get_out_context(generation_config, sequences, verbose=verbose)
+
+        # Prepare logit processors
+        logit_processor = self.get_logits_processor(generation_config)
+
+        # Prepare special input for legacy model
+        beatmap_idx = torch.tensor([self.tokenizer.num_classes], dtype=torch.long, device=self.device)
+        if self.need_beatmap_idx:
+            beatmap_idx = torch.tensor(
+                [self.tokenizer.beatmap_idx[generation_config.beatmap_id]], dtype=torch.long, device=self.device)
+
+        # Start generation
+        inputs = dict(
+            sequences=sequences,
+            in_context=in_context,
+            out_context=out_context,
+            beatmap_idx=beatmap_idx,
+            logit_processor=logit_processor,
+            verbose=verbose,
+        )
+        if self.parallel:
+            self.generate_parallel(**inputs)
+        else:
+            self.generate_sequential(**inputs)
+
+        # Post-process events
+        # Rescale and unpack position events
+        if self.add_positions:
+            out_context["events"] = self._rescale_positions(out_context["events"])
+
+        # Turn mania key column into X position
+        if generation_config.gamemode == 3:
+            out_context["events"] = self._convert_column_to_position(out_context["events"], generation_config.keycount)
+
+        return out_context["events"]
+
+    def generate_sequential(
+            self,
+            *,
+            sequences: torch.Tensor,
+            in_context: list[dict[str, Any]],
+            out_context: dict[str, Any],
+            beatmap_idx: torch.Tensor,
+            logit_processor: LogitsProcessorList,
+            verbose: bool = True,
+    ):
+        iterator = tqdm(sequences) if verbose else sequences
+        for sequence_index, frames in enumerate(iterator):
+            trim_lookahead = sequence_index != len(sequences) - 1
+            # noinspection PyUnresolvedReferences
+            frames = frames.to(self.device).unsqueeze(0)
+            frame_time = sequence_index * self.miliseconds_per_stride
+
+            # Get relevant tokens for current frame
+            cond_prompt, uncond_prompt = self.get_prompts(
+                [self.prepare_context_sequence(context, frame_time) for context in in_context],
+                self.prepare_context_sequence(out_context, frame_time)
+            )
+
+            result = self.model.generate(
+                frames,
+                decoder_input_ids=cond_prompt,
+                beatmap_idx=beatmap_idx,
+                logits_processor=logit_processor,
+                top_p=self.top_p,
+                guidance_scale=self.cfg_scale,
+                negative_prompt_ids=uncond_prompt,
+                eos_token_id=self.get_eos_token_id(trim_lookahead),
+                use_cache=True,
+                cache_implementation="static",
+            )
+
+            # Only support batch size 1 for now
+            predicted_tokens = result[0].cpu()[cond_prompt.shape[1]:]
+            self.add_predicted_tokens_to_context(out_context, predicted_tokens, frame_time, trim_lookahead)
+
+    def generate_parallel(
+            self,
+            *,
+            sequences: torch.Tensor,
+            in_context: list[dict[str, Any]],
+            out_context: dict[str, Any],
+            beatmap_idx: torch.Tensor,
+            logit_processor: LogitsProcessorList,
+            verbose: bool = True,
+    ):
+        # Get relevant inputs
+        frames = sequences.to(self.device)
+        frame_times = torch.arange(0, len(frames) * self.miliseconds_per_stride, self.miliseconds_per_stride, device=self.device)
+        cond_prompts = []
+        uncond_prompts = []
+
+        for i in range(len(frames)):
+            frame_time = frame_times[i]
+            cond_prompt, uncond_prompt = self.get_prompts(
+                [self.prepare_context_sequence(context, frame_times) for context in in_context],
+                self.prepare_context_sequence(out_context, frame_time)
+            )
+            cond_prompts.append(cond_prompt)
+            uncond_prompts.append(uncond_prompt)
+
+        # Padding to make sizes compatible
+        max_len = max(tensor.size(1) for tensor in cond_prompts)
+        cond_prompts = [torch.nn.functional.pad(tensor, (0, 0, max_len - tensor.size(1), 0)) for tensor in cond_prompts]
+        cond_prompt = torch.cat(cond_prompts, dim=0)
+        if self.cfg_scale > 1:
+            uncond_prompts = [torch.nn.functional.pad(tensor, (0, 0, max_len - tensor.size(1), 0)) for tensor in uncond_prompts]
+            uncond_prompt = torch.cat(uncond_prompts, dim=0)
+        else:
+            uncond_prompt = None
+
+        # Start generation
+        result = self.model.generate(
+            frames,
+            decoder_input_ids=cond_prompt,
+            beatmap_idx=beatmap_idx,
+            logits_processor=logit_processor,
+            top_p=self.top_p,
+            guidance_scale=self.cfg_scale,
+            negative_prompt_ids=uncond_prompt,
+            eos_token_id=self.get_eos_token_id(),
+            use_cache=True,
+            cache_implementation="static",
+        )
+
+        predicted_tokens = result[:, max_len:].cpu()
+        for i in range(len(predicted_tokens)):
+            self.add_predicted_tokens_to_context(out_context, predicted_tokens[i], frame_times[i])
+
+    def get_out_context(self, generation_config: GenerationConfig, sequences, verbose: bool = True):
         song_length = (len(sequences) - 1) * self.miliseconds_per_stride + self.miliseconds_per_sequence
         out = self.get_context(ContextType.NONE, None, song_length, False, self.add_pre_tokens)
         out["class"] = self.get_class_vector(generation_config, song_length, verbose=verbose)
@@ -337,58 +470,7 @@ class Processor(object):
             scroll_speed_ratio=generation_config.scroll_speed_ratio,
             descriptors=generation_config.negative_descriptors,
         ), song_length)
-
-        # Prepare logit processors
-        logit_processor = self.get_logits_processor(generation_config)
-
-        # Prepare special input for legacy model
-        beatmap_idx = torch.tensor([self.tokenizer.num_classes], dtype=torch.long, device=self.device)
-        if self.need_beatmap_idx:
-            beatmap_idx = torch.tensor(
-                [self.tokenizer.beatmap_idx[generation_config.beatmap_id]], dtype=torch.long, device=self.device)
-
-        # Start generation
-        iterator = tqdm(sequences) if verbose else sequences
-        for sequence_index, frames in enumerate(iterator):
-            last_sequence = sequence_index == len(sequences) - 1
-            # noinspection PyUnresolvedReferences
-            frames = frames.to(self.device).unsqueeze(0)
-            frame_time = sequence_index * self.miliseconds_per_stride
-
-            # Get relevant tokens for current frame
-            self.prepare_context_sequence(out, frame_time)
-            for context in in_context:
-                self.prepare_context_sequence(context, frame_time)
-
-            cond_prompt, uncond_prompt = self.get_prompts(in_context, out)
-
-            result = self.model.generate(
-                frames,
-                decoder_input_ids=cond_prompt,
-                beatmap_idx=beatmap_idx,
-                logits_processor=logit_processor,
-                top_p=self.top_p,
-                guidance_scale=self.cfg_scale,
-                negative_prompt_ids=uncond_prompt,
-                eos_token_id=self.get_eos_token_id(last_sequence),
-                use_cache=True,
-                cache_implementation="static",
-            )
-
-            # Only support batch size 1 for now
-            predicted_tokens = result[0].cpu()[cond_prompt.shape[1]:]
-            self.add_predicted_tokens_to_context(out, predicted_tokens, frame_time, last_sequence)
-
-        # Post-process events
-        # Rescale and unpack position events
-        if self.add_positions:
-            out["events"] = self._rescale_positions(out["events"])
-
-        # Turn mania key column into X position
-        if generation_config.gamemode == 3:
-            out["events"] = self._convert_column_to_position(out["events"], generation_config.keycount)
-
-        return out["events"]
+        return out
 
     def get_logits_processor(self, generation_config: GenerationConfig) -> LogitsProcessorList:
         return LogitsProcessorList(self.base_logit_processor + [ConditionalTemperatureLogitsWarper(
@@ -397,11 +479,11 @@ class Processor(object):
             generation_config.gamemode,
         )])
 
-    def add_predicted_tokens_to_context(self, context, predicted_tokens, frame_time, last_sequence):
+    def add_predicted_tokens_to_context(self, context, predicted_tokens, frame_time, trim_lookahead: bool = False):
         # Trim prompt and eos tokens
         if predicted_tokens[-1] == self.tokenizer.eos_id:
             predicted_tokens = predicted_tokens[:-1]
-        elif not last_sequence and predicted_tokens[-1] in self.lookahead_time_range:
+        elif trim_lookahead and predicted_tokens[-1] in self.lookahead_time_range:
             # If the type token comes before the timeshift token we should remove the type token too
             if self.types_first:
                 predicted_tokens = predicted_tokens[:-2]
@@ -413,17 +495,19 @@ class Processor(object):
         update_event_times(context["events"], context["event_times"], frame_time + self.eos_time, self.types_first)
 
         # Trim events which are in the lookahead window
-        if not last_sequence:
+        if trim_lookahead:
             lookahead_time = frame_time + self.lookahead_max_time
             self._trim_events_after_time(context["events"], context["event_times"], lookahead_time)
 
-    def get_eos_token_id(self, last_sequence: bool):
+    def get_eos_token_id(self, trim_lookahead: bool = False):
         eos_token_id = [self.tokenizer.eos_id]
-        if not last_sequence:
+        if trim_lookahead:
             eos_token_id += self.lookahead_time_range
         return eos_token_id
 
     def prepare_context_sequence(self, context, frame_time):
+        result = context.copy()
+
         if context["add_pre_tokens"]:
             context_pre_events = self._get_events_time_range(
                 context["events"], context["event_times"],
@@ -431,12 +515,12 @@ class Processor(object):
             pre_tokens = self._encode(context_pre_events, frame_time)
             if 0 <= self.max_pre_token_len < pre_tokens.shape[1]:
                 pre_tokens = pre_tokens[:, -self.max_pre_token_len:]
-            context["pre_tokens"] = pre_tokens
+            result["pre_tokens"] = pre_tokens
 
         context_events = self._get_events_time_range(
             context["events"], context["event_times"], frame_time,
             frame_time + self.miliseconds_per_sequence)
-        context["tokens"] = self._encode(context_events, frame_time)
+        result["tokens"] = self._encode(context_events, frame_time)
 
         # Prepare extra special tokens
         context_extra_special_events = []
@@ -450,7 +534,9 @@ class Processor(object):
             if self.add_song_position_token:
                 context_extra_special_events.append(
                     self.tokenizer.encode_song_position_event(frame_time, context["song_length"]))
-        context["extra_special_tokens"] = self._encode(context_extra_special_events, frame_time)
+        result["extra_special_tokens"] = self._encode(context_extra_special_events, frame_time)
+
+        return result
 
     # Prepare context type indicator tokens
     def get_context_tokens(self, context):

@@ -29,6 +29,7 @@ mania_column_temperature: 0.5 # Sampling temperature for mania columns
 taiko_hit_temperature: 0.5    # Sampling temperature for taiko hit types
 top_p: 0.95              # Top-p sampling threshold
 timeshift_bias: 0.0        # Logit bias for sampling timeshift tokens
+parallel: false         # Use parallel sampling
 
 bpm: 120                # Beats per minute of input audio
 offset: 0               # Start of beat, in miliseconds, from the beginning of input audio
