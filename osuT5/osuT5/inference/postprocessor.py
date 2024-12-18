@@ -539,11 +539,11 @@ class Postprocessor(object):
     def generate_timing(self, events: list[Event]) -> list[TimingPoint]:
         """Generate timing points from a list of Event objects."""
 
+        beat_types = [EventType.BEAT, EventType.MEASURE, EventType.TIMING_POINT]
         markers: list[Postprocessor.Marker] = []
         step = 1 if self.types_first else -1
         for i, event in enumerate(events):
-            if ((event.type == EventType.BEAT or event.type == EventType.MEASURE) and
-                    i + step < len(events) and events[i + step].type == EventType.TIME_SHIFT):
+            if event.type in beat_types and i + step < len(events) and events[i + step].type == EventType.TIME_SHIFT:
                 markers.append(self.Marker(
                     int(events[i + step].value),
                     event.type == EventType.MEASURE,
@@ -564,7 +564,7 @@ class Postprocessor(object):
                 continue
 
             time = marker.time
-            tp = TimingPoint(timedelta(milliseconds=time), 100, 4, 2, 0, 100, None, False)
+            tp = TimingPoint(timedelta(milliseconds=time), 1000, 4, 2, 0, 100, None, False)
             tp_change = TimingPointsChange(tp, uninherited=True)
             timing = tp_change.add_change(timing, True)
 
@@ -603,7 +603,7 @@ class Postprocessor(object):
                     redline.meter = counter
                 else:
                     # We need to create a new redline
-                    tp = TimingPoint(timedelta(milliseconds=last_measure_time), 100, counter, 2, 0, 100, None, False)
+                    tp = TimingPoint(timedelta(milliseconds=last_measure_time), 1000, counter, 2, 0, 100, None, False)
                     tp_change = TimingPointsChange(tp, meter=True, uninherited=True)
                     timing = tp_change.add_change(timing, True)
 
@@ -620,6 +620,7 @@ class Postprocessor(object):
             redline_offset = redline.offset.total_seconds() * 1000
             beats_from_last_marker = marker.beats_from_last_marker
 
+            # FIXME: Multiple consecutive redlines don't get a sane ms_per_beat
             if beats_from_last_marker == 0 or redline_offset == time:
                 continue
 
