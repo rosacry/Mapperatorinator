@@ -1,14 +1,13 @@
 from __future__ import annotations
 
 from os import PathLike
-from pathlib import Path
 
 import torch
 import numpy as np
 import numpy.typing as npt
 from omegaconf import DictConfig
 
-from ..dataset.data_utils import load_audio_file
+from ..dataset.data_utils import load_audio_file, MILISECONDS_PER_SECOND
 
 
 class Preprocessor(object):
@@ -22,6 +21,7 @@ class Preprocessor(object):
         self.parallel = parallel
         if parallel:
             self.sequence_stride = self.samples_per_sequence
+        self.miliseconds_per_stride = self.sequence_stride * MILISECONDS_PER_SECOND / self.sample_rate
 
     def load(self, path: PathLike) -> npt.ArrayLike:
         """Load an audio file as audio frames. Convert stereo to mono, normalize.
@@ -34,22 +34,33 @@ class Preprocessor(object):
         """
         return load_audio_file(path, self.sample_rate)
 
-    def segment(self, samples: npt.ArrayLike) -> torch.Tensor:
+    def segment(
+            self,
+            samples: npt.ArrayLike,
+            begin_pad: int = 0,
+            end_pad: int = 0,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         """Segment audio samples into sequences. Sequences are flattened frames.
 
         Args:
             samples: Audio time-series.
+            begin_pad: Padding at the beginning of the audio in samples.
+            end_pad: Padding at the end of the audio in samples.
 
         Returns:
             sequences: A list of sequences of shape (batch size, samples per sequence).
+            sequence_times: A list of sequence start times in miliseconds.
         """
+        samples = np.pad(samples, [begin_pad, end_pad])
         samples = np.pad(
             samples,
             [0, self.sequence_stride - (len(samples) - self.samples_per_sequence) % self.sequence_stride],
         )
         sequences = self.window(samples, self.samples_per_sequence, self.sequence_stride)
         sequences = torch.from_numpy(sequences).to(torch.float32)
-        return sequences
+        sequence_times = torch.arange(0, len(sequences) * self.miliseconds_per_stride,
+                                      self.miliseconds_per_stride).to(torch.int32)
+        return sequences, sequence_times
 
     @staticmethod
     def window(a, w, o, copy=False):

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 import numpy as np
 import torch
@@ -13,8 +13,8 @@ from tqdm import tqdm
 from transformers import LogitsProcessorList, LogitsProcessor
 
 from ..dataset import OsuParser
-from ..dataset.data_utils import update_event_times, remove_events_of_type, get_hold_note_ratio, get_scroll_speed_ratio, \
-    events_of_type, get_hitsounded_status
+from ..dataset.data_utils import (update_event_times, remove_events_of_type, get_hold_note_ratio,
+                                  get_scroll_speed_ratio, get_hitsounded_status)
 from ..model import OsuT
 from ..tokenizer import Event, EventType, Tokenizer, ContextType
 
@@ -92,22 +92,26 @@ class TimeshiftBias(LogitsProcessor):
 class ConditionalTemperatureLogitsWarper(LogitsProcessor):
     def __init__(
             self,
-            args: DictConfig,
+            temperature: float,
+            timing_temperature: float,
+            mania_column_temperature: float,
+            taiko_hit_temperature: float,
+            types_first: bool,
             tokenizer: Tokenizer,
             gamemode: int,
     ):
         self.gamemode = gamemode
-        self.temperature = args.temperature
+        self.temperature = temperature
         self.conditionals = []
 
-        if args.osut5.data.add_timing:
-            self.conditionals.append((args.timing_temperature, get_beat_type_tokens(tokenizer), 1))
-        if gamemode == 3:
-            self.conditionals.append((args.mania_column_temperature, get_mania_type_tokens(tokenizer), 3))
-        if gamemode == 1:
-            self.conditionals.append((args.taiko_hit_temperature, get_scroll_speed_tokens(tokenizer), 1))
+        if timing_temperature != temperature:
+            self.conditionals.append((timing_temperature, get_beat_type_tokens(tokenizer), 1))
+        if mania_column_temperature != temperature and gamemode == 3:
+            self.conditionals.append((mania_column_temperature, get_mania_type_tokens(tokenizer), 3))
+        if taiko_hit_temperature != temperature and gamemode == 1:
+            self.conditionals.append((taiko_hit_temperature, get_scroll_speed_tokens(tokenizer), 1))
 
-        if not args.osut5.data.types_first:
+        if not types_first:
             print("WARNING: Conditional temperature is not supported for types_first=False. Ignoring.")
             self.conditionals = []
 
@@ -135,12 +139,7 @@ class Processor(object):
         self.frame_size = args.osut5.model.spectrogram.hop_length
         self.sample_rate = args.osut5.model.spectrogram.sample_rate
         self.samples_per_sequence = self.frame_seq_len * self.frame_size
-        self.sequence_stride = int(self.samples_per_sequence * (1 - args.lookback - args.lookahead))
-        self.parallel = parallel
-        if parallel:
-            self.sequence_stride = self.samples_per_sequence
         self.miliseconds_per_sequence = self.samples_per_sequence * MILISECONDS_PER_SECOND / self.sample_rate
-        self.miliseconds_per_stride = self.sequence_stride * MILISECONDS_PER_SECOND / self.sample_rate
         self.lookahead_max_time = (1 - args.lookahead) * self.miliseconds_per_sequence
         self.lookahead_time_range = range(tokenizer.encode(Event(EventType.TIME_SHIFT, int(self.lookahead_max_time / MILISECONDS_PER_STEP))), tokenizer.event_end[EventType.TIME_SHIFT])
         self.eos_time = (1 - args.osut5.data.lookahead) * self.miliseconds_per_sequence
@@ -177,6 +176,14 @@ class Processor(object):
 
         self.cfg_scale = args.cfg_scale
         self.top_p = args.top_p
+        self.top_k = args.top_k
+        self.temperature = args.temperature
+        self.timing_temperature = args.timing_temperature
+        self.mania_column_temperature = args.mania_column_temperature
+        self.taiko_hit_temperature = args.taiko_hit_temperature
+        self.do_sample = args.do_sample
+        self.num_beams = args.num_beams
+        self.parallel = parallel
 
         self.timeshift_bias = args.timeshift_bias
         self.time_range = range(tokenizer.event_start[EventType.TIME_SHIFT], tokenizer.event_end[EventType.TIME_SHIFT])
@@ -221,7 +228,7 @@ class Processor(object):
     def get_in_context(
             self,
             in_context: list[ContextType],
-            beatmap_path: Path,
+            beatmap_path: Optional[Path],
             song_length: float,
     ) -> list[dict[str, Any]]:
         in_context = [self.get_context(context, beatmap_path, song_length) for context in in_context]
@@ -307,7 +314,7 @@ class Processor(object):
     def generate(
             self,
             *,
-            sequences: torch.Tensor,
+            sequences: tuple[torch.Tensor, torch.Tensor],
             generation_config: GenerationConfig,
             in_context: list[dict[str, Any]] = None,
             verbose: bool = True,
@@ -365,19 +372,19 @@ class Processor(object):
     def generate_sequential(
             self,
             *,
-            sequences: torch.Tensor,
+            sequences: tuple[torch.Tensor, torch.Tensor],
             in_context: list[dict[str, Any]],
             out_context: dict[str, Any],
             beatmap_idx: torch.Tensor,
             logit_processor: LogitsProcessorList,
             verbose: bool = True,
     ):
-        iterator = tqdm(sequences) if verbose else sequences
-        for sequence_index, frames in enumerate(iterator):
+        iterator = tqdm(zip(*sequences)) if verbose else zip(*sequences)
+        for sequence_index, (frames, frame_time) in enumerate(iterator):
             trim_lookahead = sequence_index != len(sequences) - 1
             # noinspection PyUnresolvedReferences
             frames = frames.to(self.device).unsqueeze(0)
-            frame_time = sequence_index * self.miliseconds_per_stride
+            frame_time = frame_time.item()
 
             # Get relevant tokens for current frame
             cond_prompt, uncond_prompt = self.get_prompts(
@@ -391,6 +398,9 @@ class Processor(object):
                 beatmap_idx=beatmap_idx,
                 logits_processor=logit_processor,
                 top_p=self.top_p,
+                top_k=self.top_k,
+                do_sample=self.do_sample,
+                num_beams=self.num_beams,
                 guidance_scale=self.cfg_scale,
                 negative_prompt_ids=uncond_prompt,
                 eos_token_id=self.get_eos_token_id(trim_lookahead),
@@ -405,7 +415,7 @@ class Processor(object):
     def generate_parallel(
             self,
             *,
-            sequences: torch.Tensor,
+            sequences: tuple[torch.Tensor, torch.Tensor],
             in_context: list[dict[str, Any]],
             out_context: dict[str, Any],
             beatmap_idx: torch.Tensor,
@@ -413,15 +423,15 @@ class Processor(object):
             verbose: bool = True,
     ):
         # Get relevant inputs
-        frames = sequences.to(self.device)
-        frame_times = torch.arange(0, len(frames) * self.miliseconds_per_stride, self.miliseconds_per_stride, device=self.device)
+        frames = sequences[0].to(self.device)
+        frame_times = sequences[1]
         cond_prompts = []
         uncond_prompts = []
 
         for i in range(len(frames)):
-            frame_time = frame_times[i]
+            frame_time = frame_times[i].item()
             cond_prompt, uncond_prompt = self.get_prompts(
-                [self.prepare_context_sequence(context, frame_times) for context in in_context],
+                [self.prepare_context_sequence(context, frame_time) for context in in_context],
                 self.prepare_context_sequence(out_context, frame_time)
             )
             cond_prompts.append(cond_prompt)
@@ -444,6 +454,9 @@ class Processor(object):
             beatmap_idx=beatmap_idx,
             logits_processor=logit_processor,
             top_p=self.top_p,
+            top_k=self.top_k,
+            do_sample=self.do_sample,
+            num_beams=self.num_beams,
             guidance_scale=self.cfg_scale,
             negative_prompt_ids=uncond_prompt,
             eos_token_id=self.get_eos_token_id(),
@@ -453,10 +466,11 @@ class Processor(object):
 
         predicted_tokens = result[:, max_len:].cpu()
         for i in range(len(predicted_tokens)):
-            self.add_predicted_tokens_to_context(out_context, predicted_tokens[i], frame_times[i])
+            frame_time = frame_times[i].item()
+            self.add_predicted_tokens_to_context(out_context, predicted_tokens[i], frame_time)
 
     def get_out_context(self, generation_config: GenerationConfig, sequences, verbose: bool = True):
-        song_length = (len(sequences) - 1) * self.miliseconds_per_stride + self.miliseconds_per_sequence
+        song_length = sequences[1][-1].item() + self.miliseconds_per_sequence
         out = self.get_context(ContextType.NONE, None, song_length, False, self.add_pre_tokens)
         out["class"] = self.get_class_vector(generation_config, song_length, verbose=verbose)
         out["negative_class"] = self.get_class_vector(GenerationConfig(
@@ -473,11 +487,20 @@ class Processor(object):
         return out
 
     def get_logits_processor(self, generation_config: GenerationConfig) -> LogitsProcessorList:
-        return LogitsProcessorList(self.base_logit_processor + [ConditionalTemperatureLogitsWarper(
-            self.args,
-            self.tokenizer,
-            generation_config.gamemode,
-        )])
+        processors = LogitsProcessorList(self.base_logit_processor)
+
+        if self.do_sample:
+            processors.append(ConditionalTemperatureLogitsWarper(
+                self.temperature,
+                self.timing_temperature,
+                self.mania_column_temperature,
+                self.taiko_hit_temperature,
+                self.types_first,
+                self.tokenizer,
+                generation_config.gamemode,
+            ))
+
+        return processors
 
     def add_predicted_tokens_to_context(self, context, predicted_tokens, frame_time, trim_lookahead: bool = False):
         # Trim prompt and eos tokens

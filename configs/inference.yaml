@@ -27,9 +27,13 @@ temperature: 1.0        # Sampling temperature
 timing_temperature: 1.0 # Sampling temperature for timing
 mania_column_temperature: 0.5 # Sampling temperature for mania columns
 taiko_hit_temperature: 0.5    # Sampling temperature for taiko hit types
-top_p: 0.95              # Top-p sampling threshold
 timeshift_bias: 0.0        # Logit bias for sampling timeshift tokens
+top_p: 0.95              # Top-p sampling threshold
+top_k: 0                # Top-k sampling threshold
 parallel: false         # Use parallel sampling
+do_sample: true         # Use sampling
+num_beams: 1            # Number of beams for beam search
+super_timing: false     # Use super timing generator (slow but accurate timing)
 
 bpm: 120                # Beats per minute of input audio
 offset: 0               # Start of beat, in miliseconds, from the beginning of input audio
