@@ -13,6 +13,7 @@ from diffusion_pipeline import DiffisionPipeline
 from osuT5.osuT5.dataset.data_utils import get_song_length
 from osuT5.osuT5.inference import Preprocessor, Processor, Postprocessor, BeatmapConfig, GenerationConfig, \
     generation_config_from_beatmap, beatmap_config_from_beatmap, background_line
+from osuT5.osuT5.inference.super_timing_generator import SuperTimingGenerator
 from osuT5.osuT5.tokenizer import Tokenizer, ContextType, EventType, Event
 from osuT5.osuT5.utils import get_model
 from osu_diffusion import DiT_models
@@ -142,14 +143,19 @@ def generate(
 
     # TODO: Auto generate timing if not provided in in_context and required for the model and this output_type
     audio = preprocessor.load(audio_path)
-    sequences = preprocessor.segment(audio)
-    in_context = processor.get_in_context(args.in_context, other_beatmap_path, get_song_length(audio, args.osut5.data.sample_rate))
-    events = processor.generate(
-        sequences=sequences,
-        generation_config=generation_config,
-        in_context=in_context,
-        verbose=verbose,
-    )
+
+    if args.super_timing:
+        super_timing_generator = SuperTimingGenerator(args, model, tokenizer)
+        events = super_timing_generator.generate(audio, generation_config, verbose=verbose)
+    else:
+        sequences = preprocessor.segment(audio)
+        in_context = processor.get_in_context(args.in_context, other_beatmap_path, get_song_length(audio, args.osut5.data.sample_rate))
+        events = processor.generate(
+            sequences=sequences,
+            generation_config=generation_config,
+            in_context=in_context,
+            verbose=verbose,
+        )
 
     # Generate timing and resnap timing events
     timing = None

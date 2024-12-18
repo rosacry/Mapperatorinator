@@ -113,6 +113,9 @@ class DiffisionPipeline(object):
         if verbose:
             print(f"seq len {seq_len}")
 
+        if seq_len == 0:
+            return events
+
         diffusion = create_diffusion(
             timestep_respacing=self.timesteps,
             diffusion_steps=self.diffusion_steps,
@@ -311,6 +314,9 @@ class DiffisionPipeline(object):
 
         for j in indices:
             seq_indices[j] = len(data_chunks) - 1
+
+        if len(data_chunks) == 0:
+            return torch.zeros(2, 0), torch.zeros(1, 0), 0, {}
 
         seq = torch.stack(data_chunks, 0)
         seq = torch.swapaxes(seq, 0, 1)
