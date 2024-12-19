@@ -26,7 +26,7 @@ class SuperTimingGenerator:
         self.processor.num_beams = args.timer_num_beams
         self.processor.top_p = 1
         self.processor.top_k = 50
-        self.bpm_change_threshold = args.timer_bpm_change_threshold
+        self.bpm_change_threshold = args.timer_bpm_threshold
 
         self.frame_seq_len = args.osut5.data.src_seq_len - 1
         self.frame_size = args.osut5.model.spectrogram.hop_length
