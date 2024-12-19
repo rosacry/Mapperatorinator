@@ -12,6 +12,11 @@ from slider import Beatmap, HoldNote, TimingPoint
 from ..tokenizer import Event, EventType
 
 MILISECONDS_PER_SECOND = 1000
+BEAT_TYPES = [
+    EventType.BEAT,
+    EventType.MEASURE,
+    EventType.TIMING_POINT,
+]
 
 
 def load_audio_file(file: PathLike, sample_rate: int, speed: float = 1.0) -> npt.NDArray:
