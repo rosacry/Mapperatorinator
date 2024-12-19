@@ -88,22 +88,6 @@ class SuperTimingGenerator:
                 last_beat_time = time
                 last_group_type = group.event_type
 
-        # # plot beats+measures+timing_points histograms
-        # import matplotlib as mpl
-        # import pywt
-        # mpl.use('TkAgg')
-        # plt.ion()
-        # plt.figure(figsize=(10, 6))
-        # plt.show()
-        #
-        # def plot2(s):
-        #     plt.cla()
-        #     plt.plot(s)
-        #
-        # def plot3(x, y, **kwargs):
-        #     plt.cla()
-        #     plt.scatter(x, y, **kwargs)
-
         # Sort the ticks per beats points
         tpbs = sorted(tpbs, key=lambda x: x[0])
 
@@ -240,6 +224,22 @@ class SuperTimingGenerator:
             events.append(Event(event_type))
             events.append(Event(EventType.TIME_SHIFT, beat_time))
 
+        # # plot beats+measures+timing_points histograms
+        # import matplotlib as mpl
+        # import matplotlib.pyplot as plt
+        # mpl.use('TkAgg')
+        # plt.ion()
+        # plt.figure(figsize=(10, 6))
+        # plt.show()
+        #
+        # def plot2(s):
+        #     plt.cla()
+        #     plt.plot(s)
+        #
+        # def plot3(x, y, **kwargs):
+        #     plt.cla()
+        #     plt.scatter(x, y, **kwargs)
+        #
         # def plot():
         #     plt.cla()
         #     plt.plot(signal, label='beats')
@@ -248,11 +248,9 @@ class SuperTimingGenerator:
         #     plt.vlines(x=peakind, ymin=-prominences, ymax=0, color='b')
         #     plt.vlines(x=beat_times, ymin=-0.5, ymax=0, color='r')
         #     # plt.legend()
-
+        #
         # plot()
         # bpms = [(t, 60000 / tpb / 10) for (t, tpb) in tpbs]
         # plot3(*list(zip(*bpms)), alpha=0.1)
-        # plot()
-        # plt.pause(0.001)
 
         return events
