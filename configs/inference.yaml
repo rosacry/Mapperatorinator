@@ -34,6 +34,8 @@ parallel: false         # Use parallel sampling
 do_sample: true         # Use sampling
 num_beams: 1            # Number of beams for beam search
 super_timing: false     # Use super timing generator (slow but accurate timing)
+timer_num_beams: 2            # Number of beams for beam search
+timer_bpm_change_threshold: 0.4 # Threshold requirement for BPM change in timer, higher values will result in less BPM changes
 
 bpm: 120                # Beats per minute of input audio
 offset: 0               # Start of beat, in miliseconds, from the beginning of input audio

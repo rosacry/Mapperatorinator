@@ -14,7 +14,7 @@ from slider import TimingPoint, Beatmap
 
 from .slider_path import SliderPath
 from .timing_points_change import TimingPointsChange, sort_timing_points
-from ..dataset.data_utils import get_groups, Group, get_median_mpb
+from ..dataset.data_utils import get_groups, Group, get_median_mpb, BEAT_TYPES
 from ..tokenizer import Event, EventType
 
 OSU_FILE_EXTENSION = ".osu"
@@ -539,11 +539,10 @@ class Postprocessor(object):
     def generate_timing(self, events: list[Event]) -> list[TimingPoint]:
         """Generate timing points from a list of Event objects."""
 
-        beat_types = [EventType.BEAT, EventType.MEASURE, EventType.TIMING_POINT]
         markers: list[Postprocessor.Marker] = []
         step = 1 if self.types_first else -1
         for i, event in enumerate(events):
-            if event.type in beat_types and i + step < len(events) and events[i + step].type == EventType.TIME_SHIFT:
+            if event.type in BEAT_TYPES and i + step < len(events) and events[i + step].type == EventType.TIME_SHIFT:
                 markers.append(self.Marker(
                     int(events[i + step].value),
                     event.type == EventType.MEASURE,
@@ -611,6 +610,7 @@ class Postprocessor(object):
             last_measure_time = time
 
         counter = 0
+        last_mpb = 1000
 
         # Add redlines to make sure each beat is snapped correctly
         for marker in markers:
@@ -620,11 +620,21 @@ class Postprocessor(object):
             redline_offset = redline.offset.total_seconds() * 1000
             beats_from_last_marker = marker.beats_from_last_marker
 
-            # FIXME: Multiple consecutive redlines don't get a sane ms_per_beat
-            if beats_from_last_marker == 0 or redline_offset == time:
+            if redline_offset == time:
                 continue
 
             markers_before = [o for o in markers if time > o.time > redline_offset] + [marker]
+
+            if beats_from_last_marker == 0:
+                if len(markers_before) != 1:
+                    continue
+                # This is a redline and the previous marker is a redline.
+                # In order to prevent the previous redline having no BPM, we need to determine the amount of beats
+                # between the redlines and assign a BPM to the previous redline.
+                beats_from_last_marker = (time - redline_offset) / last_mpb
+                rounded_beats = [round(beats_from_last_marker), 1, 1 / 2, 1 / 4, 1 / 8, 1 / 16]
+                beats_from_last_marker = min(rounded_beats, key=lambda x: abs(x - beats_from_last_marker))
+                marker.beats_from_last_marker = beats_from_last_marker
 
             mpb = 0
             beats_from_redline = 0
@@ -640,13 +650,15 @@ class Postprocessor(object):
                 redline.ms_per_beat = mpb
             elif len(markers_before) > 1:
                 last_time = markers_before[-2].time
+                mpb = self.get_ms_per_beat(time - last_time, beats_from_last_marker, self.timing_leniency)
                 tp = TimingPoint(
-                    timedelta(milliseconds=last_time),
-                    self.get_ms_per_beat(time - last_time, beats_from_last_marker, self.timing_leniency),
+                    timedelta(milliseconds=last_time), mpb,
                     4, 2, 0, 100, None, False)
                 tp_change = TimingPointsChange(tp, mpb=True, uninherited=True)
                 timing = tp_change.add_change(timing, True)
                 counter = 0
+
+            last_mpb = mpb
 
             counter += 1
             if marker.is_measure:
@@ -680,6 +692,7 @@ class Postprocessor(object):
 
     def human_round_ms_per_beat(self, mpb: float, markers: list[Postprocessor.Marker], redline: TimingPoint):
         bpm = 60000 / mpb
+
         mpb_integer = 60000 / round(bpm)
         if self.check_ms_per_beat(mpb_integer, markers, redline):
             return mpb_integer
