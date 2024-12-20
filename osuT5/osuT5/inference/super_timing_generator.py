@@ -139,7 +139,7 @@ class SuperTimingGenerator:
         # Depending on how clear the beats are, stick closer to the current BPM.
         peaks = list(zip(peakind, prominences, peak_bpms))
         beat_times = []
-        to_process = sorted(peaks, key=lambda x: x[1], reverse=True)
+        to_process: list[tuple] = sorted(peaks, key=lambda x: x[1], reverse=True)
 
         def remove_range(t1, t2):
             if t1 > t2:
