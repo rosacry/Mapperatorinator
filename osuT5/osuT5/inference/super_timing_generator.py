@@ -119,10 +119,10 @@ class SuperTimingGenerator:
         peak_bpms = get_peak_bpms(100, self.bpm_change_threshold)
 
         # Normalize BPM values to prevent parts with 2x or 0.5x the BPM
-        bpm = np.nanmedian(peak_bpms)
+        median_bpm = np.nanmedian(peak_bpms)
         # Normalize all bpm values in to the range [bpm/1.5, bpm*1.5] by integer division or multiplication
-        peak_bpms = peak_bpms / np.ceil(peak_bpms / (bpm * 1.5))
-        peak_bpms = peak_bpms * np.ceil((bpm / 1.5) / peak_bpms)
+        peak_bpms = peak_bpms / np.ceil(peak_bpms / (median_bpm * 1.5))
+        peak_bpms = peak_bpms * np.ceil((median_bpm / 1.5) / peak_bpms)
 
         # Fill in the missing BPM values by finding the nearest BPM value
         for i, bpm in enumerate(peak_bpms):
