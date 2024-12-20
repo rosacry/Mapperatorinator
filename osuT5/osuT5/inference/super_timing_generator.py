@@ -173,12 +173,14 @@ class SuperTimingGenerator:
                         # Remove all peaks between the previous time and the current time from to_process
                         remove_range(previous_time, time)
                         break
+                    # Prevent very near beats at the seams (>300 BPM)
+                    if min(abs(x - time) for x in beat_times) < 200:
+                        break
                     time = nearest_peak[0]
                     period_ms = 60_000 / nearest_peak[2]
                 else:
                     if abs(nearest_peak[0] - time) / (nearest_peak[1] ** 2) < 300:
                         # There is a beat nearby, but it's likely on another BPM
-                        # FIXME: Prevent very near beats at the seams
                         break
                     # There is no beat nearby, so make an imaginary beat
                 beat_times.append(int(time))
