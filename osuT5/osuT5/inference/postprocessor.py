@@ -636,27 +636,62 @@ class Postprocessor(object):
                 beats_from_last_marker = min(rounded_beats, key=lambda x: abs(x - beats_from_last_marker))
                 marker.beats_from_last_marker = beats_from_last_marker
 
-            mpb = 0
-            beats_from_redline = 0
-            for marker_b in markers_before:
-                beats_from_redline += marker_b.beats_from_last_marker
-                mpb += self.get_ms_per_beat(marker_b.time - redline_offset, beats_from_redline, 0)
-            mpb /= len(markers_before)
+            def get_mpb(m, redline_offset):
+                mpb = 0
+                beats_from_redline = 0
+                for marker_b in m:
+                    beats_from_redline += marker_b.beats_from_last_marker
+                    mpb += self.get_ms_per_beat(marker_b.time - redline_offset, beats_from_redline, 0)
+                mpb /= len(m)
+                return mpb
 
+            mpb = get_mpb(markers_before, redline_offset)
             can_change_redline = self.check_ms_per_beat(mpb, markers_before, redline)
 
             if can_change_redline:
                 mpb = self.human_round_ms_per_beat(mpb, markers_before, redline)
                 redline.ms_per_beat = mpb
             elif len(markers_before) > 1:
-                last_time = markers_before[-2].time
-                mpb = self.get_ms_per_beat(time - last_time, beats_from_last_marker, self.timing_leniency)
+                # Find the marker before that splits the timing section in two such that the loss is minimized
+                def test_split(m, o):
+                    mpb = get_mpb(m, o)
+                    loss = 0
+                    beats = 0
+                    for marker_b in m:
+                        beats += marker_b.beats_from_last_marker
+                        loss += (marker_b.time - o + beats * mpb) ** 2
+                    return loss / len(m)
+
+                best_loss = np.inf
+                best_split = len(markers_before) - 1
+                for i in range(1, len(markers_before)):
+                    split = markers_before[i - 1]
+                    loss = test_split(markers_before[:i], redline_offset) + test_split(markers_before[i:], split.time)
+                    if loss < best_loss:
+                        best_loss = loss
+                        best_split = i
+
+                # Update the mpb of the previous redline in case we shorten it
+                if best_split < len(markers_before) - 1:
+                    mpb = get_mpb(markers_before[:best_split], redline_offset)
+                    mpb = self.human_round_ms_per_beat(mpb, markers_before[:best_split], redline)
+                    redline.ms_per_beat = mpb
+
+                # Create a new redline
+                last_time = markers_before[best_split - 1].time
+                beats_from_split = sum(marker.beats_from_last_marker for marker in markers_before[best_split:])
+                mpb = self.get_ms_per_beat(time - last_time, beats_from_split, self.timing_leniency)
                 tp = TimingPoint(
                     timedelta(milliseconds=last_time), mpb,
                     4, 2, 0, 100, None, False)
                 tp_change = TimingPointsChange(tp, mpb=True, uninherited=True)
                 timing = tp_change.add_change(timing, True)
+                # Update the counter to the state 1 beat before the last marker with the new redline included
                 counter = 0
+                for i in range(len(markers_before) - 2, best_split - 1, -1):
+                    if markers_before[i].is_measure:
+                        break
+                    counter += 1
 
             last_mpb = mpb
 
