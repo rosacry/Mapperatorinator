@@ -225,14 +225,16 @@ class SuperTimingGenerator:
             beat = beats[beat_time - w:beat_time + w].sum()
             measure = measures[beat_time - w:beat_time + w].sum()
             timing_point = timing_points[beat_time - w:beat_time + w].sum()
-            if beat > measure and beat > timing_point:
-                event_type = EventType.BEAT
-            elif measure > beat and measure > timing_point:
+            total = beat + measure + timing_point
+
+            if timing_point > beat and timing_point > measure and total > 0.03:
+                # Ignore timing points with low evidence
+                event_type = EventType.TIMING_POINT
+            elif measure > beat:
                 # FIXME: Improve regularity of measures
                 event_type = EventType.MEASURE
             else:
-                # FIXME: Ignore timing points with low evidence
-                event_type = EventType.TIMING_POINT
+                event_type = EventType.BEAT
 
             events.append(Event(event_type))
             events.append(Event(EventType.TIME_SHIFT, beat_time))
