@@ -1,6 +1,7 @@
 import numpy as np
 import numpy.typing as npt
 from omegaconf import DictConfig
+from scipy.ndimage import gaussian_filter1d
 from scipy.signal import find_peaks
 from tqdm import tqdm
 
@@ -88,13 +89,17 @@ class SuperTimingGenerator:
                 last_beat_time = time
                 last_group_type = group.event_type
 
+        # Smooth and normalize histograms
+        beats = gaussian_filter1d(beats.astype(float), 5) / iterations
+        measures = gaussian_filter1d(measures.astype(float), 5) / iterations
+        timing_points = gaussian_filter1d(timing_points.astype(float), 5) / iterations
+
         # Sort the ticks per beats points
         tpbs = sorted(tpbs, key=lambda x: x[0])
 
         signal = beats + measures + timing_points * 2
-        peakind, properties = find_peaks(signal, distance=50, prominence=1, rel_height=1, width=2, wlen=30)
+        peakind, properties = find_peaks(signal, distance=50, prominence=0.01, rel_height=1, width=2, wlen=30)
         prominences = properties["prominences"]
-        # TODO: Fit Gaussians to interpolate peak positions
 
         # For each peak determine the BPM by taking nearby BPMs and get the interpolated most common BPM
         # Use peak finding and take the highest peak
