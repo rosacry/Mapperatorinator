@@ -112,21 +112,27 @@ class SuperTimingGenerator:
                 if hist.max() > thresh * hist.sum():
                     peak_bpms.append(60_000 / (bins[np.argmax(hist)] * 10))
                 else:
-                    peak_bpms.append(None)
-            # plot3(peakind, peak_bpms)
-            return peak_bpms
+                    peak_bpms.append(np.nan)
+
+            return np.array(peak_bpms)
 
         peak_bpms = get_peak_bpms(100, self.bpm_change_threshold)
 
+        # Normalize BPM values to prevent parts with 2x or 0.5x the BPM
+        bpm = np.nanmedian(peak_bpms)
+        # Normalize all bpm values in to the range [bpm/1.5, bpm*1.5] by integer division or multiplication
+        peak_bpms = peak_bpms / np.ceil(peak_bpms / (bpm * 1.5))
+        peak_bpms = peak_bpms * np.ceil((bpm / 1.5) / peak_bpms)
+
         # Fill in the missing BPM values by finding the nearest BPM value
         for i, bpm in enumerate(peak_bpms):
-            if bpm is not None:
+            if not np.isnan(bpm):
                 continue
             left = i - 1
-            while left >= 0 and peak_bpms[left] is None:
+            while left >= 0 and np.isnan(peak_bpms[left]):
                 left -= 1
             right = i + 1
-            while right < len(peak_bpms) and peak_bpms[right] is None:
+            while right < len(peak_bpms) and np.isnan(peak_bpms[right]):
                 right += 1
             if left >= 0 and (right >= len(peak_bpms) or i - left <= right - i):
                 peak_bpms[i] = peak_bpms[left]
