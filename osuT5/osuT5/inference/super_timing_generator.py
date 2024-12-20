@@ -54,10 +54,10 @@ class SuperTimingGenerator:
 
         iterator = tqdm(range(iterations)) if verbose else range(iterations)
         for _ in iterator:
-            audio_offset = np.random.randint(0, self.miliseconds_per_sequence)
-            begin_pad = audio_offset * self.sample_rate // MILISECONDS_PER_SECOND
-            end_pad = self.samples_per_sequence - begin_pad
-            sequences = self.preprocessor.segment(audio, begin_pad, end_pad)
+            audio_offset = np.random.randint(-(self.miliseconds_per_sequence // 2), self.miliseconds_per_sequence // 2)
+            begin_pad = max(0, audio_offset * self.sample_rate // MILISECONDS_PER_SECOND)
+            begin_remove = max(0, -audio_offset * self.sample_rate // MILISECONDS_PER_SECOND)
+            sequences = self.preprocessor.segment(audio[begin_remove:], begin_pad, 0)
             events = self.processor.generate(
                 sequences=sequences,
                 generation_config=generation_config,
@@ -90,15 +90,15 @@ class SuperTimingGenerator:
                 last_group_type = group.event_type
 
         # Smooth and normalize histograms
-        beats = gaussian_filter1d(beats.astype(float), 5) / iterations
-        measures = gaussian_filter1d(measures.astype(float), 5) / iterations
-        timing_points = gaussian_filter1d(timing_points.astype(float), 5) / iterations
+        beats = gaussian_filter1d(beats.astype(float), 10) / iterations * 50
+        measures = gaussian_filter1d(measures.astype(float), 10) / iterations * 50
+        timing_points = gaussian_filter1d(timing_points.astype(float), 10) / iterations * 50
 
         # Sort the ticks per beats points
         tpbs = sorted(tpbs, key=lambda x: x[0])
 
         signal = beats + measures + timing_points * 2
-        peakind, properties = find_peaks(signal, distance=50, prominence=0.01, rel_height=1, width=2, wlen=30)
+        peakind, properties = find_peaks(signal, distance=50, prominence=0.1, rel_height=1, width=2, wlen=50)
         prominences = properties["prominences"]
 
         # For each peak determine the BPM by taking nearby BPMs and get the interpolated most common BPM
@@ -116,7 +116,8 @@ class SuperTimingGenerator:
 
             return np.array(peak_bpms)
 
-        peak_bpms = get_peak_bpms(100, self.bpm_change_threshold)
+        peak_bpms = get_peak_bpms(200, self.bpm_change_threshold)
+        peak_bpms_defined = ~np.isnan(peak_bpms)
 
         # Normalize BPM values to prevent parts with 2x or 0.5x the BPM
         median_bpm = np.nanmedian(peak_bpms)
@@ -143,9 +144,10 @@ class SuperTimingGenerator:
 
         # Go from one peak to the next. Use the BPM to estimate where the next beat should be and find the nearest.
         # Depending on how clear the beats are, stick closer to the current BPM.
-        peaks = list(zip(peakind, prominences, peak_bpms))
+        peaks = list(zip(peakind, prominences, peak_bpms, peak_bpms_defined))
         beat_times = []
         to_process: list[tuple] = sorted(peaks, key=lambda x: x[1], reverse=True)
+        processed_regions: list[tuple] = []
 
         def remove_range(t1, t2):
             if t1 > t2:
@@ -158,39 +160,52 @@ class SuperTimingGenerator:
                     i -= 1
                 i += 1
 
-        def walk(time, period_ms, direction):
+        def walk(start_time, period_ms, direction):
+            def loss(peak, time):
+                return abs(peak[0] - time) / peak[1]
+
+            time = start_time
+
             while True:
                 previous_time = time
                 time += direction * period_ms
+
                 if not (0 <= time < num_miliseconds):
                     remove_range(previous_time, time)
                     break
-                nearest_peak: tuple = min(peaks, key=lambda x: abs(x[0] - time) / (x[1] ** 2))
-                if abs(nearest_peak[0] - time) / (nearest_peak[1] ** 2) < 30:
-                    # There is a good beat nearby
-                    if nearest_peak not in to_process:
-                        # This beat has already been processed
-                        # Remove all peaks between the previous time and the current time from to_process
-                        remove_range(previous_time, time)
-                        break
-                    # Prevent very near beats at the seams (>300 BPM)
-                    if min(abs(x - time) for x in beat_times) < 200:
-                        break
+
+                nearest_peak: tuple = min(peaks, key=lambda x: loss(x, time))
+                if loss(nearest_peak, time) < 30:
                     time = nearest_peak[0]
                     period_ms = 60_000 / nearest_peak[2]
                 else:
-                    if abs(nearest_peak[0] - time) / (nearest_peak[1] ** 2) < 300:
+                    if loss(nearest_peak, time) < 300 and nearest_peak[3]:
                         # There is a beat nearby, but it's likely on another BPM
+                        time -= direction * period_ms
                         break
                     # There is no beat nearby, so make an imaginary beat
+
+                if any(t1 <= time <= t2 for t1, t2 in processed_regions):
+                    # This beat has already been processed
+                    break
+
                 beat_times.append(int(time))
+
+            # Prevent very near beats at the seams (>300 BPM)
+            m = 200
+            if direction > 0:
+                processed_regions.append((start_time - m, time + m))
                 # Remove all peaks between the previous time and the current time from to_process
-                remove_range(previous_time, time)
+                remove_range(start_time - m, time + m)
+            else:
+                processed_regions.append((time - m, start_time + m))
+                remove_range(time - m, start_time + m)
 
         while to_process:
             peak = to_process.pop(0)
             time = peak[0]
             period_ms = 60_000 / peak[2]
+
             beat_times.append(int(time))
             walk(time, period_ms, 1)
             walk(time, period_ms, -1)
@@ -227,7 +242,7 @@ class SuperTimingGenerator:
             timing_point = timing_points[beat_time - w:beat_time + w].sum()
             total = beat + measure + timing_point
 
-            if timing_point > beat and timing_point > measure and total > 0.03:
+            if timing_point > beat and timing_point > measure and total > 1:
                 # Ignore timing points with low evidence
                 event_type = EventType.TIMING_POINT
             elif measure > beat:
@@ -265,7 +280,5 @@ class SuperTimingGenerator:
         #     # plt.legend()
         #
         # plot()
-        # bpms = [(t, 60000 / tpb / 10) for (t, tpb) in tpbs]
-        # plot3(*list(zip(*bpms)), alpha=0.1)
 
         return events
