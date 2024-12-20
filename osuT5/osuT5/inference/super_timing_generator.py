@@ -47,10 +47,11 @@ class SuperTimingGenerator:
 
         # Prepare beat histograms
         num_miliseconds = len(audio) * MILISECONDS_PER_SECOND // self.sample_rate
-        beats = np.zeros([num_miliseconds], dtype=int)
-        measures = np.zeros([num_miliseconds], dtype=int)
-        timing_points = np.zeros([num_miliseconds], dtype=int)
+        beats_hist = np.zeros([num_miliseconds], dtype=int)
+        measures_hist = np.zeros([num_miliseconds], dtype=int)
+        timing_points_hist = np.zeros([num_miliseconds], dtype=int)
         tpbs = []
+        measure_counts = []
 
         iterator = tqdm(range(iterations)) if verbose else range(iterations)
         for _ in iterator:
@@ -67,6 +68,8 @@ class SuperTimingGenerator:
             groups = get_groups(events, types_first=self.args.osut5.data.types_first)
             last_beat_time = None
             last_group_type = None
+            last_measure_time = None
+            measure_counter = None
             for group in groups:
                 time = group.time - audio_offset
                 if time < 0 or time >= num_miliseconds:
@@ -74,11 +77,22 @@ class SuperTimingGenerator:
                 if group.event_type not in BEAT_TYPES:
                     continue
                 if group.event_type == EventType.BEAT:
-                    beats[time] += 1
+                    beats_hist[time] += 1
+
+                    if measure_counter is not None:
+                        measure_counter += 1
                 elif group.event_type == EventType.MEASURE:
-                    measures[time] += 1
+                    measures_hist[time] += 1
+
+                    if measure_counter is not None:
+                        measure_counts.append((last_measure_time, measure_counter))
+
+                    last_measure_time = time
+                    measure_counter = 1
                 elif group.event_type == EventType.TIMING_POINT:
-                    timing_points[time] += 1
+                    timing_points_hist[time] += 1
+                    last_measure_time = time
+                    measure_counter = 1
 
                 if (last_beat_time is not None and last_beat_time != time and
                         not (group.event_type == EventType.TIMING_POINT and last_group_type != EventType.TIMING_POINT)):
@@ -90,14 +104,14 @@ class SuperTimingGenerator:
                 last_group_type = group.event_type
 
         # Smooth and normalize histograms
-        beats = gaussian_filter1d(beats.astype(float), 10) / iterations * 50
-        measures = gaussian_filter1d(measures.astype(float), 10) / iterations * 50
-        timing_points = gaussian_filter1d(timing_points.astype(float), 10) / iterations * 50
+        beats_hist = gaussian_filter1d(beats_hist.astype(float), 10) / iterations * 50
+        measures_hist = gaussian_filter1d(measures_hist.astype(float), 10) / iterations * 50
+        timing_points_hist = gaussian_filter1d(timing_points_hist.astype(float), 10) / iterations * 50
 
         # Sort the ticks per beats points
         tpbs = sorted(tpbs, key=lambda x: x[0])
 
-        signal = beats + measures + timing_points * 2
+        signal = beats_hist + measures_hist + timing_points_hist * 2
         peakind, properties = find_peaks(signal, distance=50, prominence=0.1, rel_height=1, width=2, wlen=50)
         prominences = properties["prominences"]
 
@@ -175,7 +189,7 @@ class SuperTimingGenerator:
                     break
 
                 nearest_peak: tuple = min(peaks, key=lambda x: loss(x, time))
-                if loss(nearest_peak, time) < 30:
+                if loss(nearest_peak, time) < 60:
                     time = nearest_peak[0]
                     period_ms = 60_000 / nearest_peak[2]
                 else:
@@ -233,25 +247,63 @@ class SuperTimingGenerator:
         #
         # bpm, offset, _ = max([test_bpm(bpm, 5) for bpm in np.arange(bpm - 1, bpm + 1, 0.01)], key=lambda x: x[2])
 
-        events = []
+        beat_types = []
         w = 10
         for beat_time in beat_times:
             # Classify the peak as a beat, measure, or timing point
-            beat = beats[beat_time - w:beat_time + w].sum()
-            measure = measures[beat_time - w:beat_time + w].sum()
-            timing_point = timing_points[beat_time - w:beat_time + w].sum()
+            beat = beats_hist[beat_time - w:beat_time + w].sum()
+            measure = measures_hist[beat_time - w:beat_time + w].sum()
+            timing_point = timing_points_hist[beat_time - w:beat_time + w].sum()
             total = beat + measure + timing_point
 
             if timing_point > beat and timing_point > measure and total > 1:
                 # Ignore timing points with low evidence
                 event_type = EventType.TIMING_POINT
-            elif measure > beat:
-                # FIXME: Improve regularity of measures
+            elif measure + timing_point > beat * 0.7:
                 event_type = EventType.MEASURE
             else:
                 event_type = EventType.BEAT
 
-            events.append(Event(event_type))
+            beat_types.append(event_type)
+
+        # Fix issues in the timing signature
+        beats = list(zip(beat_times, beat_types))
+        timing_signature = int(np.median([sig for t, sig in measure_counts]))
+        for i, (beat_time, beat_type) in enumerate(beats):
+            if beat_type == EventType.TIMING_POINT:
+                continue
+
+            # Gather evidence for measure with timing signature
+            offset_scores = []
+            for k in range(timing_signature):
+                score = 0
+                count = 0
+                for j in range(-3, 4):
+                    index = i + j * timing_signature + k
+                    if index < 0 or index >= len(beat_times):
+                        continue
+                    # If there is any timing point between current beat and the target beat, ignore
+                    if any(beat_types[k] == EventType.TIMING_POINT for k in np.arange(1, abs(j)) * np.sign(j)):
+                        continue
+
+                    other_time = beat_times[index]
+                    measure = measures_hist[other_time - w:other_time + w].sum()
+                    timing_point = timing_points_hist[other_time - w:other_time + w].sum()
+                    score += measure + timing_point
+                    count += 1
+
+                offset_scores.append(0 if count == 0 else score / count)
+
+            if np.argmax(offset_scores) == 0:
+                beat_types[i] = EventType.MEASURE
+            else:
+                beat_types[i] = EventType.BEAT
+
+        # Convert beats to events
+        beats = list(zip(beat_times, beat_types))
+        events = []
+        for beat_time, beat_type in beats:
+            events.append(Event(beat_type))
             events.append(Event(EventType.TIME_SHIFT, beat_time))
 
         # # plot beats+measures+timing_points histograms
@@ -273,8 +325,8 @@ class SuperTimingGenerator:
         # def plot():
         #     plt.cla()
         #     plt.plot(signal, label='beats')
-        #     plt.plot(measures, label='measures')
-        #     plt.plot(timing_points, label='timing_points')
+        #     plt.plot(measures_hist, label='measures')
+        #     plt.plot(timing_points_hist, label='timing_points')
         #     plt.vlines(x=peakind, ymin=-prominences, ymax=0, color='b')
         #     plt.vlines(x=beat_times, ymin=-0.5, ymax=0, color='r')
         #     # plt.legend()
