@@ -269,8 +269,16 @@ class SuperTimingGenerator:
         timing_signature = int(np.median([sig for t, sig in measure_counts]))
         cooldown = 0
         for i, (beat_time, beat_type) in enumerate(beats):
+            # Positive cooldown to prevent measures too close to each other
             if cooldown > 0:
                 cooldown -= 1
+                continue
+            # Negative cooldown to prevent beats too far away from each other
+            if cooldown < 0:
+                cooldown += 1
+                if cooldown == 0 and beat_type != EventType.TIMING_POINT:
+                    beat_types[i] = EventType.MEASURE
+                    cooldown = timing_signature - 1
                 continue
             if beat_type == EventType.TIMING_POINT:
                 continue
@@ -301,6 +309,7 @@ class SuperTimingGenerator:
                 cooldown = timing_signature - 1
             else:
                 beat_types[i] = EventType.BEAT
+                cooldown = -np.argmax(offset_scores)
 
         # Convert beats to events
         beats = list(zip(beat_times, beat_types))
