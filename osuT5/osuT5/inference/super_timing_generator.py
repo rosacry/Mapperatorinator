@@ -259,8 +259,6 @@ class SuperTimingGenerator:
             if timing_point > beat and timing_point > measure and total > 1:
                 # Ignore timing points with low evidence
                 event_type = EventType.TIMING_POINT
-            elif measure + timing_point > beat * 0.7:
-                event_type = EventType.MEASURE
             else:
                 event_type = EventType.BEAT
 
@@ -269,7 +267,11 @@ class SuperTimingGenerator:
         # Fix issues in the timing signature
         beats = list(zip(beat_times, beat_types))
         timing_signature = int(np.median([sig for t, sig in measure_counts]))
+        cooldown = 0
         for i, (beat_time, beat_type) in enumerate(beats):
+            if cooldown > 0:
+                cooldown -= 1
+                continue
             if beat_type == EventType.TIMING_POINT:
                 continue
 
@@ -296,6 +298,7 @@ class SuperTimingGenerator:
 
             if np.argmax(offset_scores) == 0:
                 beat_types[i] = EventType.MEASURE
+                cooldown = timing_signature - 1
             else:
                 beat_types[i] = EventType.BEAT
 
