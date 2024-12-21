@@ -10,7 +10,7 @@ from slider import Beatmap
 import osu_diffusion
 import routed_pickle
 from diffusion_pipeline import DiffisionPipeline
-from osuT5.osuT5.dataset.data_utils import get_song_length
+from osuT5.osuT5.dataset.data_utils import get_song_length, events_of_type, TIMING_TYPES
 from osuT5.osuT5.inference import Preprocessor, Processor, Postprocessor, BeatmapConfig, GenerationConfig, \
     generation_config_from_beatmap, beatmap_config_from_beatmap, background_line
 from osuT5.osuT5.inference.super_timing_generator import SuperTimingGenerator
@@ -120,6 +120,15 @@ def get_config(args: DictConfig):
     )
 
 
+def add_timing_to_context(in_context, timing_events, timing_times):
+    for ctx in in_context:
+        if ctx["context_type"] != ContextType.NONE:
+            continue
+        ctx["context_type"] = ContextType.TIMING
+        ctx["events"] = timing_events
+        ctx["event_times"] = timing_times
+
+
 def generate(
         args: DictConfig,
         *,
@@ -141,47 +150,58 @@ def generate(
     processor = Processor(args, model, tokenizer, parallel=args.parallel)
     postprocessor = Postprocessor(args)
 
-    # TODO: Auto generate timing if not provided in in_context and required for the model and this output_type
     audio = preprocessor.load(audio_path)
+    in_context = processor.get_in_context(args.in_context, other_beatmap_path, get_song_length(audio, args.osut5.data.sample_rate))
+    sequences = preprocessor.segment(audio)
 
-    if args.super_timing:
+    # Auto generate timing if not provided in in_context and required for the model and this output_type
+    timing_events, timing_times, timing = None, None, None
+    if args.super_timing and ContextType.NONE in args.in_context:
         super_timing_generator = SuperTimingGenerator(args, model, tokenizer)
-        events = super_timing_generator.generate(audio, generation_config, verbose=verbose)
-    else:
-        sequences = preprocessor.segment(audio)
-        in_context = processor.get_in_context(args.in_context, other_beatmap_path, get_song_length(audio, args.osut5.data.sample_rate))
-        events = processor.generate(
+        timing_events, timing_times = super_timing_generator.generate(audio, generation_config, verbose=verbose)
+        add_timing_to_context(in_context, timing_events, timing_times)
+        timing = postprocessor.generate_timing(timing_events)
+    elif (args.output_type == ContextType.TIMING or
+          (ContextType.NONE in args.in_context and args.output_type == ContextType.MAP and
+           not any(isinstance(ctx, str) or ("none" in ctx["in"] and ctx["out"] == "map") for ctx in args.osut5.data.context_types))):
+        # Generate timing and convert in_context to timing context
+        timing_events, timing_times = processor.generate(
+            sequences=sequences,
+            generation_config=generation_config,
+            in_context=in_context,
+            verbose=verbose,
+        )
+        timing_events, timing_times = events_of_type(timing_events, timing_times, TIMING_TYPES)
+        add_timing_to_context(in_context, timing_events, timing_times)
+        timing = postprocessor.generate_timing(timing_events)
+    elif ContextType.TIMING in args.in_context or (
+            args.osut5.data.add_timing and any(t in args.in_context for t in [ContextType.GD, ContextType.NO_HS])):
+        # Exact timing is provided in the other beatmap, so we don't need to generate it
+        timing = [tp for tp in Beatmap.from_path(other_beatmap_path).timing_points if tp.parent is None]
+
+    # Generate beatmap
+    if args.output_type == ContextType.MAP:
+        events, _ = processor.generate(
             sequences=sequences,
             generation_config=generation_config,
             in_context=in_context,
             verbose=verbose,
         )
 
-    # Generate timing and resnap timing events
-    timing = None
-    if ContextType.TIMING in args.in_context or (
-            args.osut5.data.add_timing and any(t in args.in_context for t in [ContextType.GD, ContextType.NO_HS])):
-        # Exact timing is provided in the other beatmap, so we don't need to generate it
-        timing = [tp for tp in Beatmap.from_path(other_beatmap_path).timing_points if tp.parent is None]
-        events = postprocessor.resnap_events(events, timing)
-    elif args.osut5.data.add_timing or args.output_type == ContextType.TIMING:
-        timing = postprocessor.generate_timing(events)
-        events = postprocessor.resnap_events(events, timing)
+        # Resnap timing events
+        if timing is not None:
+            events = postprocessor.resnap_events(events, timing)
+    else:
+        events = timing_events
 
-    if args.generate_positions and args.gamemode in [0, 2]:
+    # Generate positions with diffusion
+    if args.generate_positions and args.gamemode in [0, 2] and args.output_type == ContextType.MAP:
         diffusion_pipeline = DiffisionPipeline(args, diff_model, diff_tokenizer, refine_model)
         events = diffusion_pipeline.generate(
             events=events,
             generation_config=generation_config,
             verbose=verbose,
         )
-
-    # Make sure the time shifts are monotonically increasing
-    time = 0
-    for i, event in enumerate(events):
-        if event.type == EventType.TIME_SHIFT:
-            time = max(time, event.value)
-            events[i] = Event(EventType.TIME_SHIFT, time)
 
     result = postprocessor.generate(
         events=events,
