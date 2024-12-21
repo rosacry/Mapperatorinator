@@ -621,12 +621,14 @@ class Postprocessor(object):
             beats_from_last_marker = marker.beats_from_last_marker
 
             if redline_offset == time:
+                counter = 0
                 continue
 
             markers_before = [o for o in markers if time > o.time > redline_offset] + [marker]
 
             if beats_from_last_marker == 0:
                 if len(markers_before) != 1:
+                    counter = 0
                     continue
                 # This is a redline and the previous marker is a redline.
                 # In order to prevent the previous redline having no BPM, we need to determine the amount of beats
@@ -637,12 +639,8 @@ class Postprocessor(object):
                 marker.beats_from_last_marker = beats_from_last_marker
 
             def get_mpb(m, redline_offset):
-                mpb = 0
-                beats_from_redline = 0
-                for marker_b in m:
-                    beats_from_redline += marker_b.beats_from_last_marker
-                    mpb += self.get_ms_per_beat(marker_b.time - redline_offset, beats_from_redline, 0)
-                mpb /= len(m)
+                beats_from_redline = sum(marker_b.beats_from_last_marker for marker_b in m)
+                mpb = self.get_ms_per_beat(m[-1].time - redline_offset, beats_from_redline, 0)
                 return mpb
 
             mpb = get_mpb(markers_before, redline_offset)
@@ -659,13 +657,15 @@ class Postprocessor(object):
                     beats = 0
                     for marker_b in m:
                         beats += marker_b.beats_from_last_marker
-                        loss += (marker_b.time - o + beats * mpb) ** 2
+                        loss += (marker_b.time - (o + beats * mpb)) ** 2
                     return loss / len(m)
 
                 best_loss = np.inf
                 best_split = len(markers_before) - 1
                 for i in range(1, len(markers_before)):
                     split = markers_before[i - 1]
+                    if not split.is_measure and i != len(markers_before) - 1:
+                        continue
                     loss = test_split(markers_before[:i], redline_offset) + test_split(markers_before[i:], split.time)
                     if loss < best_loss:
                         best_loss = loss
@@ -696,9 +696,18 @@ class Postprocessor(object):
             last_mpb = mpb
 
             counter += 1
+
+            # If there is a redline on top of the marker, reset the counter
+            redline = self.timing_point_at(timedelta(milliseconds=time), timing)
+            redline = redline if redline.parent is None else redline.parent
+            redline_offset = redline.offset.total_seconds() * 1000
+
+            if redline_offset == time:
+                counter = 0
+
             if marker.is_measure:
                 # Add a redline in case the measure counter is out of sync
-                if redline.meter != counter:
+                if counter % redline.meter != 0:
                     tp = TimingPoint(timedelta(milliseconds=time), redline.ms_per_beat, redline.meter, 2, 0, 100, None, False)
                     tp_change = TimingPointsChange(tp, mpb=True, uninherited=True)
                     timing = tp_change.add_change(timing, True)
@@ -707,23 +716,14 @@ class Postprocessor(object):
         return timing
 
     def check_ms_per_beat(self, mpb_new: float, markers: list[Postprocessor.Marker], redline: TimingPoint):
-        mpb_old = redline.ms_per_beat
         redline_offset = redline.offset.total_seconds() * 1000
         beats_from_redline = 0
-        can_change_redline = True
         for marker_b in markers:
-            time_b = marker_b.time
             beats_from_redline += marker_b.beats_from_last_marker
-            redline.ms_per_beat = mpb_new
-            resnapped_time_ba = redline_offset + redline.ms_per_beat * beats_from_redline
-            beats_from_redline_ba = (resnapped_time_ba - redline_offset) / redline.ms_per_beat
-            redline.ms_per_beat = mpb_old
-
-            if (abs(beats_from_redline_ba - beats_from_redline) < 0.1 and
-                    self.is_snapped(time_b, resnapped_time_ba, self.timing_leniency)):
-                continue
-            can_change_redline = False
-        return can_change_redline
+            resnapped_time_ba = redline_offset + mpb_new * beats_from_redline
+            if not self.is_snapped(marker_b.time, resnapped_time_ba, self.timing_leniency):
+                return False
+        return True
 
     def human_round_ms_per_beat(self, mpb: float, markers: list[Postprocessor.Marker], redline: TimingPoint):
         bpm = 60000 / mpb
