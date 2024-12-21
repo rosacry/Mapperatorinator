@@ -28,6 +28,7 @@ class SuperTimingGenerator:
         self.processor.top_p = 1
         self.processor.top_k = 50
         self.bpm_change_threshold = args.timer_bpm_threshold
+        self.types_first = args.osut5.data.types_first
 
         self.frame_seq_len = args.osut5.data.src_seq_len - 1
         self.frame_size = args.osut5.model.spectrogram.hop_length
@@ -59,13 +60,13 @@ class SuperTimingGenerator:
             begin_pad = max(0, audio_offset * self.sample_rate // MILISECONDS_PER_SECOND)
             begin_remove = max(0, -audio_offset * self.sample_rate // MILISECONDS_PER_SECOND)
             sequences = self.preprocessor.segment(audio[begin_remove:], begin_pad, 0)
-            events = self.processor.generate(
+            events, _ = self.processor.generate(
                 sequences=sequences,
                 generation_config=generation_config,
                 in_context=in_context,
                 verbose=False,
             )
-            groups = get_groups(events, types_first=self.args.osut5.data.types_first)
+            groups = get_groups(events, types_first=self.types_first)
             last_beat_time = None
             last_group_type = None
             last_measure_time = None
@@ -314,9 +315,18 @@ class SuperTimingGenerator:
         # Convert beats to events
         beats = list(zip(beat_times, beat_types))
         events = []
+        event_times = []
         for beat_time, beat_type in beats:
-            events.append(Event(beat_type))
+            if self.types_first:
+                events.append(Event(beat_type))
+
             events.append(Event(EventType.TIME_SHIFT, beat_time))
+
+            if not self.types_first:
+                events.append(Event(beat_type))
+
+            event_times.append(beat_time)
+            event_times.append(beat_time)
 
         # # plot beats+measures+timing_points histograms
         # import matplotlib as mpl
@@ -345,4 +355,4 @@ class SuperTimingGenerator:
         #
         # plot()
 
-        return events
+        return events, event_times

@@ -17,6 +17,7 @@ BEAT_TYPES = [
     EventType.MEASURE,
     EventType.TIMING_POINT,
 ]
+TIMING_TYPES = BEAT_TYPES + [EventType.TIME_SHIFT]
 
 
 def load_audio_file(file: PathLike, sample_rate: int, speed: float = 1.0) -> npt.NDArray:
@@ -190,6 +191,7 @@ def remove_events_of_type(events: list[Event], event_times: list[int], event_typ
 
     Args:
         events: List of events.
+        event_times: List of event times.
         event_types: Types of event to remove.
 
     Returns:
@@ -204,12 +206,13 @@ def remove_events_of_type(events: list[Event], event_times: list[int], event_typ
     return new_events, new_event_times
 
 
-def events_of_type(events: list[Event], event_times: list[int], event_type: EventType) -> tuple[list[Event], list[int]]:
+def events_of_type(events: list[Event], event_times: list[int], event_types: list[EventType]) -> tuple[list[Event], list[int]]:
     """Get all events of a specific type from a list of events.
 
     Args:
         events: List of events.
-        event_type: Type of event to get.
+        event_times: List of event times.
+        event_types: Types of event to keep.
 
     Returns:
         filtered_events: Filtered list of events.
@@ -217,7 +220,7 @@ def events_of_type(events: list[Event], event_times: list[int], event_type: Even
     new_events = []
     new_event_times = []
     for event, time in zip(events, event_times):
-        if event.type == event_type:
+        if event.type in event_types:
             new_events.append(event)
             new_event_times.append(time)
     return new_events, new_event_times

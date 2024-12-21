@@ -318,7 +318,7 @@ class Processor(object):
             generation_config: GenerationConfig,
             in_context: list[dict[str, Any]] = None,
             verbose: bool = True,
-    ) -> list[Event]:
+    ) -> tuple[list[Event], list[int]]:
         """Generate a list of Event object lists and their timestamps given source sequences.
 
         Args:
@@ -367,7 +367,7 @@ class Processor(object):
         if generation_config.gamemode == 3:
             out_context["events"] = self._convert_column_to_position(out_context["events"], generation_config.keycount)
 
-        return out_context["events"]
+        return out_context["events"], out_context["event_times"]
 
     def generate_sequential(
             self,

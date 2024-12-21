@@ -161,6 +161,12 @@ class Postprocessor(object):
         groups = get_groups(events, types_first=self.types_first)
         last_x, last_y = 256, 192
 
+        # Make sure the times are monotonically increasing
+        time = 0
+        for group in groups:
+            time = max(time, group.time)
+            group.time = time
+
         self.snap_near_perfect_overlaps(groups)
 
         # Prepare unnormalizing scroll speed changes in mania
