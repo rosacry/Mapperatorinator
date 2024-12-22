@@ -225,7 +225,7 @@ def eval_model(
         if len(args.data.context_types) > 0:
             for cts in args.data.context_types:
                 if isinstance(cts, str):
-                    cts = {"out": "map", "in": [cts]}
+                    cts = {"out": ["map"], "in": [cts]}
 
                 ct_index = torch.ones_like(batch['decoder_input_ids'][:, 0], dtype=torch.bool)
                 for c in cts["in"]:
@@ -245,7 +245,7 @@ def eval_model(
                 ct_loss = calc_loss(loss_fn, ct_logits, ct_labels, ct_weights)
                 stats = get_stats(ct_loss, ct_preds, ct_labels, tokenizer, args)
 
-                stats = add_prefix(f"{'+'.join(cts['in'])}>{cts['out']}", stats)
+                stats = add_prefix(f"{'+'.join(cts['in'])}", stats)
 
                 averager.update(stats)
         else:

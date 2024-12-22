@@ -1,10 +1,11 @@
 defaults:
   - train
   - _self_
-  - model: whisper_base
+  - model: nwhisper_base
 
 compile: true          # PyTorch 2.0 optimization
 precision: 'bf16'         # Enable mixed precision (no/fp16/bf16/fp8)
+flash_attention: false  # Enable Flash Attention
 
 data:                  # Data settings
   dataset_type: "mmrs"
@@ -20,19 +21,22 @@ data:                  # Data settings
   add_mapper_token: true
   add_cs_token: true
   add_year_token: true
+  add_hitsounded_token: true  # Add token for whether the map has hitsounds
+  add_song_length_token: true  # Add token for the length of the song
+  add_song_position_token: true  # Add token for the position of the song in the mapset
   add_descriptors: true
   timing_random_offset: 2
   src_seq_len: 1024
   tgt_seq_len: 2048
   rhythm_weight: 3.0    # Weight of rhythm tokens in the loss calculation
   context_types: [
-    {"in": ["none"], "out": ["map"]},
-    {"in": ["timing"], "out": ["map"]},
-    {"in": ["no_hs"], "out": ["map"]},
-    {"in": ["gd"], "out": ["map"]}
+    {"in": ["none"], "out": ["timing", "kiai", "map", "sv"]},
+    {"in": ["no_hs"], "out": ["timing", "kiai", "map", "sv"]},
+    {"in": ["gd"], "out": ["timing", "kiai", "map", "sv"]}
   ]      # List of context types to include in the dataset
-  context_weights: [3, 1, 1, 1]    # List of weights for each context type. Determines how often each context type is sampled
-  add_timing: true      # Interweave timing tokens with the beatmap tokens
+  context_weights: [4, 1, 1]    # List of weights for each context type. Determines how often each context type is sampled
+  add_timing: false      # Interweave timing tokens with the beatmap tokens
+  add_out_context_types: true  # Add tokens indicating types of the out context
   add_snapping: true    # Model hit object snapping
   add_timing_points: true  # Model beatmap timing with timing points
   add_hitsounds: true   # Model beatmap hitsounds
@@ -45,14 +49,20 @@ data:                  # Data settings
   dt_augment_prob: 0.5   # Probability of augmenting the dataset with DT
   dt_augment_range: [1.25, 1.5]  # Range of DT augmentation
   types_first: true       # Put the type token at the start of the group before the timeshift token
-  add_kiai: true        # Model kiai times
+  add_kiai: false        # Model kiai times
   gamemodes: [0, 1, 2, 3]  # List of gamemodes to include in the dataset
-  add_mania_sv: true  # Add mania scroll velocity in map context
+  mania_bpm_normalized_scroll_speed: true  # Normalize mania scroll speed by BPM
+  add_sv_special_token: true  # Add extra special token for current SV
+  add_sv: true  # Model slider velocity in std and ctb
+  add_mania_sv: false  # Add mania scroll velocity in map context
 
 dataloader:             # Dataloader settings
   num_workers: 8
 
 optim:                  # Optimizer settings
-  base_lr: 1e-2         # Should not be scaled with the number of devices present
-  batch_size: 128
-  grad_acc: 8
+  base_lr: 15e-4         # Should not be scaled with the number of devices present
+  final_cosine: 0        # As per nGPT paper
+  batch_size: 120
+  grad_acc: 10
+  name: adamw
+  warmup_steps: 0

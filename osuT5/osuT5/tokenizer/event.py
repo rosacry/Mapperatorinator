@@ -59,6 +59,8 @@ class ContextType(Enum):
     NO_HS = "no_hs"
     GD = "gd"
     MAP = "map"
+    KIAI = "kiai"
+    SV = "sv"
 
 
 @dataclasses.dataclass

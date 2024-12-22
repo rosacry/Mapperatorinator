@@ -58,11 +58,14 @@ data:                  # Data settings
   rhythm_weight: 1.0    # Weight of rhythm tokens in the loss calculation
   lookback: 0             # Fraction of audio sequence to fill with tokens from previous inference window
   lookahead: 0            # Fraction of audio sequence to skip at the end of the audio window
-  context_types: []      # List of context types to include in the dataset
+  context_types: [
+    {"in": [], "out": ["map"]},
+  ]      # List of context types to include in the dataset
   context_weights: []    # List of weights for each context type. Determines how often each context type is sampled
   descriptors_path: ''   # Path to file with all beatmap descriptors
   mappers_path: ''       # Path to file with all beatmap mappers
-  add_timing: false      # Model beatmap timing
+  add_timing: false      # Add beatmap timing to map context
+  add_out_context_types: false  # Add tokens indicating types of the out context
   add_snapping: false    # Model hit object snapping
   add_timing_points: false  # Model beatmap timing with timing points
   add_hitsounds: false   # Model beatmap hitsounds
@@ -74,11 +77,12 @@ data:                  # Data settings
   dt_augment_prob: 0.0   # Probability of augmenting the dataset with DT
   dt_augment_range: [1.5, 1.5]  # Range of DT augmentation
   types_first: false       # Put the type token at the start of the group before the timeshift token
-  add_kiai: false        # Model kiai times
+  add_kiai: false        # Add kiai times to map context
   gamemodes: [0]  # List of gamemodes to include in the dataset
   mania_bpm_normalized_scroll_speed: false  # Normalize mania scroll speed by BPM
   add_sv_special_token: false  # Add extra special token for current SV
   add_sv: false  # Model slider velocity in std and ctb
+  add_mania_sv: false  # Add mania scroll velocity in map context
 
 
 dataloader:             # Dataloader settings

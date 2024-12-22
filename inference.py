@@ -163,7 +163,7 @@ def generate(
         timing = postprocessor.generate_timing(timing_events)
     elif (args.output_type == ContextType.TIMING or
           (ContextType.NONE in args.in_context and args.output_type == ContextType.MAP and
-           not any(isinstance(ctx, str) or ("none" in ctx["in"] and ctx["out"] == "map") for ctx in args.osut5.data.context_types))):
+           not any("none" in ctx["in"] and ctx["out"] == "map" for ctx in args.osut5.data.context_types))):
         # Generate timing and convert in_context to timing context
         timing_events, timing_times = processor.generate(
             sequences=sequences,

@@ -76,7 +76,7 @@ class Tokenizer:
                 if isinstance(cts, str):
                     add_context_type(cts)
                 else:
-                    for ctss in cts["in"] + [cts["out"]]:
+                    for ctss in cts["in"] + cts["out"]:
                         add_context_type(ctss)
 
             miliseconds_per_sequence = ((args.data.src_seq_len - 1) * args.model.spectrogram.hop_length *
@@ -184,7 +184,7 @@ class Tokenizer:
             if args.data.add_timing_points:
                 self.event_ranges.append(EventRange(EventType.TIMING_POINT, 0, 0))
 
-            if args.data.add_kiai:
+            if args.data.add_kiai or any("kiai" in c["out"] for c in args.data.context_types):
                 self.event_ranges.append(EventRange(EventType.KIAI, 0, 1))
 
             if 3 in args.data.gamemodes:
