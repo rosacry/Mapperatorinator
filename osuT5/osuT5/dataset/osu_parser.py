@@ -24,6 +24,7 @@ class OsuParser:
         self.add_positions = args.data.add_positions
         self.add_kiai = args.data.add_kiai
         self.add_sv = args.data.add_sv
+        self.add_mania_sv = args.data.add_mania_sv
         self.mania_bpm_normalized_scroll_speed = args.data.mania_bpm_normalized_scroll_speed
         if self.add_positions:
             self.position_precision = args.data.position_precision
@@ -94,9 +95,10 @@ class OsuParser:
 
         # Sort events by time
         events, event_times = zip(*sorted(zip(events, event_times), key=lambda x: x[1]))
+        events, event_times = list(events), list(event_times)
 
-        if beatmap.mode == 3:
-            scroll_speed_events, scroll_speed_times = self.parse_scroll_speeds(beatmap, self.mania_bpm_normalized_scroll_speed)
+        if self.add_mania_sv and beatmap.mode == 3:
+            scroll_speed_events, scroll_speed_times = self.parse_scroll_speeds(beatmap)
             events, event_times = merge_events(scroll_speed_events, scroll_speed_times, events, event_times)
 
         if self.add_kiai:
@@ -112,8 +114,9 @@ class OsuParser:
 
         return events, event_times
 
-    def parse_scroll_speeds(self, beatmap: Beatmap, normalized: bool) -> tuple[list[Event], list[int]]:
+    def parse_scroll_speeds(self, beatmap: Beatmap, speed: float = 1.0) -> tuple[list[Event], list[int]]:
         """Extract all BPM-normalized scroll speed changes from a beatmap."""
+        normalized = self.mania_bpm_normalized_scroll_speed
         events = []
         event_times = []
         median_mpb = get_median_mpb_beatmap(beatmap)
@@ -142,9 +145,12 @@ class OsuParser:
                     )
                 last_normalized_scroll_speed = normalized_scroll_speed
 
+        if speed != 1.0:
+            events, event_times = speed_events(events, event_times, speed)
+
         return events, event_times
 
-    def parse_kiai(self, beatmap: Beatmap) -> tuple[list[Event], list[int]]:
+    def parse_kiai(self, beatmap: Beatmap, speed: float = 1.0) -> tuple[list[Event], list[int]]:
         """Extract all kiai information from a beatmap."""
         events = []
         event_times = []
@@ -163,6 +169,9 @@ class OsuParser:
                 time_event=True,
             )
             kiai = tp.kiai_mode
+
+        if speed != 1.0:
+            events, event_times = speed_events(events, event_times, speed)
 
         return events, event_times
 

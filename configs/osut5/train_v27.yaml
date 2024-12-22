@@ -30,10 +30,10 @@ data:                  # Data settings
   tgt_seq_len: 2048
   rhythm_weight: 3.0    # Weight of rhythm tokens in the loss calculation
   context_types: [
-    {"in": ["none"], "out": "map"},
-    {"in": ["timing"], "out": "map"},
-    {"in": ["no_hs"], "out": "map"},
-    {"in": ["gd"], "out": "map"}
+    {"in": ["none"], "out": ["map"]},
+    {"in": ["timing"], "out": ["map"]},
+    {"in": ["no_hs"], "out": ["map"]},
+    {"in": ["gd"], "out": ["map"]}
   ]      # List of context types to include in the dataset
   context_weights: [3, 1, 1, 1]    # List of weights for each context type. Determines how often each context type is sampled
   add_timing: true      # Interweave timing tokens with the beatmap tokens
@@ -54,6 +54,7 @@ data:                  # Data settings
   mania_bpm_normalized_scroll_speed: true  # Normalize mania scroll speed by BPM
   add_sv_special_token: true  # Add extra special token for current SV
   add_sv: true  # Model slider velocity in std and ctb
+  add_mania_sv: true  # Add mania scroll velocity in map context
 
 dataloader:             # Dataloader settings
   num_workers: 8

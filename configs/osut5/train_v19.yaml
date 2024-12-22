@@ -17,7 +17,12 @@ data:                  # Data settings
   tgt_seq_len: 1536
   rhythm_weight: 3.0    # Weight of rhythm tokens in the loss calculation
   sample_weights_path: "../../../datasets/rhythm_complexities.csv"    # Path to sample weights
-  context_types: ["none", "timing", "no_hs", "gd"]      # List of context types to include in the dataset
+  context_types: [
+    {"in": ["none"], "out": ["map"]},
+    {"in": ["timing"], "out": ["map"]},
+    {"in": ["no_hs"], "out": ["map"]},
+    {"in": ["gd"], "out": ["map"]}
+  ]      # List of context types to include in the dataset
   context_weights: [3, 1, 1, 1]    # List of weights for each context type. Determines how often each context type is sampled
   descriptors_path: "../../../datasets/beatmap_descriptors.csv"   # Path to file with all beatmap descriptors
   mappers_path: "../../../datasets/beatmap_users.json"       # Path to file with all beatmap mappers
