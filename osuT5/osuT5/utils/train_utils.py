@@ -34,7 +34,7 @@ def forward_eval(model: OsuT, batch):
     if isinstance(model.transformer, NWhisperForConditionalGeneration):
         outputs = torch.compiler.disable(model.forward)(**batch)
     else:
-        outputs = model.transformer(**batch)
+        outputs = model(**batch)
     return outputs
 
 
