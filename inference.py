@@ -258,7 +258,7 @@ def load_diff_model(ckpt_path, diff_args: DictConfig):
     return model, tokenizer
 
 
-@hydra.main(config_path="configs", config_name="inference_v1", version_base="1.1")
+@hydra.main(config_path="configs", config_name="inference_v28", version_base="1.1")
 def main(args: DictConfig):
     # args.beatmap_path = "C:\\Users\\Olivier\\AppData\\Local\\osu!\\Songs\\584787 Yuiko Ohara - Hoshi o Tadoreba\\Yuiko Ohara - Hoshi o Tadoreba (Yumeno Himiko) [015's Hard].osu"
     # args.beatmap_path = "C:\\Users\\Olivier\\AppData\\Local\\osu!\\Songs\\859916 DJ Noriken (Remixed _ Covered by Camellia) - Jingle (Metal Arrange _ Cover)\\DJ Noriken (Remixed  Covered by Camellia) - Jingle (Metal Arrange  Cover) (StunterLetsPlay) [Extra].osu"
