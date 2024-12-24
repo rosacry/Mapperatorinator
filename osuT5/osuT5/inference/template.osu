@@ -24,8 +24,8 @@ Artist:$artist
 ArtistUnicode:$artist_unicode
 Creator:$creator
 Version:$version
-Source:
-Tags:
+Source:$source
+Tags:$tags
 
 [Difficulty]
 HPDrainRate:$hp_drain_rate

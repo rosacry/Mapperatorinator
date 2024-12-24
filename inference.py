@@ -4,7 +4,7 @@ from pathlib import Path
 import hydra
 import torch
 from accelerate.utils import set_seed
-from omegaconf import DictConfig
+from omegaconf import DictConfig, OmegaConf
 from slider import Beatmap
 
 import osu_diffusion
@@ -14,7 +14,7 @@ from osuT5.osuT5.dataset.data_utils import get_song_length, events_of_type, TIMI
 from osuT5.osuT5.inference import Preprocessor, Processor, Postprocessor, BeatmapConfig, GenerationConfig, \
     generation_config_from_beatmap, beatmap_config_from_beatmap, background_line
 from osuT5.osuT5.inference.super_timing_generator import SuperTimingGenerator
-from osuT5.osuT5.tokenizer import Tokenizer, ContextType, EventType, Event
+from osuT5.osuT5.tokenizer import Tokenizer, ContextType
 from osuT5.osuT5.utils import get_model
 from osu_diffusion import DiT_models
 
@@ -88,6 +88,44 @@ def get_args_from_beatmap(args: DictConfig, tokenizer: Tokenizer):
 
 
 def get_config(args: DictConfig):
+    # Create tags that describes args
+    tags = dict(
+        lookback=args.lookback,
+        lookahead=args.lookahead,
+        beatmap_id=args.beatmap_id,
+        difficulty=args.difficulty,
+        mapper_id=args.mapper_id,
+        year=args.year,
+        hitsounded=args.hitsounded,
+        hold_note_ratio=args.hold_note_ratio,
+        scroll_speed_ratio=args.scroll_speed_ratio,
+        descriptors=args.descriptors,
+        negative_descriptors=args.negative_descriptors,
+        timing_leniency=args.timing_leniency,
+        seed=args.seed,
+        cfg_scale=args.cfg_scale,
+        temperature=args.temperature,
+        timing_temperature=args.timing_temperature,
+        mania_column_temperature=args.mania_column_temperature,
+        taiko_hit_temperature=args.taiko_hit_temperature,
+        top_p=args.top_p,
+        top_k=args.top_k,
+        parallel=args.parallel,
+        do_sample=args.do_sample,
+        num_beams=args.num_beams,
+        super_timing=args.super_timing,
+        timer_num_beams=args.timer_num_beams,
+        timer_bpm_threshold=args.timer_bpm_threshold,
+        generate_positions=args.generate_positions,
+        diff_cfg_scale=args.diff_cfg_scale,
+        max_seq_len=args.max_seq_len,
+        overlap_buffer=args.overlap_buffer,
+    )
+    # Filter to all non-default values
+    defaults = OmegaConf.load("configs/inference.yaml")
+    tags = {k: v for k, v in tags.items() if v != defaults[k]}
+    # To string separated by spaces
+    tags = " ".join(f"{k}={v}" for k, v in tags.items())
     return GenerationConfig(
         gamemode=args.gamemode,
         beatmap_id=args.beatmap_id,
@@ -112,6 +150,7 @@ def get_config(args: DictConfig):
         slider_multiplier=args.slider_multiplier,
         creator=args.creator,
         version=args.version,
+        tags=tags,
         background_line=background_line(args.background),
         preview_time=args.preview_time,
         bpm=args.bpm,
