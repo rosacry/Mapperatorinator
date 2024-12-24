@@ -36,6 +36,8 @@ class BeatmapConfig:
     artist_unicode: str = ""
     creator: str = ""
     version: str = ""
+    source: str = ""
+    tags: str = ""
 
     # Difficulty
     hp_drain_rate: float = 5
