@@ -5,7 +5,7 @@ from scipy.ndimage import gaussian_filter1d
 from scipy.signal import find_peaks
 from tqdm import tqdm
 
-from ..dataset.data_utils import get_song_length, get_groups, BEAT_TYPES
+from ..dataset.data_utils import get_groups, BEAT_TYPES
 from ..tokenizer import ContextType, EventType, Event
 from .preprocessor import Preprocessor
 from .processor import Processor, GenerationConfig, MILISECONDS_PER_SECOND
