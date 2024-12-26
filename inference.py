@@ -10,7 +10,7 @@ from slider import Beatmap
 import osu_diffusion
 import routed_pickle
 from diffusion_pipeline import DiffisionPipeline
-from osuT5.osuT5.dataset.data_utils import get_song_length, events_of_type, TIMING_TYPES
+from osuT5.osuT5.dataset.data_utils import events_of_type, TIMING_TYPES
 from osuT5.osuT5.inference import Preprocessor, Processor, Postprocessor, BeatmapConfig, GenerationConfig, \
     generation_config_from_beatmap, beatmap_config_from_beatmap, background_line
 from osuT5.osuT5.inference.super_timing_generator import SuperTimingGenerator
