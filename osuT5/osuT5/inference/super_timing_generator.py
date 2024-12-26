@@ -43,9 +43,6 @@ class SuperTimingGenerator:
             iterations: int = 20,
             verbose: bool = False,
     ):
-        in_context = self.processor.get_in_context([ContextType.NONE], None,
-                                                   get_song_length(audio, self.sample_rate))
-
         # Prepare beat histograms
         num_miliseconds = len(audio) * MILISECONDS_PER_SECOND // self.sample_rate
         beats_hist = np.zeros([num_miliseconds], dtype=int)
@@ -63,9 +60,10 @@ class SuperTimingGenerator:
             events, _ = self.processor.generate(
                 sequences=sequences,
                 generation_config=generation_config,
-                in_context=in_context,
+                in_context=[ContextType.NONE],
+                out_context=[ContextType.TIMING],
                 verbose=False,
-            )
+            )[0]
             groups = get_groups(events, types_first=self.types_first)
             last_beat_time = None
             last_group_type = None
