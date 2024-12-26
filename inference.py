@@ -42,7 +42,6 @@ def get_args_from_beatmap(args: DictConfig, tokenizer: Tokenizer):
 
     args.audio_path = beatmap_path.parent / beatmap.audio_filename
     args.output_path = beatmap_path.parent
-    args.other_beatmap_path = args.beatmap_path
 
     generation_config = generation_config_from_beatmap(beatmap, tokenizer)
 
@@ -159,12 +158,11 @@ def get_config(args: DictConfig):
     )
 
 
-
 def generate(
         args: DictConfig,
         *,
         audio_path: PathLike = None,
-        other_beatmap_path: PathLike = None,
+        beatmap_path: PathLike = None,
         generation_config: GenerationConfig,
         beatmap_config: BeatmapConfig,
         model,
@@ -175,7 +173,7 @@ def generate(
         verbose=True,
 ):
     audio_path = args.audio_path if audio_path is None else audio_path
-    other_beatmap_path = args.other_beatmap_path if other_beatmap_path is None else other_beatmap_path
+    beatmap_path = args.beatmap_path if beatmap_path is None else beatmap_path
 
     preprocessor = Preprocessor(args, parallel=args.parallel)
     processor = Processor(args, model, tokenizer, parallel=args.parallel)
@@ -209,7 +207,7 @@ def generate(
     elif ContextType.TIMING in args.in_context or (
             args.osut5.data.add_timing and any(t in args.in_context for t in [ContextType.GD, ContextType.NO_HS])):
         # Exact timing is provided in the other beatmap, so we don't need to generate it
-        timing = [tp for tp in Beatmap.from_path(other_beatmap_path).timing_points if tp.parent is None]
+        timing = [tp for tp in Beatmap.from_path(beatmap_path).timing_points if tp.parent is None]
 
     # Generate beatmap
     if args.output_type == ContextType.MAP:
@@ -218,7 +216,7 @@ def generate(
             generation_config=generation_config,
             in_context=args.in_context,
             out_context=[args.output_type],
-            beatmap_path=other_beatmap_path,
+            beatmap_path=beatmap_path,
             extra_in_context=extra_in_context,
             verbose=verbose,
         )[0]

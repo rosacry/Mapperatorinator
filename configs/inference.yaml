@@ -1,8 +1,7 @@
 model_path: ''          # Path to trained model
 audio_path: ''          # Path to input audio
 output_path: ''         # Path to output directory
-beatmap_path: ''        # Path to .osu file to autofill metadata
-other_beatmap_path: ''  # Path to .osu file of other beatmap in the mapset to use as reference
+beatmap_path: ''        # Path to .osu file to autofill metadata and use as reference
 lookback: 0             # Fraction of audio sequence to fill with tokens from previous inference window
 lookahead: 0            # Fraction of audio sequence to skip at the end of the audio window
 gamemode: 0             # Gamemode of the beatmap
