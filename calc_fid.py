@@ -146,7 +146,7 @@ def worker(beatmap_paths, args, return_dict, idx):
         result = generate(
             args,
             audio_path=audio_path,
-            other_beatmap_path=other_beatmap_path,
+            beatmap_path=other_beatmap_path,
             generation_config=generation_config,
             beatmap_config=beatmap_config,
             model=model,
