@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import partial
+from os import PathLike
 from pathlib import Path
 from typing import Any, Optional
 
@@ -164,6 +166,10 @@ class Processor(object):
         self.add_positions = args.osut5.data.add_positions
         self.add_sv_special_token = args.osut5.data.add_sv_special_token
         self.add_sv = args.osut5.data.add_sv
+        self.add_mania_sv = args.osut5.data.add_mania_sv
+        self.context_types: list[dict[str, list[ContextType]]] = \
+            [{k: [ContextType(t) for t in v] for k, v in ct} for ct in args.osut5.data.context_types]
+        self.add_out_context_types = args.osut5.data.add_out_context_types
 
         if self.add_positions:
             self.position_precision = args.osut5.data.position_precision
@@ -194,47 +200,315 @@ class Processor(object):
         if self.timeshift_bias != 0:
             self.base_logit_processor.append(TimeshiftBias(self.timeshift_bias, self.time_range))
 
-    def get_context(self, context: ContextType, beatmap_path, song_length: float, add_type=True, add_pre_tokens=False):
+        self.generate = partial(
+            self.model.generate,
+            top_p=self.top_p,
+            top_k=self.top_k,
+            do_sample=self.do_sample,
+            num_beams=self.num_beams,
+            guidance_scale=self.cfg_scale,
+            use_cache=True,
+            cache_implementation="static",
+        )
+
+    def generate(
+            self,
+            *,
+            sequences: tuple[torch.Tensor, torch.Tensor],
+            generation_config: GenerationConfig,
+            in_context: list[ContextType] = None,
+            out_context: list[ContextType] = None,
+            beatmap_path: Optional[PathLike] = None,
+            extra_in_context: Optional[dict[ContextType, tuple[list[Event], list[int]]]] = None,
+            verbose: bool = True,
+    ) -> list[tuple[list[Event], list[int]]]:
+        """Generate a list of Event object lists and their timestamps given source sequences.
+
+        Args:
+            sequences: A list of batched source sequences.
+            generation_config: Generation configuration.
+            in_context: List of context information.
+            out_context: Output contexts to generate.
+            beatmap_path: Path to the beatmap file for context generation.
+            extra_in_context: Extra context information to use instead of beatmap_path.
+            verbose: Whether to show progress bar.
+
+        Returns:
+            events: List of Event object lists.
+            event_times: Corresponding event times of Event object lists in miliseconds.
+        """
+
+        # Only generate SV in mania mode
+        if generation_config.gamemode != 3 and ContextType.SV in out_context:
+            out_context.remove(ContextType.SV)
+
+        # Find a viable context generation template
+        viable_templates = [
+            context_type for context_type in self.context_types if
+            all(oc in context_type["out"] for oc in out_context) and all(ic in in_context for ic in context_type["in"])
+        ]
+
+        if len(viable_templates) == 0:
+            raise ValueError("No viable template found for the given context types. Candidates are: " + str(self.context_types))
+
+        template = viable_templates[0]
+        # We have to generate the out contexts in order of the template
+        out_context_count = max(template["out"].index(oc) for oc in out_context) + 1
+        out_context_to_generate = template["out"][:out_context_count]
+
+        song_length = sequences[1][-1].item() + self.miliseconds_per_sequence
+        in_context_data = self.get_in_context(
+            in_context=template["in"],
+            beatmap_path=beatmap_path,
+            extra_in_context=extra_in_context,
+            song_length=song_length,
+        )
+        out_context_data = self.get_out_context(
+            out_context=out_context_to_generate,
+            generation_config=generation_config,
+            given_context=in_context,
+            beatmap_path=beatmap_path,
+            extra_in_context=extra_in_context,
+            song_length=song_length,
+            verbose=verbose,
+        )
+
+        # Prepare logit processors
+        logit_processor = self.get_logits_processor(generation_config)
+
+        # Prepare special input for legacy model
+        beatmap_idx = torch.tensor([self.tokenizer.num_classes], dtype=torch.long, device=self.device)
+        if self.need_beatmap_idx:
+            beatmap_idx = torch.tensor(
+                [self.tokenizer.beatmap_idx[generation_config.beatmap_id]], dtype=torch.long, device=self.device)
+
+        # Start generation
+        inputs = dict(
+            sequences=sequences,
+            in_context=in_context_data,
+            out_context=out_context_data,
+            beatmap_idx=beatmap_idx,
+            logit_processor=logit_processor,
+            verbose=verbose,
+        )
+        if self.parallel:
+            self.generate_parallel(**inputs)
+        else:
+            self.generate_sequential(**inputs)
+
+        # Post-process events
+        for context in out_context_data:
+            if context["context_type"] != ContextType.MAP:
+                continue
+
+            # Rescale and unpack position events
+            if self.add_positions:
+                context["events"] = self._rescale_positions(context["events"])
+
+            # Turn mania key column into X position
+            if generation_config.gamemode == 3:
+                context["events"] = self._convert_column_to_position(context["events"], generation_config.keycount)
+
+        return [(context["events"], context["event_times"]) for context in out_context_data if context["context_type"] in out_context]
+
+    def generate_sequential(
+            self,
+            *,
+            sequences: tuple[torch.Tensor, torch.Tensor],
+            in_context: list[dict[str, Any]],
+            out_context: list[dict[str, Any]],
+            beatmap_idx: torch.Tensor,
+            logit_processor: LogitsProcessorList,
+            verbose: bool = True,
+    ):
+        for i, context in enumerate(out_context):
+            if context["finished"]:
+                continue
+
+            iterator = tqdm(zip(*sequences)) if verbose else zip(*sequences)
+            for sequence_index, (frames, frame_time) in enumerate(iterator):
+                trim_lookahead = sequence_index != len(sequences) - 1
+                # noinspection PyUnresolvedReferences
+                frames = frames.to(self.device).unsqueeze(0)
+                frame_time = frame_time.item()
+
+                # Get relevant tokens for current frame
+                cond_prompt, uncond_prompt = self.get_prompts(
+                    self.prepare_context_sequences(in_context, frame_time, False),
+                    self.prepare_context_sequences(out_context[:i + 1], frame_time, True),
+                )
+
+                result = self.generate(
+                    frames,
+                    decoder_input_ids=cond_prompt,
+                    beatmap_idx=beatmap_idx,
+                    logits_processor=logit_processor,
+                    negative_prompt_ids=uncond_prompt,
+                    eos_token_id=self.get_eos_token_id(trim_lookahead, context["context_type"]),
+                )
+
+                # Only support batch size 1 for now
+                predicted_tokens = result[0].cpu()[cond_prompt.shape[1]:]
+                self.add_predicted_tokens_to_context(context, predicted_tokens, frame_time, trim_lookahead)
+
+    def generate_parallel(
+            self,
+            *,
+            sequences: tuple[torch.Tensor, torch.Tensor],
+            in_context: list[dict[str, Any]],
+            out_context: list[dict[str, Any]],
+            beatmap_idx: torch.Tensor,
+            logit_processor: LogitsProcessorList,
+            verbose: bool = True,
+    ):
+        # Get relevant inputs
+        frames = sequences[0].to(self.device)
+        frame_times = sequences[1]
+        cond_prompts = []
+        uncond_prompts = []
+
+        for i in range(len(frames)):
+            frame_time = frame_times[i].item()
+            cond_prompt, uncond_prompt = self.get_prompts(
+                self.prepare_context_sequences(in_context, frame_time, False),
+                self.prepare_context_sequences(out_context[:1], frame_time, True),
+            )
+            cond_prompts.append(cond_prompt)
+            uncond_prompts.append(uncond_prompt)
+
+        # Padding to make sizes compatible
+        max_len = max(tensor.size(1) for tensor in cond_prompts)
+        cond_prompts = [torch.nn.functional.pad(tensor, (0, 0, max_len - tensor.size(1), 0)) for tensor in cond_prompts]
+        cond_prompt = torch.cat(cond_prompts, dim=0)
+        if self.cfg_scale > 1:
+            uncond_prompts = [torch.nn.functional.pad(tensor, (0, 0, max_len - tensor.size(1), 0)) for tensor in uncond_prompts]
+            uncond_prompt = torch.cat(uncond_prompts, dim=0)
+        else:
+            uncond_prompt = None
+
+        # Start generation
+        result = self.generate(
+            frames,
+            decoder_input_ids=cond_prompt,
+            beatmap_idx=beatmap_idx,
+            logits_processor=logit_processor,
+            negative_prompt_ids=uncond_prompt,
+            eos_token_id=self.get_eos_token_id(context_type=out_context[-1]["context_type"]),
+        )
+
+        predicted_tokens = result[:, max_len:].cpu()
+        for i in range(len(predicted_tokens)):
+            frame_time = frame_times[i].item()
+            if self.add_out_context_types:
+                for context in out_context:
+                    # Find the tokens in predicted_tokens[i] between context sos and eos
+                    sos = self.tokenizer.context_sos[context["context_type"]]
+                    eos = self.tokenizer.context_eos[context["context_type"]]
+                    start = (predicted_tokens[i] == sos).nonzero(as_tuple=True)[0]
+                    start = start[0] if len(start) > 0 else 0
+                    end = (predicted_tokens[i] == eos).nonzero(as_tuple=True)[0]
+                    end = end[0] if len(end) > 0 else len(predicted_tokens[i])
+                    self.add_predicted_tokens_to_context(context, predicted_tokens[i][start, end], frame_time)
+            else:
+                self.add_predicted_tokens_to_context(out_context[0], predicted_tokens[i], frame_time)
+
+    def get_context(
+            self,
+            context: ContextType,
+            beatmap_path: PathLike,
+            extra_in_context: Optional[dict[ContextType, tuple[list[Event], list[int]]]],
+            song_length: float,
+            add_type: bool,
+            add_class: bool,
+            finished: bool,
+    ):
         if context != ContextType.NONE:
             beatmap_path = Path(beatmap_path)
             if not beatmap_path.is_file():
                 raise FileNotFoundError(f"Beatmap file {beatmap_path} not found.")
 
         data = {
-            "context_type": ContextType(context),
+            "events": [],
+            "event_times": [],
+            "context_type": context,
             "add_type": add_type,
-            "add_pre_tokens": self.add_pre_tokens,
+            "add_class": add_class,
+            "add_pre_tokens": False,
             "song_length": song_length,
+            "finished": finished,
         }
 
-        if context == ContextType.NONE:
-            data["events"], data["event_times"] = [], []
-        elif context == ContextType.TIMING:
-            beatmap = Beatmap.from_path(beatmap_path)
-            data["events"], data["event_times"] = self.parser. parse_timing(beatmap)
-        elif context == ContextType.NO_HS:
-            beatmap = Beatmap.from_path(beatmap_path)
-            hs_events, hs_event_times = self.parser.parse(beatmap)
-            data["events"], data["event_times"] = remove_events_of_type(hs_events, hs_event_times,
-                                                                        [EventType.HITSOUND, EventType.VOLUME])
-        elif context == ContextType.GD:
-            beatmap = Beatmap.from_path(beatmap_path)
-            data["events"], data["event_times"] = self.parser.parse(beatmap)
-            data["class"] = self.get_class_vector(generation_config_from_beatmap(beatmap, self.tokenizer), song_length)
-        else:
-            raise ValueError(f"Invalid context type {context}")
+        if finished:
+            if extra_in_context is not None and context in extra_in_context:
+                data["events"], data["event_times"] = extra_in_context[context]
+                if len(extra_in_context[context]) > 2:
+                    data["class"] = extra_in_context[context][2]
+            elif context == ContextType.TIMING:
+                beatmap = Beatmap.from_path(beatmap_path)
+                data["events"], data["event_times"] = self.parser.parse_timing(beatmap)
+            elif context == ContextType.NO_HS:
+                beatmap = Beatmap.from_path(beatmap_path)
+                hs_events, hs_event_times = self.parser.parse(beatmap)
+                data["events"], data["event_times"] = remove_events_of_type(hs_events, hs_event_times,
+                                                                            [EventType.HITSOUND, EventType.VOLUME])
+            elif context == ContextType.GD:
+                beatmap = Beatmap.from_path(beatmap_path)
+                data["events"], data["event_times"] = self.parser.parse(beatmap)
+                data["class"] = self.get_class_vector(generation_config_from_beatmap(beatmap, self.tokenizer), song_length)
+            elif context == ContextType.KIAI:
+                beatmap = Beatmap.from_path(beatmap_path)
+                data["events"], data["event_times"] = self.parser.parse_kiai(beatmap)
+            elif context == ContextType.SV:
+                beatmap = Beatmap.from_path(beatmap_path)
+                data["events"], data["event_times"] = self.parser.parse_scroll_speeds(beatmap)
+            else:
+                raise ValueError(f"Invalid context type {context}")
         return data
 
     def get_in_context(
             self,
+            *,
             in_context: list[ContextType],
             beatmap_path: Optional[Path],
+            extra_in_context: Optional[dict[ContextType, tuple[list[Event], list[int]]]],
             song_length: float,
     ) -> list[dict[str, Any]]:
-        in_context = [self.get_context(context, beatmap_path, song_length) for context in in_context]
+        in_context = [self.get_context(context, beatmap_path, extra_in_context, song_length, True, True, True) for context in in_context]
         if self.add_gd_context:
-            in_context.append(self.get_context(ContextType.GD, beatmap_path, song_length, add_type=False))
+            in_context.append(self.get_context(ContextType.GD, beatmap_path, extra_in_context, song_length, False, True, True))
         return in_context
+
+    def get_out_context(
+            self,
+            *,
+            out_context: list[ContextType],
+            generation_config: GenerationConfig,
+            given_context: list[ContextType],
+            beatmap_path: Optional[Path],
+            extra_in_context: Optional[dict[ContextType, tuple[list[Event], list[int]]]],
+            song_length: float,
+            verbose: bool = True
+    ):
+        out = []
+        for i, context in enumerate(out_context):
+            context_data = self.get_context(context, beatmap_path, extra_in_context, song_length, self.add_out_context_types, False, context in given_context)
+
+            # Add class vector to the first out context
+            if i == 0:
+                context_data["class"] = self.get_class_vector(generation_config, song_length, verbose=verbose)
+                context_data["negative_class"] = self.get_class_vector(GenerationConfig(
+                    gamemode=generation_config.gamemode,
+                    difficulty=generation_config.difficulty,
+                    circle_size=generation_config.circle_size,
+                    hitsounded=generation_config.hitsounded,
+                    slider_multiplier=generation_config.slider_multiplier,
+                    keycount=generation_config.keycount,
+                    hold_note_ratio=generation_config.hold_note_ratio,
+                    scroll_speed_ratio=generation_config.scroll_speed_ratio,
+                    descriptors=generation_config.negative_descriptors,
+                ), song_length)
+                context_data["add_pre_tokens"] = self.add_pre_tokens
+        return out
 
     def get_class_vector(
             self,
@@ -311,181 +585,6 @@ class Processor(object):
 
         return cond_tokens
 
-    def generate(
-            self,
-            *,
-            sequences: tuple[torch.Tensor, torch.Tensor],
-            generation_config: GenerationConfig,
-            in_context: list[dict[str, Any]] = None,
-            verbose: bool = True,
-    ) -> tuple[list[Event], list[int]]:
-        """Generate a list of Event object lists and their timestamps given source sequences.
-
-        Args:
-            sequences: A list of batched source sequences.
-            generation_config: Generation configuration.
-            in_context: List of context information.
-            verbose: Whether to show progress bar.
-
-        Returns:
-            events: List of Event object lists.
-            event_times: Corresponding event times of Event object lists in miliseconds.
-        """
-
-        # Prepare output context
-        out_context = self.get_out_context(generation_config, sequences, verbose=verbose)
-
-        # Prepare logit processors
-        logit_processor = self.get_logits_processor(generation_config)
-
-        # Prepare special input for legacy model
-        beatmap_idx = torch.tensor([self.tokenizer.num_classes], dtype=torch.long, device=self.device)
-        if self.need_beatmap_idx:
-            beatmap_idx = torch.tensor(
-                [self.tokenizer.beatmap_idx[generation_config.beatmap_id]], dtype=torch.long, device=self.device)
-
-        # Start generation
-        inputs = dict(
-            sequences=sequences,
-            in_context=in_context,
-            out_context=out_context,
-            beatmap_idx=beatmap_idx,
-            logit_processor=logit_processor,
-            verbose=verbose,
-        )
-        if self.parallel:
-            self.generate_parallel(**inputs)
-        else:
-            self.generate_sequential(**inputs)
-
-        # Post-process events
-        # Rescale and unpack position events
-        if self.add_positions:
-            out_context["events"] = self._rescale_positions(out_context["events"])
-
-        # Turn mania key column into X position
-        if generation_config.gamemode == 3:
-            out_context["events"] = self._convert_column_to_position(out_context["events"], generation_config.keycount)
-
-        return out_context["events"], out_context["event_times"]
-
-    def generate_sequential(
-            self,
-            *,
-            sequences: tuple[torch.Tensor, torch.Tensor],
-            in_context: list[dict[str, Any]],
-            out_context: dict[str, Any],
-            beatmap_idx: torch.Tensor,
-            logit_processor: LogitsProcessorList,
-            verbose: bool = True,
-    ):
-        iterator = tqdm(zip(*sequences)) if verbose else zip(*sequences)
-        for sequence_index, (frames, frame_time) in enumerate(iterator):
-            trim_lookahead = sequence_index != len(sequences) - 1
-            # noinspection PyUnresolvedReferences
-            frames = frames.to(self.device).unsqueeze(0)
-            frame_time = frame_time.item()
-
-            # Get relevant tokens for current frame
-            cond_prompt, uncond_prompt = self.get_prompts(
-                [self.prepare_context_sequence(context, frame_time) for context in in_context],
-                self.prepare_context_sequence(out_context, frame_time)
-            )
-
-            result = self.model.generate(
-                frames,
-                decoder_input_ids=cond_prompt,
-                beatmap_idx=beatmap_idx,
-                logits_processor=logit_processor,
-                top_p=self.top_p,
-                top_k=self.top_k,
-                do_sample=self.do_sample,
-                num_beams=self.num_beams,
-                guidance_scale=self.cfg_scale,
-                negative_prompt_ids=uncond_prompt,
-                eos_token_id=self.get_eos_token_id(trim_lookahead),
-                use_cache=True,
-                cache_implementation="static",
-            )
-
-            # Only support batch size 1 for now
-            predicted_tokens = result[0].cpu()[cond_prompt.shape[1]:]
-            self.add_predicted_tokens_to_context(out_context, predicted_tokens, frame_time, trim_lookahead)
-
-    def generate_parallel(
-            self,
-            *,
-            sequences: tuple[torch.Tensor, torch.Tensor],
-            in_context: list[dict[str, Any]],
-            out_context: dict[str, Any],
-            beatmap_idx: torch.Tensor,
-            logit_processor: LogitsProcessorList,
-            verbose: bool = True,
-    ):
-        # Get relevant inputs
-        frames = sequences[0].to(self.device)
-        frame_times = sequences[1]
-        cond_prompts = []
-        uncond_prompts = []
-
-        for i in range(len(frames)):
-            frame_time = frame_times[i].item()
-            cond_prompt, uncond_prompt = self.get_prompts(
-                [self.prepare_context_sequence(context, frame_time) for context in in_context],
-                self.prepare_context_sequence(out_context, frame_time)
-            )
-            cond_prompts.append(cond_prompt)
-            uncond_prompts.append(uncond_prompt)
-
-        # Padding to make sizes compatible
-        max_len = max(tensor.size(1) for tensor in cond_prompts)
-        cond_prompts = [torch.nn.functional.pad(tensor, (0, 0, max_len - tensor.size(1), 0)) for tensor in cond_prompts]
-        cond_prompt = torch.cat(cond_prompts, dim=0)
-        if self.cfg_scale > 1:
-            uncond_prompts = [torch.nn.functional.pad(tensor, (0, 0, max_len - tensor.size(1), 0)) for tensor in uncond_prompts]
-            uncond_prompt = torch.cat(uncond_prompts, dim=0)
-        else:
-            uncond_prompt = None
-
-        # Start generation
-        result = self.model.generate(
-            frames,
-            decoder_input_ids=cond_prompt,
-            beatmap_idx=beatmap_idx,
-            logits_processor=logit_processor,
-            top_p=self.top_p,
-            top_k=self.top_k,
-            do_sample=self.do_sample,
-            num_beams=self.num_beams,
-            guidance_scale=self.cfg_scale,
-            negative_prompt_ids=uncond_prompt,
-            eos_token_id=self.get_eos_token_id(),
-            use_cache=True,
-            cache_implementation="static",
-        )
-
-        predicted_tokens = result[:, max_len:].cpu()
-        for i in range(len(predicted_tokens)):
-            frame_time = frame_times[i].item()
-            self.add_predicted_tokens_to_context(out_context, predicted_tokens[i], frame_time)
-
-    def get_out_context(self, generation_config: GenerationConfig, sequences, verbose: bool = True):
-        song_length = sequences[1][-1].item() + self.miliseconds_per_sequence
-        out = self.get_context(ContextType.NONE, None, song_length, False, self.add_pre_tokens)
-        out["class"] = self.get_class_vector(generation_config, song_length, verbose=verbose)
-        out["negative_class"] = self.get_class_vector(GenerationConfig(
-            gamemode=generation_config.gamemode,
-            difficulty=generation_config.difficulty,
-            circle_size=generation_config.circle_size,
-            hitsounded=generation_config.hitsounded,
-            slider_multiplier=generation_config.slider_multiplier,
-            keycount=generation_config.keycount,
-            hold_note_ratio=generation_config.hold_note_ratio,
-            scroll_speed_ratio=generation_config.scroll_speed_ratio,
-            descriptors=generation_config.negative_descriptors,
-        ), song_length)
-        return out
-
     def get_logits_processor(self, generation_config: GenerationConfig) -> LogitsProcessorList:
         processors = LogitsProcessorList(self.base_logit_processor)
 
@@ -502,11 +601,14 @@ class Processor(object):
 
         return processors
 
-    def add_predicted_tokens_to_context(self, context, predicted_tokens, frame_time, trim_lookahead: bool = False):
+    def add_predicted_tokens_to_context(self, context: dict, predicted_tokens, frame_time, trim_lookahead: bool = False):
         # Trim prompt and eos tokens
-        if predicted_tokens[-1] == self.tokenizer.eos_id:
+        while len(predicted_tokens) > 0 and (
+                predicted_tokens[-1] == self.tokenizer.eos_id or
+                predicted_tokens[-1] == self.tokenizer.context_eos[context["context_type"]]):
             predicted_tokens = predicted_tokens[:-1]
-        elif trim_lookahead and predicted_tokens[-1] in self.lookahead_time_range:
+
+        if trim_lookahead and predicted_tokens[-1] in self.lookahead_time_range:
             # If the type token comes before the timeshift token we should remove the type token too
             if self.types_first:
                 predicted_tokens = predicted_tokens[:-2]
@@ -522,14 +624,39 @@ class Processor(object):
             lookahead_time = frame_time + self.lookahead_max_time
             self._trim_events_after_time(context["events"], context["event_times"], lookahead_time)
 
-    def get_eos_token_id(self, trim_lookahead: bool = False):
+    def get_eos_token_id(self, trim_lookahead: bool = False, context_type: ContextType = None):
         eos_token_id = [self.tokenizer.eos_id]
         if trim_lookahead:
             eos_token_id += self.lookahead_time_range
+        if context_type is not None:
+            eos_token_id.append(self.tokenizer.context_eos[context_type])
         return eos_token_id
 
-    def prepare_context_sequence(self, context, frame_time):
+    def prepare_context_sequences(self, contexts: list[dict], frame_time, out_context: bool) -> list[dict]:
+        results = []
+        for context in contexts:
+            result = self.prepare_context_sequence(context, frame_time)
+            results.append(result)
+            # Extra special tokens are to be stored in the first output context
+            if out_context:
+                for k, v in result["extra_special_events"].items():
+                    results[0]["extra_special_events"][k] = v
+                del result["extra_special_events"]
+
+        # Tokenize extra special tokens in the correct order
+        special_token_order = ["last_kiai", "last_sv", "song_position"]
+        for result in results:
+            if "extra_special_events" not in result:
+                continue
+            extra_special_events = result["extra_special_events"]
+            extra_special_events = [extra_special_events[k] for k in special_token_order if k in extra_special_events]
+            result["extra_special_tokens"] = self._encode(extra_special_events, frame_time)
+
+        return results
+
+    def prepare_context_sequence(self, context: dict, frame_time) -> dict:
         result = context.copy()
+        result["frame_time"] = frame_time
 
         if context["add_pre_tokens"]:
             context_pre_events = self._get_events_time_range(
@@ -546,64 +673,65 @@ class Processor(object):
         result["tokens"] = self._encode(context_events, frame_time)
 
         # Prepare extra special tokens
-        context_extra_special_events = []
-        if "class" in context:
-            if self.add_kiai:
-                last_kiai = self._kiai_before_time(context["events"], context["event_times"], frame_time)
-                context_extra_special_events.append(last_kiai)
-            if self.add_sv_special_token:
-                last_sv = self._sv_before_time(context["events"], context["event_times"], frame_time)
-                context_extra_special_events.append(last_sv)
-            if self.add_song_position_token:
-                context_extra_special_events.append(
-                    self.tokenizer.encode_song_position_event(frame_time, context["song_length"]))
-        result["extra_special_tokens"] = self._encode(context_extra_special_events, frame_time)
+        extra_special_events = {}
+        if context["context_type"] == ContextType.KIAI or (self.add_kiai and context["context_type"] in [ContextType.GD, ContextType.MAP]):
+            extra_special_events["last_kiai"] = self._kiai_before_time(context["events"], context["event_times"], frame_time)
+        if context["context_type"] == ContextType.SV or ((self.add_sv or self.add_mania_sv) and context["context_type"] in [ContextType.GD, ContextType.MAP]):
+            extra_special_events["last_sv"] = self._sv_before_time(context["events"], context["event_times"], frame_time)
+        if "class" in context and self.add_song_position_token:
+            extra_special_events["song_position"] = self.tokenizer.encode_song_position_event(frame_time, context["song_length"])
+
+        result["extra_special_events"] = extra_special_events
 
         return result
 
     # Prepare context type indicator tokens
-    def get_context_tokens(self, context):
+    def get_context_tokens(self, context, max_token_length=None, add_type_end=True):
         context_type = context["context_type"]
         tokens = context["tokens"]
 
         # Trim tokens if they are too long
-        max_context_length = self.tgt_seq_len // 2
-        if tokens.shape[1] > max_context_length:
-            tokens = tokens[:, :max_context_length]
+        if max_token_length is not None and tokens.shape[1] > max_token_length:
+            tokens = tokens[:, -max_token_length:]
 
         to_concat = []
         if context["add_type"]:
             to_concat.append(torch.tensor([[self.tokenizer.context_sos[context_type]]], dtype=torch.long, device=self.device))
 
-        if "class" in context:
-            to_concat.append(context["class"])
+        if context["add_class"]:
+            if "class" in context:
+                to_concat.append(context["class"])
+            if "extra_special_tokens" in context:
+                to_concat.append(context["extra_special_tokens"])
 
-        to_concat.append(context["extra_special_tokens"])
         to_concat.append(tokens)
 
-        if context["add_type"]:
+        if context["add_type"] and add_type_end:
             to_concat.append(torch.tensor([[self.tokenizer.context_eos[context_type]]], dtype=torch.long, device=self.device))
 
         return torch.concatenate(to_concat, dim=-1)
 
     def get_prompt(self, in_context, out_context, negative=False, max_token_length=None):
-        user_prompt = out_context["negative_class"] if negative else out_context["class"]
-        extra_special_tokens = out_context["extra_special_tokens"]
-        pre_tokens = out_context["pre_tokens"] if "pre_tokens" in out_context else torch.tensor([[]], dtype=torch.long, device=self.device)
-        post_tokens = out_context["tokens"]
+        class_container = out_context[0]
+        user_prompt = class_container["negative_class"] if negative else class_container["class"]
+        extra_special_tokens = class_container["extra_special_tokens"] if "extra_special_tokens" in class_container else torch.tensor([[]], dtype=torch.long, device=self.device)
+        pre_tokens = class_container["pre_tokens"] if "pre_tokens" in class_container else torch.tensor([[]], dtype=torch.long, device=self.device)
+
+        in_tokens = [self.get_context_tokens(context, max_token_length) for context in in_context]
+        # We must not add the type end token to the last context because it should be generated by the model
+        out_tokens = [self.get_context_tokens(context, max_token_length, i != len(out_context) - 1) for i, context in enumerate(out_context)]
 
         if max_token_length is not None:
             pre_tokens = pre_tokens[:, -max_token_length:]
-            post_tokens = post_tokens[:, -max_token_length:]
 
-        to_concat = [self.get_context_tokens(context) for context in in_context] + [user_prompt, extra_special_tokens, pre_tokens]
+        to_concat = in_tokens + [user_prompt, extra_special_tokens, pre_tokens]
         prefix = torch.concatenate(to_concat, dim=-1)
 
         if self.center_pad_decoder:
             prefix = F.pad(prefix, (self.tgt_seq_len // 2 - prefix.shape[1], 0), value=self.tokenizer.pad_id)
 
-        prompt = torch.tensor([[self.tokenizer.sos_id]], dtype=torch.long, device=self.device)
-        prompt = torch.concatenate([prefix, prompt, post_tokens], dim=-1)
+        sos = torch.tensor([[self.tokenizer.sos_id]], dtype=torch.long, device=self.device)
+        prompt = torch.concatenate([prefix, sos] + out_tokens, dim=-1)
         return prompt
 
     def get_prompts(self, in_context, out_context):
@@ -613,7 +741,7 @@ class Processor(object):
 
         # Make sure the prompt is not too long
         i = 0
-        max_length = out_context["tokens"].shape[1]
+        max_length = self.tgt_seq_len
         while cond_prompt.shape[1] >= self.tgt_seq_len:
             i += 1
             if i > 10:

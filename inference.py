@@ -159,14 +159,6 @@ def get_config(args: DictConfig):
     )
 
 
-def add_timing_to_context(in_context, timing_events, timing_times):
-    for ctx in in_context:
-        if ctx["context_type"] != ContextType.NONE:
-            continue
-        ctx["context_type"] = ContextType.TIMING
-        ctx["events"] = timing_events
-        ctx["event_times"] = timing_times
-
 
 def generate(
         args: DictConfig,
@@ -190,15 +182,15 @@ def generate(
     postprocessor = Postprocessor(args)
 
     audio = preprocessor.load(audio_path)
-    in_context = processor.get_in_context(args.in_context, other_beatmap_path, get_song_length(audio, args.osut5.data.sample_rate))
     sequences = preprocessor.segment(audio)
+    extra_in_context = {}
 
     # Auto generate timing if not provided in in_context and required for the model and this output_type
     timing_events, timing_times, timing = None, None, None
     if args.super_timing and ContextType.NONE in args.in_context:
         super_timing_generator = SuperTimingGenerator(args, model, tokenizer)
         timing_events, timing_times = super_timing_generator.generate(audio, generation_config, verbose=verbose)
-        add_timing_to_context(in_context, timing_events, timing_times)
+        extra_in_context[ContextType.TIMING] = (timing_events, timing_times)
         timing = postprocessor.generate_timing(timing_events)
     elif (args.output_type == ContextType.TIMING or
           (ContextType.NONE in args.in_context and args.output_type == ContextType.MAP and
@@ -207,11 +199,12 @@ def generate(
         timing_events, timing_times = processor.generate(
             sequences=sequences,
             generation_config=generation_config,
-            in_context=in_context,
+            in_context=args.in_context,
+            out_context=[ContextType.TIMING],
             verbose=verbose,
-        )
+        )[0]
         timing_events, timing_times = events_of_type(timing_events, timing_times, TIMING_TYPES)
-        add_timing_to_context(in_context, timing_events, timing_times)
+        extra_in_context[ContextType.TIMING] = (timing_events, timing_times)
         timing = postprocessor.generate_timing(timing_events)
     elif ContextType.TIMING in args.in_context or (
             args.osut5.data.add_timing and any(t in args.in_context for t in [ContextType.GD, ContextType.NO_HS])):
@@ -223,9 +216,12 @@ def generate(
         events, _ = processor.generate(
             sequences=sequences,
             generation_config=generation_config,
-            in_context=in_context,
+            in_context=args.in_context,
+            out_context=[args.output_type],
+            beatmap_path=other_beatmap_path,
+            extra_in_context=extra_in_context,
             verbose=verbose,
-        )
+        )[0]
 
         # Resnap timing events
         if timing is not None:
