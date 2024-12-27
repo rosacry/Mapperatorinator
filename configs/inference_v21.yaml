@@ -5,13 +5,4 @@ defaults:
   - _self_
 
 version: 'Mapperatorinator V21'        # Beatmap version
-lookback: 0.5             # Fraction of audio sequence to fill with tokens from previous inference window
-lookahead: 0.4            # Fraction of audio sequence to skip at the end of the audio window
-in_context: [NONE]        # Context type of other beatmap
 timeshift_bias: -1.5        # Logit bias for sampling timeshift tokens
-
-# Diffusion settings
-generate_positions: true      # Use diffusion to generate object positions
-random_init: false
-#timesteps: [50,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]  # The number of timesteps we want to take from equally-sized portions of the original process
-timesteps: [100,0,0,0,0,0,0,0,0,0]  # The number of timesteps we want to take from equally-sized portions of the original process
