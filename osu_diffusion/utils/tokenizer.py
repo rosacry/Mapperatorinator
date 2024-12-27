@@ -3,8 +3,9 @@ import pickle
 from pathlib import Path
 
 import numpy as np
-from omegaconf import DictConfig
 from tqdm import tqdm
+
+from osu_diffusion.config import DiffusionTrainConfig
 
 
 class Tokenizer:
@@ -22,7 +23,7 @@ class Tokenizer:
         "num_cs_classes",
     ]
 
-    def __init__(self, args: DictConfig = None):
+    def __init__(self, args: DiffusionTrainConfig = None):
         """Fixed vocabulary tokenizer."""
         self.beatmap_idx: dict[int, int] = {}  # beatmap_id -> beatmap_idx
         self.num_classes = 0
@@ -121,7 +122,7 @@ class Tokenizer:
         return (self.num_classes + self.num_diff_classes + self.num_mapper_classes + self.num_descriptor_classes
                 + self.num_cs_classes)
 
-    def _init_beatmap_idx(self, args: DictConfig) -> None:
+    def _init_beatmap_idx(self, args: DiffusionTrainConfig) -> None:
         """Initializes and caches the beatmap index."""
         if args is None or "train_dataset_path" not in args.data:
             return

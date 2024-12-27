@@ -10,7 +10,6 @@ import numpy as np
 import numpy.typing as npt
 import pandas as pd
 import torch
-from omegaconf import DictConfig
 from pandas import Series, DataFrame
 from slider import Beatmap
 from torch.utils.data import IterableDataset
@@ -19,6 +18,7 @@ from .data_utils import load_audio_file, remove_events_of_type, get_hold_note_ra
     get_hitsounded_status, get_song_length
 from .osu_parser import OsuParser
 from ..tokenizer import Event, EventType, Tokenizer, ContextType
+from ..config import DataConfig
 
 OSZ_FILE_EXTENSION = ".osz"
 AUDIO_FILE_NAME = "audio.mp3"
@@ -44,7 +44,7 @@ class MmrsDataset(IterableDataset):
 
     def __init__(
             self,
-            args: DictConfig,
+            args: DataConfig,
             parser: OsuParser,
             tokenizer: Tokenizer,
             subset_ids: Optional[list[int]] = None,
@@ -79,7 +79,7 @@ class MmrsDataset(IterableDataset):
             self.subset_ids = self._beatmap_set_ids_from_metadata()
         self.sample_weights = self._get_sample_weights(args.sample_weights_path)
 
-    def _validate_args(self, args: DictConfig):
+    def _validate_args(self, args: DataConfig):
         if not args.per_track:
             raise ValueError("MMRS dataset requires per_track to be True")
         if args.only_last_beatmap:
@@ -201,7 +201,7 @@ class BeatmapDatasetIterable:
     def __init__(
             self,
             subset_ids: list[int],
-            args: DictConfig,
+            args: DataConfig,
             path: Path,
             metadata: pd.DataFrame,
             parser: OsuParser,

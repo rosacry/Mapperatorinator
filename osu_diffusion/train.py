@@ -5,7 +5,6 @@ import hydra
 import torch
 from accelerate import Accelerator
 from accelerate.utils import ProjectConfiguration, set_seed
-from omegaconf import DictConfig
 from torch.optim import Optimizer
 from torch.optim.lr_scheduler import LRScheduler, LinearLR, CosineAnnealingLR, SequentialLR
 
@@ -13,6 +12,7 @@ from collections import OrderedDict
 from copy import deepcopy
 from time import time
 
+from config import DiffusionTrainConfig
 from utils.tokenizer import Tokenizer
 from utils.models import DiT_models
 from utils.diffusion import create_diffusion
@@ -58,7 +58,7 @@ def requires_grad_non_embed(model, flag=True):
         param.requires_grad = flag
 
 
-def get_scheduler(optimizer: Optimizer, args: DictConfig, accelerator) -> LRScheduler:
+def get_scheduler(optimizer: Optimizer, args: DiffusionTrainConfig, accelerator) -> LRScheduler:
     scheduler_p1 = LinearLR(
         optimizer,
         start_factor=0.5,

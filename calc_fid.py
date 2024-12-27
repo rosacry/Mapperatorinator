@@ -5,7 +5,6 @@ from pathlib import Path
 import hydra
 import numpy as np
 import torch
-from omegaconf import DictConfig
 from scipy import linalg
 from slider import Beatmap
 from tqdm import tqdm
@@ -13,6 +12,7 @@ from tqdm import tqdm
 from classifier.classify import iterate_examples
 from classifier.libs.model.model import OsuClassifierOutput
 from classifier.libs.utils import load_ckpt
+from config import FidConfig
 from inference import prepare_args, load_diff_model, generate, load_model
 from osuT5.osuT5.dataset.data_utils import load_audio_file
 from osuT5.osuT5.inference import generation_config_from_beatmap, beatmap_config_from_beatmap
@@ -20,7 +20,7 @@ from osuT5.osuT5.tokenizer import ContextType
 from multiprocessing import Manager, Process
 
 
-def get_beatmap_paths(args) -> list[Path]:
+def get_beatmap_paths(args: FidConfig) -> list[Path]:
     beatmap_files = []
     track_names = ["Track" + str(i).zfill(5) for i in range(args.dataset_start, args.dataset_end)]
     for track_name in track_names:
@@ -101,7 +101,7 @@ def calculate_frechet_distance(mu1, sigma1, mu2, sigma2, eps=1e-6):
     return diff.dot(diff) + np.trace(sigma1) + np.trace(sigma2) - 2 * tr_covmean
 
 
-def worker(beatmap_paths, args, return_dict, idx):
+def worker(beatmap_paths, args: FidConfig, return_dict, idx):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     prepare_args(args)
 
@@ -114,7 +114,7 @@ def worker(beatmap_paths, args, return_dict, idx):
     if args.generate_positions:
         diff_model, diff_tokenizer = load_diff_model(args.diff_ckpt, args.diffusion)
 
-        if len(args.diff_refine_ckpt) > 0:
+        if os.path.exists(args.diff_refine_ckpt):
             refine_model = load_diff_model(args.diff_refine_ckpt, args.diffusion)[0]
 
         if args.compile:
@@ -178,7 +178,7 @@ def worker(beatmap_paths, args, return_dict, idx):
 
 
 @hydra.main(config_path="configs", config_name="calc_fid", version_base="1.1")
-def main(args: DictConfig):
+def main(args: FidConfig):
     beatmap_paths = get_beatmap_paths(args)
     num_processes = args.num_processes
 

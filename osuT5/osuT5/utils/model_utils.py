@@ -4,7 +4,6 @@ from multiprocessing.managers import Namespace
 
 import torch
 import numpy as np
-from omegaconf import DictConfig, open_dict
 from torch.optim import Optimizer
 from torch.utils.data import DataLoader, Dataset
 from torch.optim.lr_scheduler import (
@@ -18,6 +17,7 @@ from ..dataset import OrsDataset, OsuParser
 from ..dataset.mmrs_dataset import MmrsDataset
 from ..model.osu_t import OsuT
 from ..tokenizer import Tokenizer
+from ..config import TrainConfig
 
 
 def get_shared_training_state() -> Namespace:
@@ -31,16 +31,16 @@ def get_shared_training_state() -> Namespace:
     return shared
 
 
-def get_model(args: DictConfig, tokenizer: Tokenizer) -> OsuT:
+def get_model(args: TrainConfig, tokenizer: Tokenizer) -> OsuT:
     model = OsuT(args, tokenizer)
     return model
 
 
-def get_tokenizer(args: DictConfig) -> Tokenizer:
+def get_tokenizer(args: TrainConfig) -> Tokenizer:
     return Tokenizer(args)
 
 
-def get_optimizer(model: OsuT, args: DictConfig) -> Optimizer:
+def get_optimizer(model: OsuT, args: TrainConfig) -> Optimizer:
     no_decay = ["bias", "LayerNorm", "layernorm", "layer_norm", "ln"]
 
     optimizer_grouped_parameters = [
@@ -86,7 +86,7 @@ def get_optimizer(model: OsuT, args: DictConfig) -> Optimizer:
     return optimizer
 
 
-def get_scheduler(optimizer: Optimizer, args: DictConfig, accelerator) -> LRScheduler:
+def get_scheduler(optimizer: Optimizer, args: TrainConfig, accelerator) -> LRScheduler:
     scheduler_p1 = LinearLR(
         optimizer,
         start_factor=0.5,
@@ -110,7 +110,7 @@ def get_scheduler(optimizer: Optimizer, args: DictConfig, accelerator) -> LRSche
     return scheduler
 
 
-def get_dataset(args: DictConfig, test: bool, **kwargs) -> Dataset:
+def get_dataset(args: TrainConfig, test: bool, **kwargs) -> Dataset:
     if args.data.dataset_type == "ors":
         return OrsDataset(args=args.data, test=test, **kwargs)
     elif args.data.dataset_type == "mmrs":
@@ -119,7 +119,7 @@ def get_dataset(args: DictConfig, test: bool, **kwargs) -> Dataset:
         raise NotImplementedError
 
 
-def get_dataloaders(tokenizer: Tokenizer, args: DictConfig, shared: Namespace) -> tuple[DataLoader, DataLoader]:
+def get_dataloaders(tokenizer: Tokenizer, args: TrainConfig, shared: Namespace) -> tuple[DataLoader, DataLoader]:
     parser = OsuParser(args, tokenizer)
     dataset = {
         "train": get_dataset(

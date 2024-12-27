@@ -1,34 +1,35 @@
-from os import PathLike
+import os.path
+from functools import reduce
 from pathlib import Path
 
 import hydra
 import torch
 from accelerate.utils import set_seed
-from omegaconf import DictConfig, OmegaConf
+from omegaconf import OmegaConf, DictConfig
 from slider import Beatmap
 
 import osu_diffusion
 import routed_pickle
+from config import InferenceConfig
 from diffusion_pipeline import DiffisionPipeline
-from osuT5.osuT5.dataset.data_utils import events_of_type, TIMING_TYPES
+from osuT5.osuT5.config import TrainConfig
+from osuT5.osuT5.dataset.data_utils import events_of_type, TIMING_TYPES, merge_events
 from osuT5.osuT5.inference import Preprocessor, Processor, Postprocessor, BeatmapConfig, GenerationConfig, \
     generation_config_from_beatmap, beatmap_config_from_beatmap, background_line
 from osuT5.osuT5.inference.super_timing_generator import SuperTimingGenerator
 from osuT5.osuT5.tokenizer import Tokenizer, ContextType
 from osuT5.osuT5.utils import get_model
 from osu_diffusion import DiT_models
+from osu_diffusion.config import DiffusionTrainConfig
 
 
-def prepare_args(args: DictConfig):
+def prepare_args(args: InferenceConfig):
     torch.set_grad_enabled(False)
     torch.set_float32_matmul_precision('high')
     set_seed(args.seed)
-    if isinstance(args.output_type, str):
-        args.output_type = ContextType(args.output_type) if args.output_type != "" else None
-    args.in_context = [ContextType(ctx) for ctx in args.in_context]
 
 
-def get_args_from_beatmap(args: DictConfig, tokenizer: Tokenizer):
+def get_args_from_beatmap(args: InferenceConfig, tokenizer: Tokenizer):
     if args.beatmap_path is None or args.beatmap_path == "":
         return
 
@@ -86,7 +87,7 @@ def get_args_from_beatmap(args: DictConfig, tokenizer: Tokenizer):
     args.preview_time = beatmap_config.preview_time
 
 
-def get_config(args: DictConfig):
+def get_config(args: InferenceConfig):
     # Create tags that describes args
     tags = dict(
         lookback=args.lookback,
@@ -159,10 +160,10 @@ def get_config(args: DictConfig):
 
 
 def generate(
-        args: DictConfig,
+        args: InferenceConfig,
         *,
-        audio_path: PathLike = None,
-        beatmap_path: PathLike = None,
+        audio_path: str = None,
+        beatmap_path: str = None,
         generation_config: GenerationConfig,
         beatmap_config: BeatmapConfig,
         model,
@@ -182,6 +183,7 @@ def generate(
     audio = preprocessor.load(audio_path)
     sequences = preprocessor.segment(audio)
     extra_in_context = {}
+    output_type = args.output_type.copy()
 
     # Auto generate timing if not provided in in_context and required for the model and this output_type
     timing_events, timing_times, timing = None, None, None
@@ -190,8 +192,8 @@ def generate(
         timing_events, timing_times = super_timing_generator.generate(audio, generation_config, verbose=verbose)
         extra_in_context[ContextType.TIMING] = (timing_events, timing_times)
         timing = postprocessor.generate_timing(timing_events)
-    elif (args.output_type == ContextType.TIMING or
-          (ContextType.NONE in args.in_context and args.output_type == ContextType.MAP and
+    elif (ContextType.TIMING in output_type or
+          (ContextType.NONE in args.in_context and ContextType.MAP in output_type and
            not any("none" in ctx["in"] and ctx["out"] == "map" for ctx in args.osut5.data.context_types))):
         # Generate timing and convert in_context to timing context
         timing_events, timing_times = processor.generate(
@@ -204,22 +206,26 @@ def generate(
         timing_events, timing_times = events_of_type(timing_events, timing_times, TIMING_TYPES)
         extra_in_context[ContextType.TIMING] = (timing_events, timing_times)
         timing = postprocessor.generate_timing(timing_events)
+        if ContextType.TIMING in output_type:
+            output_type.remove(ContextType.TIMING)
     elif ContextType.TIMING in args.in_context or (
             args.osut5.data.add_timing and any(t in args.in_context for t in [ContextType.GD, ContextType.NO_HS])):
         # Exact timing is provided in the other beatmap, so we don't need to generate it
-        timing = [tp for tp in Beatmap.from_path(beatmap_path).timing_points if tp.parent is None]
+        timing = [tp for tp in Beatmap.from_path(Path(beatmap_path)).timing_points if tp.parent is None]
 
     # Generate beatmap
-    if args.output_type == ContextType.MAP:
-        events, _ = processor.generate(
+    if len(output_type) > 0:
+        result = processor.generate(
             sequences=sequences,
             generation_config=generation_config,
             in_context=args.in_context,
-            out_context=[args.output_type],
+            out_context=output_type,
             beatmap_path=beatmap_path,
             extra_in_context=extra_in_context,
             verbose=verbose,
-        )[0]
+        )
+
+        events, _ = reduce(lambda x, y: merge_events(x[0], x[1], y[0], y[1]), result)
 
         # Resnap timing events
         if timing is not None:
@@ -228,7 +234,7 @@ def generate(
         events = timing_events
 
     # Generate positions with diffusion
-    if args.generate_positions and args.gamemode in [0, 2] and args.output_type == ContextType.MAP:
+    if args.generate_positions and args.gamemode in [0, 2] and ContextType.MAP in output_type:
         diffusion_pipeline = DiffisionPipeline(args, diff_model, diff_tokenizer, refine_model)
         events = diffusion_pipeline.generate(
             events=events,
@@ -251,8 +257,8 @@ def generate(
 
 
 def load_model(
-        ckpt_path: PathLike,
-        t5_args: DictConfig,
+        ckpt_path: str,
+        t5_args: TrainConfig,
 ):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -271,7 +277,7 @@ def load_model(
     return model, tokenizer
 
 
-def load_diff_model(ckpt_path, diff_args: DictConfig):
+def load_diff_model(ckpt_path, diff_args: DiffusionTrainConfig):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     ckpt_path = Path(ckpt_path)
@@ -292,12 +298,18 @@ def load_diff_model(ckpt_path, diff_args: DictConfig):
 
 
 @hydra.main(config_path="configs", config_name="inference_v28", version_base="1.1")
-def main(args: DictConfig):
-    # args.beatmap_path = "C:\\Users\\Olivier\\AppData\\Local\\osu!\\Songs\\584787 Yuiko Ohara - Hoshi o Tadoreba\\Yuiko Ohara - Hoshi o Tadoreba (Yumeno Himiko) [015's Hard].osu"
+def main(args: InferenceConfig):
+    args.beatmap_path = "C:\\Users\\Olivier\\AppData\\Local\\osu!\\Songs\\584787 Yuiko Ohara - Hoshi o Tadoreba\\Yuiko Ohara - Hoshi o Tadoreba (Yumeno Himiko) [015's Hard].osu"
     # args.beatmap_path = "C:\\Users\\Olivier\\AppData\\Local\\osu!\\Songs\\859916 DJ Noriken (Remixed _ Covered by Camellia) - Jingle (Metal Arrange _ Cover)\\DJ Noriken (Remixed  Covered by Camellia) - Jingle (Metal Arrange  Cover) (StunterLetsPlay) [Extra].osu"
     # args.beatmap_path = "C:\\Users\\Olivier\\AppData\\Local\\osu!\\Songs\\989342 Denkishiki Karen Ongaku Shuudan - Aoki Kotou no Anguis\\Denkishiki Karen Ongaku Shuudan - Aoki Kotou no Anguis (OliBomby) [Ardens Spes].osu"
-    # args.beatmap_path = "C:\\Users\\Olivier\\AppData\\Local\\osu!\\Songs\\qyoh for upload\\Camellia - Qyoh (Nine Stars) (OliBomby) [Yoalteuctin (Rabbit Hole Collab)].osu"
-    # args.beatmap_path = "C:\\Users\\Olivier\\AppData\\Local\\osu!\\Songs\\1903968 Kisumi Reika - Sekai wa Futari no Tame ni\\Kisumi Reika - Sekai wa Futari no Tame ni (Ayesha Altugle) [Normal].osu"
+    # args.beatmap_path = "C:\\Users\\Olivier\\AppData\\Local\\osu!\\Songs\\Kou_ - RE_generate_fractal (OliBomby)\\Kou! - RE_generatefractal (OliBomby) [I love lazer hexgrid].osu"
+    # args.beatmap_path = "C:\\Users\\Olivier\\AppData\\Local\\osu!\\Songs\\the answer\\MIMI - Answer (feat. Wanko) (OliBomby) [AI's Insane].osu"
+    # args.beatmap_path = "C:\\Users\\Olivier\\AppData\\Local\\osu!\\Songs\\518426 Bernd Krueger - Sonata No14 in cis-Moll, Op 27-2 - 3 Satz\\Bernd Krueger - Sonata No.14 in cis-Moll, Op. 272 - 3. Satz (Fenza) [Presto Agitato].osu"
+    # args.beatmap_path = "C:\\Users\\Olivier\\AppData\\Local\\osu!\\Songs\\2036508 Sydosys - Lunar Gateway\\Sydosys - Lunar Gateway (Gamelan4) [Hivie's Oni].osu"
+    # args.beatmap_path = "C:\\Users\\Olivier\\AppData\\Local\\osu!\\Songs\\1790119 THE ORAL CIGARETTES - ReI\\THE ORAL CIGARETTES - ReI (Sotarks) [Cataclysm.].osu"
+    # args.beatmap_path = "C:\\Users\\Olivier\\AppData\\Local\\osu!\\Songs\\634147 Kaneko Chiharu - iLLness LiLin\\Kaneko Chiharu - iLLness LiLin (Kroytz) [TERMiNALLY iLL].osu"
+    # args.beatmap_path = r"C:\Users\Olivier\AppData\Local\osu!\Songs\613207 Araki - Chiisana Koi no Uta (Synth Rock Cover)\Araki - Chiisana Koi no Uta (Synth Rock Cover) (Shishou) [Extreme].osu"
+    # args.beatmap_path = r"/opt/project/test/beatmap/beatmap.osu"
 
     prepare_args(args)
 
@@ -307,7 +319,7 @@ def main(args: DictConfig):
     if args.generate_positions:
         diff_model, diff_tokenizer = load_diff_model(args.diff_ckpt, args.diffusion)
 
-        if len(args.diff_refine_ckpt) > 0:
+        if os.path.exists(args.diff_refine_ckpt):
             refine_model = load_diff_model(args.diff_refine_ckpt, args.diffusion)[0]
 
         if args.compile:

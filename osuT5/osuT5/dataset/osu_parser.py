@@ -5,16 +5,16 @@ from typing import Tuple, Optional
 
 import numpy as np
 import numpy.typing as npt
-from omegaconf import DictConfig
 from slider import Beatmap, Circle, Slider, Spinner, HoldNote, TimingPoint
 from slider.curve import Linear, Catmull, Perfect, MultiBezier
 
 from ..tokenizer import Event, EventType, Tokenizer
 from .data_utils import merge_events, speed_events, get_median_mpb_beatmap
+from ..config import TrainConfig
 
 
 class OsuParser:
-    def __init__(self, args: DictConfig, tokenizer: Tokenizer) -> None:
+    def __init__(self, args: TrainConfig, tokenizer: Tokenizer) -> None:
         self.types_first = args.data.types_first
         self.add_timing = args.data.add_timing
         self.add_snapping = args.data.add_snapping

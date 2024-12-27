@@ -7,7 +7,6 @@ import torch
 import wandb
 from accelerate import Accelerator
 from accelerate.logging import get_logger
-from omegaconf import DictConfig
 from torch import nn
 from torch.optim import Optimizer
 from torch.optim.lr_scheduler import LRScheduler
@@ -18,6 +17,7 @@ from ..model.modeling_nwhisper import NWhisperForConditionalGeneration
 from ..tokenizer import Tokenizer, EventType, ContextType
 from ..model import OsuT
 from .log_utils import Averager
+from ..config import TrainConfig
 
 logger = get_logger(__name__)
 
@@ -42,7 +42,7 @@ def add_prefix(prefix: str, stats: dict[str, float]):
     return {f"{prefix}/{k}": v for k, v in stats.items()}
 
 
-def maybe_save_checkpoint(accelerator: Accelerator, args: DictConfig, shared: Namespace):
+def maybe_save_checkpoint(accelerator: Accelerator, args: TrainConfig, shared: Namespace):
     if (
             shared.current_train_step > args.optim.total_steps
             or shared.current_train_step % args.checkpoint.every_steps == 0
@@ -95,7 +95,7 @@ def maybe_eval(
         accelerator: Accelerator,
         dataloader: DataLoader,
         tokenizer: Tokenizer,
-        args: DictConfig,
+        args: TrainConfig,
         shared: Namespace,
 ):
     if (
@@ -116,7 +116,7 @@ def maybe_logging(
         accelerator: Accelerator,
         optimizer: Optimizer,
         averager: Averager,
-        args: DictConfig,
+        args: TrainConfig,
         shared: Namespace,
 ):
     def extra_stats(args, shared, model, optimizer):
@@ -152,7 +152,7 @@ def maybe_logging(
 def maybe_grad_clip_and_grad_calc(
         model: OsuT,
         accelerator: Accelerator,
-        args: DictConfig,
+        args: TrainConfig,
 ):
     if args.optim.grad_clip > 0:
         grad_l2 = accelerator.clip_grad_norm_(
@@ -183,7 +183,7 @@ def eval_model(
         accelerator: Accelerator,
         dataloader: DataLoader,
         tokenizer: Tokenizer,
-        args: DictConfig,
+        args: TrainConfig,
         shared: Namespace,
 ):
     shared.last_log = time.time()
@@ -269,7 +269,7 @@ def calc_loss(loss_fn, logits, labels, sample_weights):
     return unreduced_loss.sum() / (labels != LABEL_IGNORE_ID).sum()
 
 
-def get_stats(loss, preds, labels, tokenizer, args: DictConfig):
+def get_stats(loss, preds, labels, tokenizer, args: TrainConfig):
     stats = {"loss": loss.detach(),
              "timing_acc": acc_range(preds, labels, tokenizer.event_start[EventType.TIME_SHIFT],
                                      tokenizer.event_end[EventType.TIME_SHIFT]),
@@ -327,7 +327,7 @@ def train(
         lr_scheduler: LRScheduler,
         optimizer: Optimizer,
         tokenizer: Tokenizer,
-        args: DictConfig,
+        args: TrainConfig,
         shared: Namespace,
         profiler=None,
 ):
@@ -386,7 +386,7 @@ def train_profiling(
         lr_scheduler: LRScheduler,
         optimizer: Optimizer,
         tokenizer: Tokenizer,
-        args: DictConfig,
+        args: TrainConfig,
         shared: Namespace,
 ):
     tensorboard_trace_handler = torch.profiler.tensorboard_trace_handler(

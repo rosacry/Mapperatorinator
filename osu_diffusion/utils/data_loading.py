@@ -10,7 +10,6 @@ from typing import Optional
 
 import torch
 import tqdm
-from omegaconf import DictConfig
 from slider import Position
 from slider.beatmap import Beatmap
 from slider.beatmap import HitObject
@@ -25,6 +24,7 @@ from torch.utils.data import IterableDataset
 
 from .positional_embedding import timestep_embedding
 from .tokenizer import Tokenizer
+from ..config import DataConfig
 
 playfield_size = torch.tensor((512, 384))
 feature_size = 19
@@ -226,7 +226,7 @@ def get_difficulty(metadata: dict, beatmap_name: str, double_time: bool = False)
 
 
 def get_class_vector(
-        args: DictConfig,
+        args: DataConfig,
         tokenizer: Tokenizer,
         beatmap: Beatmap,
         beatmap_name: str,
@@ -283,7 +283,7 @@ class BeatmapDatasetIterable:
     def __init__(
         self,
         beatmap_files: list[Path],
-        args: DictConfig,
+        args: DataConfig,
         tokenizer: Tokenizer,
     ):
         self.beatmap_files = beatmap_files
@@ -376,7 +376,7 @@ class InterleavingBeatmapDatasetIterable:
 class BeatmapDataset(IterableDataset):
     def __init__(
         self,
-        args: DictConfig,
+        args: DataConfig,
         tokenizer: Tokenizer,
         beatmap_files: Optional[list[Path]] = None,
     ):
@@ -479,7 +479,7 @@ class CachedDataset(Dataset):
 
 def cache_dataset(
         out_path: str,
-        args: DictConfig,
+        args: DataConfig,
         tokenizer: Tokenizer,
         beatmap_files: Optional[list[str]] = None,
 ):
@@ -522,7 +522,7 @@ def get_cached_data_loader(
 
 
 def get_data_loader(
-        args: DictConfig,
+        args: DataConfig,
         tokenizer: Tokenizer,
         pin_memory: bool = False,
         drop_last: bool = False,
