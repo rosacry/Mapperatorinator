@@ -326,7 +326,7 @@ class Processor(object):
 
             iterator = tqdm(zip(*sequences)) if verbose else zip(*sequences)
             for sequence_index, (frames, frame_time) in enumerate(iterator):
-                trim_lookahead = sequence_index != len(sequences) - 1
+                trim_lookahead = sequence_index != len(sequences[0]) - 1
                 # noinspection PyUnresolvedReferences
                 frames = frames.to(self.device).unsqueeze(0)
                 frame_time = frame_time.item()
@@ -629,7 +629,7 @@ class Processor(object):
         eos_token_id = [self.tokenizer.eos_id]
         if trim_lookahead:
             eos_token_id += self.lookahead_time_range
-        if context_type is not None:
+        if self.add_out_context_types and context_type is not None:
             eos_token_id.append(self.tokenizer.context_eos[context_type])
         return eos_token_id
 
