@@ -4,7 +4,7 @@ defaults:
   - diffusion: v1
   - _self_
 
-version: 'osuT5 V25'        # Beatmap version
+version: 'Mapperatorinator V25'        # Beatmap version
 lookback: 0.5             # Fraction of audio sequence to fill with tokens from previous inference window
 lookahead: 0.4            # Fraction of audio sequence to skip at the end of the audio window
 in_context: [NONE]        # Context type of other beatmap
