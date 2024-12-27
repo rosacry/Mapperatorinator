@@ -4,7 +4,6 @@ from typing import Optional
 
 import torch
 import torch.nn as nn
-from omegaconf import DictConfig
 from transformers import T5Config, T5ForConditionalGeneration, WhisperForConditionalGeneration, WhisperConfig, \
     PreTrainedModel
 from transformers.modeling_outputs import Seq2SeqLMOutput
@@ -14,11 +13,12 @@ from .configuration_nwhisper import NWhisperConfig
 from .modeling_nwhisper import NWhisperForConditionalGeneration
 from ..model.spectrogram import MelSpectrogram
 from ..tokenizer import Tokenizer, EventType
+from ..config import TrainConfig
 
 LABEL_IGNORE_ID = -100
 
 
-def get_backbone_config(args, tokenizer: Tokenizer):
+def get_backbone_config(args: TrainConfig, tokenizer: Tokenizer):
     if args.model.name.startswith("google/t5"):
         config = T5Config.from_pretrained(args.model.name)
     elif args.model.name.startswith("openai/whisper"):
@@ -88,7 +88,7 @@ class OsuT(PreTrainedModel):
     _supports_cache_class = True
     _supports_static_cache = True
 
-    def __init__(self, args: DictConfig, tokenizer: Tokenizer):
+    def __init__(self, args: TrainConfig, tokenizer: Tokenizer):
         config = get_backbone_config(args, tokenizer)
         d_model = config.d_model
 

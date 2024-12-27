@@ -4,11 +4,11 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-from omegaconf import DictConfig
 from pandas import DataFrame
 from tqdm import tqdm
 
 from .event import Event, EventType, EventRange, ContextType
+from .config import TrainConfig
 
 MILISECONDS_PER_SECOND = 1000
 MILISECONDS_PER_STEP = 10
@@ -40,7 +40,7 @@ class Tokenizer:
         "metadata",
     ]
 
-    def __init__(self, args: DictConfig = None):
+    def __init__(self, args: TrainConfig = None):
         """Fixed vocabulary tokenizer."""
         self.offset = 3
         self.beatmap_idx: dict[int, int] = {}  # beatmap_id -> beatmap_idx
@@ -438,14 +438,14 @@ class Tokenizer:
         """Converts global sv into token id."""
         return self.encode(Event(type=EventType.GLOBAL_SV, value=round(np.clip(global_sv, 0.4, 3.6) * 100)))
 
-    def _init_beatmap_idx(self, args: DictConfig) -> None:
+    def _init_beatmap_idx(self, args: TrainConfig) -> None:
         """Initializes and caches the beatmap index."""
         if args.data.dataset_type == "ors":
             self._init_beatmap_idx_ors(args)
         elif args.data.dataset_type == "mmrs":
             self._init_beatmap_idx_mmrs(args)
 
-    def _init_beatmap_idx_ors(self, args: DictConfig) -> None:
+    def _init_beatmap_idx_ors(self, args: TrainConfig) -> None:
         if args is None or "train_dataset_path" not in args.data:
             return
 
@@ -472,10 +472,10 @@ class Tokenizer:
         with open(cache_path, "wb") as f:
             pickle.dump(self.beatmap_idx, f)  # type: ignore
 
-    def _init_beatmap_idx_mmrs(self, args: DictConfig) -> None:
+    def _init_beatmap_idx_mmrs(self, args: TrainConfig) -> None:
         self.beatmap_idx = self.metadata.reset_index().set_index(["Id"])["BeatmapIdx"].to_dict()
 
-    def _get_metadata(self, args: DictConfig) -> DataFrame:
+    def _get_metadata(self, args: TrainConfig) -> DataFrame:
         df = pd.read_parquet(Path(args.data.train_dataset_path) / "metadata.parquet")
         df["BeatmapIdx"] = df.index
         df.set_index(["BeatmapSetId", "Id"], inplace=True)

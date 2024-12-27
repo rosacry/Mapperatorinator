@@ -2,8 +2,8 @@ import hydra
 import torch
 from accelerate import Accelerator, DistributedDataParallelKwargs
 from accelerate.utils import ProjectConfiguration
-from omegaconf import DictConfig
 
+from osuT5.config import TrainConfig
 from osuT5.utils import (
     setup_args,
     train,
@@ -18,7 +18,7 @@ from osuT5.utils import (
 
 
 @hydra.main(config_path="../configs/osut5", config_name="train_v28", version_base="1.1")
-def main(args: DictConfig):
+def main(args: TrainConfig):
     ddp_kwargs = DistributedDataParallelKwargs(find_unused_parameters=False)
     accelerator = Accelerator(
         cpu=args.device == "cpu",

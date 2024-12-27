@@ -2,10 +2,12 @@ import torch
 import os
 
 from accelerate.utils import set_seed
-from omegaconf import open_dict, DictConfig
+from omegaconf import open_dict
+
+from ..config import TrainConfig
 
 
-def check_args_and_env(args: DictConfig) -> None:
+def check_args_and_env(args: TrainConfig) -> None:
     assert args.optim.batch_size % args.optim.grad_acc == 0
     # Train log must happen before eval log
     assert args.eval.every_steps % args.logging.every_steps == 0
@@ -14,13 +16,13 @@ def check_args_and_env(args: DictConfig) -> None:
         assert torch.cuda.is_available(), "We use GPU to train/eval the model"
 
 
-def opti_flags(args: DictConfig) -> None:
+def opti_flags(args: TrainConfig) -> None:
     # This lines reduce training step by 2.4x
     torch.backends.cuda.matmul.allow_tf32 = True
     torch.backends.cudnn.allow_tf32 = True
 
 
-def update_args_with_env_info(args: DictConfig) -> None:
+def update_args_with_env_info(args: TrainConfig) -> None:
     with open_dict(args):
         slurm_id = os.getenv("SLURM_JOB_ID")
 
@@ -32,7 +34,7 @@ def update_args_with_env_info(args: DictConfig) -> None:
         args.working_dir = os.getcwd()
 
 
-def setup_args(args: DictConfig) -> None:
+def setup_args(args: TrainConfig) -> None:
     check_args_and_env(args)
     update_args_with_env_info(args)
     opti_flags(args)

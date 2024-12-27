@@ -2,9 +2,9 @@ import pickle
 from pathlib import Path
 
 import torch
-from omegaconf import DictConfig
 from tqdm import tqdm
 
+from config import InferenceConfig
 from osu_diffusion import timestep_embedding, Tokenizer
 from osu_diffusion import repeat_type
 from osu_diffusion import create_diffusion
@@ -25,7 +25,7 @@ def get_beatmap_idx(path) -> dict[int, int]:
 class DiffisionPipeline(object):
     def __init__(
             self,
-            args: DictConfig,
+            args: InferenceConfig,
             model: DiT,
             tokenizer: Tokenizer,
             refine_model: DiT = None,

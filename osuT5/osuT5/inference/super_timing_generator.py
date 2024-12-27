@@ -1,21 +1,21 @@
 import numpy as np
 import numpy.typing as npt
-from omegaconf import DictConfig
 from scipy.ndimage import gaussian_filter1d
 from scipy.signal import find_peaks
 from tqdm import tqdm
 
+from config import InferenceConfig
 from ..dataset.data_utils import get_groups, BEAT_TYPES
 from ..tokenizer import ContextType, EventType, Event
 from .preprocessor import Preprocessor
 from .processor import Processor, GenerationConfig, MILISECONDS_PER_SECOND
-from ..tokenizer.tokenizer import MILISECONDS_PER_STEP
+from ..tokenizer import MILISECONDS_PER_STEP
 
 
 class SuperTimingGenerator:
     def __init__(
             self,
-            args: DictConfig,
+            args: InferenceConfig,
             model,
             tokenizer,
     ):

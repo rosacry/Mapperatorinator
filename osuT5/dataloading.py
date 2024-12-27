@@ -3,9 +3,9 @@ import multiprocessing
 import hydra
 import tqdm
 from matplotlib import pyplot as plt
-from omegaconf import DictConfig
 from torch.utils.data import DataLoader
 
+from osuT5.config import TrainConfig
 from osuT5.dataset import OsuParser
 from osuT5.dataset.ors_dataset import STEPS_PER_MILLISECOND
 from osuT5.model.spectrogram import MelSpectrogram
@@ -19,7 +19,7 @@ from osuT5.utils import (
 
 
 @hydra.main(config_path="../configs/osut5", config_name="train_v28", version_base="1.1")
-def main(args: DictConfig):
+def main(args: TrainConfig):
     setup_args(args)
 
     mgr = multiprocessing.Manager()

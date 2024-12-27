@@ -19,7 +19,7 @@ descriptors: []         # List of descriptors to use for style
 negative_descriptors: []# List of descriptors to avoid when using classifier-free guidance
 timing_leniency: 20     # Number of milliseconds of error to allow for timing generation
 in_context: []          # Context types of other beatmap(s)
-output_type: 'map'      # Output type (map, timing)
+output_type: [MAP]    # Output type (map, timing)
 seed: 0                 # Random seed
 cfg_scale: 1.0              # Scale of classifier-free guidance
 temperature: 1.0        # Sampling temperature

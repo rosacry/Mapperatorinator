@@ -1,4 +1,5 @@
 defaults:
+  - base_inference
   - inference
   - osut5: train_v26
   - diffusion: v1
@@ -7,7 +8,7 @@ defaults:
 version: 'osuT5 V26'        # Beatmap version
 lookback: 0.5             # Fraction of audio sequence to fill with tokens from previous inference window
 lookahead: 0.4            # Fraction of audio sequence to skip at the end of the audio window
-in_context: ["none"]        # Context type of other beatmap
+in_context: [NONE]        # Context type of other beatmap
 timing_temperature: 0.1 # Sampling temperature for timing
 
 # Diffusion settings

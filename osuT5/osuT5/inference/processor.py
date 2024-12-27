@@ -2,18 +2,17 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from functools import partial
-from os import PathLike
 from pathlib import Path
 from typing import Any, Optional
 
 import numpy as np
 import torch
 import torch.nn.functional as F
-from omegaconf import DictConfig
 from slider import Beatmap
 from tqdm import tqdm
 from transformers import LogitsProcessorList, LogitsProcessor
 
+from config import InferenceConfig
 from ..dataset import OsuParser
 from ..dataset.data_utils import (update_event_times, remove_events_of_type, get_hold_note_ratio,
                                   get_scroll_speed_ratio, get_hitsounded_status)
@@ -130,7 +129,7 @@ class ConditionalTemperatureLogitsWarper(LogitsProcessor):
 
 
 class Processor(object):
-    def __init__(self, args: DictConfig, model: OsuT, tokenizer: Tokenizer, parallel: bool = False):
+    def __init__(self, args: InferenceConfig, model: OsuT, tokenizer: Tokenizer, parallel: bool = False):
         """Model inference stage that processes sequences."""
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.args = args
@@ -168,7 +167,7 @@ class Processor(object):
         self.add_sv = args.osut5.data.add_sv
         self.add_mania_sv = args.osut5.data.add_mania_sv
         self.context_types: list[dict[str, list[ContextType]]] = \
-            [{k: [ContextType(t) for t in v] for k, v in ct} for ct in args.osut5.data.context_types]
+            [{k: [ContextType(t) for t in v] for k, v in ct.items()} for ct in args.osut5.data.context_types]
         self.add_out_context_types = args.osut5.data.add_out_context_types
 
         if self.add_positions:
@@ -200,7 +199,7 @@ class Processor(object):
         if self.timeshift_bias != 0:
             self.base_logit_processor.append(TimeshiftBias(self.timeshift_bias, self.time_range))
 
-        self.generate = partial(
+        self._generate = partial(
             self.model.generate,
             top_p=self.top_p,
             top_k=self.top_k,
@@ -218,7 +217,7 @@ class Processor(object):
             generation_config: GenerationConfig,
             in_context: list[ContextType] = None,
             out_context: list[ContextType] = None,
-            beatmap_path: Optional[PathLike] = None,
+            beatmap_path: Optional[str] = None,
             extra_in_context: Optional[dict[ContextType, tuple[list[Event], list[int]]]] = None,
             verbose: bool = True,
     ) -> list[tuple[list[Event], list[int]]]:
@@ -338,7 +337,7 @@ class Processor(object):
                     self.prepare_context_sequences(out_context[:i + 1], frame_time, True),
                 )
 
-                result = self.generate(
+                result = self._generate(
                     frames,
                     decoder_input_ids=cond_prompt,
                     beatmap_idx=beatmap_idx,
@@ -387,7 +386,7 @@ class Processor(object):
             uncond_prompt = None
 
         # Start generation
-        result = self.generate(
+        result = self._generate(
             frames,
             decoder_input_ids=cond_prompt,
             beatmap_idx=beatmap_idx,
@@ -415,7 +414,7 @@ class Processor(object):
     def get_context(
             self,
             context: ContextType,
-            beatmap_path: PathLike,
+            beatmap_path: str,
             extra_in_context: Optional[dict[ContextType, tuple[list[Event], list[int]]]],
             song_length: float,
             add_type: bool,
@@ -508,6 +507,8 @@ class Processor(object):
                     descriptors=generation_config.negative_descriptors,
                 ), song_length)
                 context_data["add_pre_tokens"] = self.add_pre_tokens
+
+            out.append(context_data)
         return out
 
     def get_class_vector(

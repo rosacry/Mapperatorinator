@@ -4,14 +4,13 @@ import dataclasses
 import os
 import uuid
 from datetime import timedelta
-from os import PathLike
 from string import Template
 from typing import Optional
 
 import numpy as np
-from omegaconf import DictConfig
 from slider import TimingPoint, Beatmap
 
+from config import InferenceConfig
 from .slider_path import SliderPath
 from .timing_points_change import TimingPointsChange, sort_timing_points
 from ..dataset.data_utils import get_groups, Group, get_median_mpb, BEAT_TYPES
@@ -113,7 +112,7 @@ def position_to_progress(slider_path: SliderPath, pos: np.ndarray) -> np.ndarray
 
 
 class Postprocessor(object):
-    def __init__(self, args: DictConfig):
+    def __init__(self, args: InferenceConfig):
         """Postprocessing stage that converts a list of Event objects to a beatmap file."""
         self.curve_type_shorthand = {
             "B": "Bezier",
@@ -397,7 +396,7 @@ class Postprocessor(object):
             result = template.safe_substitute({**beatmap_config, **hit_objects, **timing_points})
             return result
 
-    def write_result(self, result: str, output_path: PathLike):
+    def write_result(self, result: str, output_path: str):
         # Write .osu file to directory
         osu_path = os.path.join(output_path, f"beatmap{str(uuid.uuid4().hex)}{OSU_FILE_EXTENSION}")
         with open(osu_path, "w") as osu_file:

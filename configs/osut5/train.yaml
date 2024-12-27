@@ -1,3 +1,6 @@
+defaults:
+  - base_train
+
 compile: true          # PyTorch 2.0 optimization
 device: gpu             # Training device (cpu/gpu)
 precision: 'bf16'         # Enable mixed precision (no/fp16/bf16/fp8)
@@ -58,9 +61,9 @@ data:                  # Data settings
   rhythm_weight: 1.0    # Weight of rhythm tokens in the loss calculation
   lookback: 0             # Fraction of audio sequence to fill with tokens from previous inference window
   lookahead: 0            # Fraction of audio sequence to skip at the end of the audio window
-  context_types: [
-    {"in": [], "out": ["map"]},
-  ]      # List of context types to include in the dataset
+  context_types:      # List of context types to include in the dataset
+    - "in": []
+      "out": ['${context_type:map}']
   context_weights: []    # List of weights for each context type. Determines how often each context type is sampled
   descriptors_path: ''   # Path to file with all beatmap descriptors
   mappers_path: ''       # Path to file with all beatmap mappers

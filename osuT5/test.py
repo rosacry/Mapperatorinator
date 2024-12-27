@@ -9,10 +9,10 @@ import wandb
 from accelerate import Accelerator
 from accelerate.logging import get_logger
 from accelerate.utils import ProjectConfiguration
-from omegaconf import DictConfig
 from torch import nn
 from tqdm import tqdm
 
+from osuT5.config import TrainConfig
 from osuT5.dataset.ors_dataset import STEPS_PER_MILLISECOND, LABEL_IGNORE_ID
 from osuT5.tokenizer import ContextType
 from osuT5.utils import calc_loss, get_stats
@@ -27,7 +27,7 @@ from osuT5.utils import (
 logger = get_logger(__name__)
 
 
-def test(args: DictConfig, accelerator: Accelerator, model, tokenizer, preprefix: str):
+def test(args: TrainConfig, accelerator: Accelerator, model, tokenizer, preprefix: str):
     setup_args(args)
 
     shared = get_shared_training_state()
@@ -219,7 +219,7 @@ def test(args: DictConfig, accelerator: Accelerator, model, tokenizer, preprefix
 
 
 @hydra.main(config_path="../configs/osut5", config_name="train_v28", version_base="1.1")
-def main(args: DictConfig):
+def main(args: TrainConfig):
     accelerator = Accelerator(
         cpu=args.device == "cpu",
         mixed_precision=args.precision,

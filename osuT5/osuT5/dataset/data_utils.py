@@ -1,5 +1,4 @@
 import dataclasses
-from os import PathLike
 from pathlib import Path
 from typing import Optional
 
@@ -20,7 +19,7 @@ BEAT_TYPES = [
 TIMING_TYPES = BEAT_TYPES + [EventType.TIME_SHIFT]
 
 
-def load_audio_file(file: PathLike, sample_rate: int, speed: float = 1.0) -> npt.NDArray:
+def load_audio_file(file: str, sample_rate: int, speed: float = 1.0) -> npt.NDArray:
     """Load an audio file as a numpy time-series array
 
     The signals are resampled, converted to mono channel, and normalized.

@@ -1,17 +1,15 @@
 from __future__ import annotations
 
-from os import PathLike
-
 import torch
 import numpy as np
 import numpy.typing as npt
-from omegaconf import DictConfig
 
+from config import InferenceConfig
 from ..dataset.data_utils import load_audio_file, MILISECONDS_PER_SECOND
 
 
 class Preprocessor(object):
-    def __init__(self, args: DictConfig, parallel: bool = False):
+    def __init__(self, args: InferenceConfig, parallel: bool = False):
         """Preprocess audio data into sequences."""
         self.frame_seq_len = args.osut5.data.src_seq_len - 1
         self.frame_size = args.osut5.data.hop_length
@@ -23,7 +21,7 @@ class Preprocessor(object):
             self.sequence_stride = self.samples_per_sequence
         self.miliseconds_per_stride = self.sequence_stride * MILISECONDS_PER_SECOND / self.sample_rate
 
-    def load(self, path: PathLike) -> npt.ArrayLike:
+    def load(self, path: str) -> npt.ArrayLike:
         """Load an audio file as audio frames. Convert stereo to mono, normalize.
 
         Args:

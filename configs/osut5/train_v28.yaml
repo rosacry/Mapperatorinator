@@ -29,11 +29,13 @@ data:                  # Data settings
   src_seq_len: 1024
   tgt_seq_len: 2048
   rhythm_weight: 3.0    # Weight of rhythm tokens in the loss calculation
-  context_types: [
-    {"in": ["none"], "out": ["timing", "kiai", "map", "sv"]},
-    {"in": ["no_hs"], "out": ["timing", "kiai", "map", "sv"]},
-    {"in": ["gd"], "out": ["timing", "kiai", "map", "sv"]}
-  ]      # List of context types to include in the dataset
+  context_types:       # List of context types to include in the dataset
+    - "in": ['${context_type:none}']
+      "out": ['${context_type:timing}', '${context_type:kiai}', '${context_type:map}', '${context_type:sv}']
+    - "in": ['${context_type:no_hs}']
+      "out": ['${context_type:timing}', '${context_type:kiai}', '${context_type:map}', '${context_type:sv}']
+    - "in": ['${context_type:gd}']
+      "out": ['${context_type:timing}', '${context_type:kiai}', '${context_type:map}', '${context_type:sv}']
   context_weights: [4, 1, 1]    # List of weights for each context type. Determines how often each context type is sampled
   add_timing: false      # Interweave timing tokens with the beatmap tokens
   add_out_context_types: true  # Add tokens indicating types of the out context

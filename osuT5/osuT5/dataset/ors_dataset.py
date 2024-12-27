@@ -10,13 +10,13 @@ from pathlib import Path
 import numpy as np
 import numpy.typing as npt
 import torch
-from omegaconf import DictConfig
 from slider import Beatmap
 from torch.utils.data import IterableDataset
 
 from .data_utils import load_audio_file, remove_events_of_type
 from .osu_parser import OsuParser
 from ..tokenizer import Event, EventType, Tokenizer, ContextType
+from ..config import DataConfig
 
 OSZ_FILE_EXTENSION = ".osz"
 AUDIO_FILE_NAME = "audio.mp3"
@@ -41,7 +41,7 @@ class OrsDataset(IterableDataset):
 
     def __init__(
             self,
-            args: DictConfig,
+            args: DataConfig,
             parser: OsuParser,
             tokenizer: Tokenizer,
             beatmap_files: Optional[list[Path]] = None,
@@ -70,7 +70,7 @@ class OrsDataset(IterableDataset):
         self.shared = shared
         self.sample_weights = self._get_sample_weights(args.sample_weights_path)
 
-    def _validate_args(self, args: DictConfig):
+    def _validate_args(self, args: DataConfig):
         if args.gamemodes != [0]:
             raise ValueError("ORS dataset only supports gamemode 0")
         if args.add_kiai:
@@ -210,7 +210,7 @@ class BeatmapDatasetIterable:
     def __init__(
             self,
             beatmap_files: list[Path],
-            args: DictConfig,
+            args: DataConfig,
             parser: OsuParser,
             tokenizer: Tokenizer,
             test: bool,

@@ -1,3 +1,6 @@
+defaults:
+  - base_train
+
 compile: true
 device: gpu
 precision: 'bf16'              # Precision
