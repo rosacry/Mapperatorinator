@@ -254,7 +254,8 @@ class Processor(object):
         if len(viable_templates) == 0:
             raise ValueError("No viable template found for the given context types. Candidates are: " + str(self.context_types))
 
-        template = viable_templates[0]
+        # Use the template with the most non-none in context
+        template = max(viable_templates, key=lambda ct: sum(1 for ic in ct["in"] if ic != ContextType.NONE))
         all_out_context = template["out"].copy()
 
         # Only generate SV in mania mode
