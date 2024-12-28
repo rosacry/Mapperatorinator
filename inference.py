@@ -310,7 +310,7 @@ def main(args: InferenceConfig):
     # args.beatmap_path = "C:\\Users\\Olivier\\AppData\\Local\\osu!\\Songs\\the answer\\MIMI - Answer (feat. Wanko) (OliBomby) [AI's Insane].osu"
     # args.beatmap_path = "C:\\Users\\Olivier\\AppData\\Local\\osu!\\Songs\\518426 Bernd Krueger - Sonata No14 in cis-Moll, Op 27-2 - 3 Satz\\Bernd Krueger - Sonata No.14 in cis-Moll, Op. 272 - 3. Satz (Fenza) [Presto Agitato].osu"
     # args.beatmap_path = "C:\\Users\\Olivier\\AppData\\Local\\osu!\\Songs\\2036508 Sydosys - Lunar Gateway\\Sydosys - Lunar Gateway (Gamelan4) [Hivie's Oni].osu"
-    # args.beatmap_path = "C:\\Users\\Olivier\\AppData\\Local\\osu!\\Songs\\1790119 THE ORAL CIGARETTES - ReI\\THE ORAL CIGARETTES - ReI (Sotarks) [Cataclysm.].osu"
+    args.beatmap_path = "C:\\Users\\Olivier\\AppData\\Local\\osu!\\Songs\\1790119 THE ORAL CIGARETTES - ReI\\THE ORAL CIGARETTES - ReI (Sotarks) [Cataclysm.].osu"
     # args.beatmap_path = "C:\\Users\\Olivier\\AppData\\Local\\osu!\\Songs\\634147 Kaneko Chiharu - iLLness LiLin\\Kaneko Chiharu - iLLness LiLin (Kroytz) [TERMiNALLY iLL].osu"
     # args.beatmap_path = r"C:\Users\Olivier\AppData\Local\osu!\Songs\613207 Araki - Chiisana Koi no Uta (Synth Rock Cover)\Araki - Chiisana Koi no Uta (Synth Rock Cover) (Shishou) [Extreme].osu"
     # args.beatmap_path = r"/opt/project/test/beatmap/beatmap.osu"
