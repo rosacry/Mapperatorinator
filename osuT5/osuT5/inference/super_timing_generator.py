@@ -51,6 +51,9 @@ class SuperTimingGenerator:
         tpbs = []
         measure_counts = []
 
+        if verbose:
+            print("Generating timing")
+
         iterator = tqdm(range(iterations)) if verbose else range(iterations)
         for _ in iterator:
             audio_offset = np.random.randint(-(self.miliseconds_per_sequence // 2), self.miliseconds_per_sequence // 2)
