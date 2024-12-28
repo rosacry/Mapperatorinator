@@ -742,21 +742,18 @@ class BeatmapDatasetIterable:
             # Randomly select a context type with probabilities of context_weights
             context_info = random.choices(self.args.context_types, weights=self.args.context_weights)[0]
 
-            if isinstance(context_info, str):
-                context_info = {"out": ["map"], "in": [context_info]}
-            else:
-                # It's important to copy the context_info because we will modify it, and we don't want to permanently change the config
-                context_info = context_info.copy()
+            # It's important to copy the context_info because we will modify it, and we don't want to permanently change the config
+            context_info = context_info.copy()
 
-            if "gd" in context_info["in"] and len(set_metadata) <= 1:
-                context_info["in"].remove("gd")
+            if ContextType.GD in context_info["in"] and len(set_metadata) <= 1:
+                context_info["in"].remove(ContextType.GD)
                 if len(context_info["in"]) == 0:
-                    context_info["in"].append("none")
+                    context_info["in"].append(ContextType.NONE)
 
             # Make sure we only generate scroll speed contexts for mania
             # Other gamemodes already model all SVs in the map context
-            if beatmap_metadata["ModeInt"] != 3 and "sv" in context_info["out"]:
-                context_info["out"].remove("sv")
+            if beatmap_metadata["ModeInt"] != 3 and ContextType.SV in context_info["out"]:
+                context_info["out"].remove(ContextType.SV)
 
         beatmap_path = self.path / "data" / beatmap_metadata["BeatmapSetFolder"] / beatmap_metadata["BeatmapFile"]
         frames, frame_times = self._get_frames(audio_samples)
@@ -780,28 +777,28 @@ class BeatmapDatasetIterable:
             if gamemode in [1, 3]:
                 data["scroll_speed_ratio"] = get_scroll_speed_ratio(beatmap)
 
-        def get_context(context, identifier, add_type=True):
-            data = {"extra": {"context_type": ContextType(context), "add_type": add_type, "id": identifier + context}}
-            if context == "none":
+        def get_context(context: ContextType, identifier, add_type=True):
+            data = {"extra": {"context_type": context, "add_type": add_type, "id": identifier + '_' + context.value}}
+            if context == ContextType.NONE:
                 data["events"], data["event_times"] = [], []
-            elif context == "timing":
+            elif context == ContextType.TIMING:
                 data["events"], data["event_times"] = self.parser.parse_timing(osu_beatmap, speed)
-            elif context == "no_hs":
+            elif context == ContextType.NO_HS:
                 hs_events, hs_event_times = self.parser.parse(osu_beatmap, speed)
                 data["events"], data["event_times"] = remove_events_of_type(hs_events, hs_event_times,
                                                                             [EventType.HITSOUND, EventType.VOLUME])
-            elif context == "gd":
+            elif context == ContextType.GD:
                 other_metadata = set_metadata.drop(i).sample().iloc[0]
                 other_beatmap_path = self.path / "data" / other_metadata["BeatmapSetFolder"] / other_metadata[
                     "BeatmapFile"]
                 other_beatmap = Beatmap.from_path(other_beatmap_path)
                 data["events"], data["event_times"] = self.parser.parse(other_beatmap, speed)
                 add_special_data(data["extra"], other_metadata, other_beatmap)
-            elif context == "map":
+            elif context == ContextType.MAP:
                 data["events"], data["event_times"] = self.parser.parse(osu_beatmap, speed)
-            elif context == "kiai":
+            elif context == ContextType.KIAI:
                 data["events"], data["event_times"] = self.parser.parse_kiai(osu_beatmap, speed)
-            elif context == "sv":
+            elif context == ContextType.SV:
                 data["events"], data["event_times"] = self.parser.parse_scroll_speeds(osu_beatmap, speed)
             return data
 
@@ -819,7 +816,7 @@ class BeatmapDatasetIterable:
         in_context = [get_context(context, "in") for context in context_info["in"]]
 
         if self.args.add_gd_context:
-            in_context.append(get_context("gd", "extra_gd", False))
+            in_context.append(get_context(ContextType.GD, "extra_gd", False))
 
         sequences = self._create_sequences(
             frames,

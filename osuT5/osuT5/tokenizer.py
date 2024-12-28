@@ -184,7 +184,7 @@ class Tokenizer:
             if args.data.add_timing_points:
                 self.event_ranges.append(EventRange(EventType.TIMING_POINT, 0, 0))
 
-            if args.data.add_kiai or any("kiai" in c["out"] for c in args.data.context_types):
+            if args.data.add_kiai or any(ContextType.KIAI in c["out"] for c in args.data.context_types):
                 self.event_ranges.append(EventRange(EventType.KIAI, 0, 1))
 
             if 3 in args.data.gamemodes:

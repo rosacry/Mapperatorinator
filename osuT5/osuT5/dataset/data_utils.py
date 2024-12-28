@@ -147,14 +147,12 @@ def update_event_times(
         event_times[i] = current_time
 
 
-def merge_events(events1: list[Event], event_times1: list[int], events2: list[Event], event_times2: list[int]) -> tuple[list[Event], list[int]]:
+def merge_events(events1: tuple[list[Event], list[int]], events2: tuple[list[Event], list[int]]) -> tuple[list[Event], list[int]]:
     """Merge two lists of events in a time sorted manner. Assumes both lists are sorted by time.
 
     Args:
         events1: List of events.
-        event_times1: List of event times.
         events2: List of events.
-        event_times2: List of event times.
 
     Returns:
         merged_events: Merged list of events.
@@ -165,23 +163,23 @@ def merge_events(events1: list[Event], event_times1: list[int], events2: list[Ev
     i = 0
     j = 0
 
-    while i < len(events1) and j < len(events2):
-        t1 = event_times1[i]
-        t2 = event_times2[j]
+    while i < len(events1[0]) and j < len(events2[0]):
+        t1 = events1[1][i]
+        t2 = events2[1][j]
 
         if t1 <= t2:
-            merged_events.append(events1[i])
+            merged_events.append(events1[0][i])
             merged_event_times.append(t1)
             i += 1
         else:
-            merged_events.append(events2[j])
+            merged_events.append(events2[0][j])
             merged_event_times.append(t2)
             j += 1
 
-    merged_events.extend(events1[i:])
-    merged_events.extend(events2[j:])
-    merged_event_times.extend(event_times1[i:])
-    merged_event_times.extend(event_times2[j:])
+    merged_events.extend(events1[0][i:])
+    merged_events.extend(events2[0][j:])
+    merged_event_times.extend(events1[1][i:])
+    merged_event_times.extend(events2[1][j:])
     return merged_events, merged_event_times
 
 
@@ -225,25 +223,24 @@ def events_of_type(events: list[Event], event_times: list[int], event_types: lis
     return new_events, new_event_times
 
 
-def speed_events(events: list[Event], event_times: list[int], speed: float) -> tuple[list[Event], list[int]]:
+def speed_events(events: tuple[list[Event], list[int]], speed: float) -> tuple[list[Event], list[int]]:
     """Change the speed of a list of events.
 
     Args:
         events: List of events.
-        event_times: List of event times
         speed: Speed multiplier.
 
     Returns:
         sped_events: Sped up list of events.
     """
     sped_events = []
-    for event in events:
+    for event in events[0]:
         if event.type == EventType.TIME_SHIFT:
             event.value = int(event.value / speed)
         sped_events.append(event)
 
     sped_event_times = []
-    for t in event_times:
+    for t in events[1]:
         sped_event_times.append(int(t / speed))
 
     return sped_events, sped_event_times

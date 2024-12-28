@@ -1,7 +1,6 @@
 from dataclasses import dataclass, field
 from typing import Any
 
-from hydra.conf import HydraConf
 from hydra.core.config_store import ConfigStore
 from omegaconf import MISSING
 

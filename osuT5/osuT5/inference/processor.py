@@ -141,6 +141,8 @@ class Processor(object):
         self.sample_rate = args.osut5.model.spectrogram.sample_rate
         self.samples_per_sequence = self.frame_seq_len * self.frame_size
         self.miliseconds_per_sequence = self.samples_per_sequence * MILISECONDS_PER_SECOND / self.sample_rate
+        self.lookback_max_time = args.lookback * self.miliseconds_per_sequence
+        self.lookback_time_range = range(tokenizer.event_start[EventType.TIME_SHIFT], tokenizer.encode(Event(EventType.TIME_SHIFT, int(self.lookback_max_time / MILISECONDS_PER_STEP))))
         self.lookahead_max_time = (1 - args.lookahead) * self.miliseconds_per_sequence
         self.lookahead_time_range = range(tokenizer.encode(Event(EventType.TIME_SHIFT, int(self.lookahead_max_time / MILISECONDS_PER_STEP))), tokenizer.event_end[EventType.TIME_SHIFT])
         self.eos_time = (1 - args.osut5.data.lookahead) * self.miliseconds_per_sequence
@@ -173,10 +175,10 @@ class Processor(object):
         if self.add_positions:
             self.position_precision = args.osut5.data.position_precision
             x_min, x_max, y_min, y_max = args.osut5.data.position_range
-            self.x_min = x_min / self.position_precision
-            self.x_max = x_max / self.position_precision
-            self.y_min = y_min / self.position_precision
-            self.y_max = y_max / self.position_precision
+            self.x_min = x_min // self.position_precision
+            self.x_max = x_max // self.position_precision
+            self.y_min = y_min // self.position_precision
+            self.y_max = y_max // self.position_precision
             self.x_count = self.x_max - self.x_min + 1
 
         self.cfg_scale = args.cfg_scale
@@ -236,24 +238,36 @@ class Processor(object):
             events: List of Event object lists.
             event_times: Corresponding event times of Event object lists in miliseconds.
         """
-
-        # Only generate SV in mania mode
-        if generation_config.gamemode != 3 and ContextType.SV in out_context:
-            out_context.remove(ContextType.SV)
+        # Merge extra in context with in context
+        if extra_in_context is not None:
+            in_context = in_context.copy() if in_context is not None else []
+            for context_type in extra_in_context:
+                if context_type not in in_context:
+                    in_context.append(context_type)
 
         # Find a viable context generation template
         viable_templates = [
             context_type for context_type in self.context_types if
-            all(oc in context_type["out"] for oc in out_context) and all(ic in in_context for ic in context_type["in"])
+            all(oc in context_type["out"] for oc in out_context) and all(ic in in_context or ic == ContextType.NONE for ic in context_type["in"])
         ]
 
         if len(viable_templates) == 0:
             raise ValueError("No viable template found for the given context types. Candidates are: " + str(self.context_types))
 
         template = viable_templates[0]
+        all_out_context = template["out"].copy()
+
+        # Only generate SV in mania mode
+        if generation_config.gamemode != 3:
+            if ContextType.SV in all_out_context:
+                all_out_context.remove(ContextType.SV)
+            if ContextType.SV in out_context:
+                out_context.remove(ContextType.SV)
+
         # We have to generate the out contexts in order of the template
-        out_context_count = max(template["out"].index(oc) for oc in out_context) + 1
-        out_context_to_generate = template["out"][:out_context_count]
+        out_context_count = max(all_out_context.index(oc) for oc in out_context) + 1
+        out_context_to_generate = all_out_context[:out_context_count]
+        req_special_tokens = self.get_required_extra_special_tokens(all_out_context)
 
         song_length = sequences[1][-1].item() + self.miliseconds_per_sequence
         in_context_data = self.get_in_context(
@@ -288,6 +302,7 @@ class Processor(object):
             out_context=out_context_data,
             beatmap_idx=beatmap_idx,
             logit_processor=logit_processor,
+            req_special_tokens=req_special_tokens,
             verbose=verbose,
         )
         if self.parallel:
@@ -297,16 +312,20 @@ class Processor(object):
 
         # Post-process events
         for context in out_context_data:
+            # Regenerate event times
+            context["event_times"] = []
+            update_event_times(context["events"], context["event_times"], song_length, self.types_first)
+
             if context["context_type"] != ContextType.MAP:
                 continue
 
             # Rescale and unpack position events
             if self.add_positions:
-                context["events"] = self._rescale_positions(context["events"])
+                context["events"], context["event_times"] = self._rescale_positions(context["events"], context["event_times"])
 
             # Turn mania key column into X position
             if generation_config.gamemode == 3:
-                context["events"] = self._convert_column_to_position(context["events"], generation_config.keycount)
+                context["events"], context["event_times"] = self._convert_column_to_position(context["events"], context["event_times"], generation_config.keycount)
 
         return [(context["events"], context["event_times"]) for context in out_context_data if context["context_type"] in out_context]
 
@@ -318,14 +337,19 @@ class Processor(object):
             out_context: list[dict[str, Any]],
             beatmap_idx: torch.Tensor,
             logit_processor: LogitsProcessorList,
+            req_special_tokens: list[str],
             verbose: bool = True,
     ):
         for i, context in enumerate(out_context):
             if context["finished"]:
                 continue
 
+            if verbose:
+                print(f"Generating {context['context_type'].value}")
+
             iterator = tqdm(zip(*sequences)) if verbose else zip(*sequences)
             for sequence_index, (frames, frame_time) in enumerate(iterator):
+                trim_lookback = sequence_index != 0 and context["context_type"] in [ContextType.KIAI, ContextType.SV]
                 trim_lookahead = sequence_index != len(sequences[0]) - 1
                 # noinspection PyUnresolvedReferences
                 frames = frames.to(self.device).unsqueeze(0)
@@ -333,8 +357,8 @@ class Processor(object):
 
                 # Get relevant tokens for current frame
                 cond_prompt, uncond_prompt = self.get_prompts(
-                    self.prepare_context_sequences(in_context, frame_time, False),
-                    self.prepare_context_sequences(out_context[:i + 1], frame_time, True),
+                    self.prepare_context_sequences(in_context, frame_time, False, req_special_tokens),
+                    self.prepare_context_sequences(out_context[:i + 1], frame_time, True, req_special_tokens),
                 )
 
                 result = self._generate(
@@ -343,7 +367,7 @@ class Processor(object):
                     beatmap_idx=beatmap_idx,
                     logits_processor=logit_processor,
                     negative_prompt_ids=uncond_prompt,
-                    eos_token_id=self.get_eos_token_id(trim_lookahead, context["context_type"]),
+                    eos_token_id=self.get_eos_token_id(trim_lookback, trim_lookahead, context["context_type"]),
                 )
 
                 # Only support batch size 1 for now
@@ -358,6 +382,7 @@ class Processor(object):
             out_context: list[dict[str, Any]],
             beatmap_idx: torch.Tensor,
             logit_processor: LogitsProcessorList,
+            req_special_tokens: list[str],
             verbose: bool = True,
     ):
         # Get relevant inputs
@@ -369,8 +394,8 @@ class Processor(object):
         for i in range(len(frames)):
             frame_time = frame_times[i].item()
             cond_prompt, uncond_prompt = self.get_prompts(
-                self.prepare_context_sequences(in_context, frame_time, False),
-                self.prepare_context_sequences(out_context[:1], frame_time, True),
+                self.prepare_context_sequences(in_context, frame_time, False, req_special_tokens),
+                self.prepare_context_sequences(out_context[:1], frame_time, True, req_special_tokens),
             )
             cond_prompts.append(cond_prompt)
             uncond_prompts.append(uncond_prompt)
@@ -407,7 +432,7 @@ class Processor(object):
                     start = start[0] if len(start) > 0 else 0
                     end = (predicted_tokens[i] == eos).nonzero(as_tuple=True)[0]
                     end = end[0] if len(end) > 0 else len(predicted_tokens[i])
-                    self.add_predicted_tokens_to_context(context, predicted_tokens[i][start, end], frame_time)
+                    self.add_predicted_tokens_to_context(context, predicted_tokens[i, start:end], frame_time)
             else:
                 self.add_predicted_tokens_to_context(out_context[0], predicted_tokens[i], frame_time)
 
@@ -421,7 +446,7 @@ class Processor(object):
             add_class: bool,
             finished: bool,
     ):
-        if context != ContextType.NONE:
+        if context != ContextType.NONE and finished:
             beatmap_path = Path(beatmap_path)
             if not beatmap_path.is_file():
                 raise FileNotFoundError(f"Beatmap file {beatmap_path} not found.")
@@ -442,9 +467,15 @@ class Processor(object):
                 data["events"], data["event_times"] = extra_in_context[context]
                 if len(extra_in_context[context]) > 2:
                     data["class"] = extra_in_context[context][2]
+            elif context == ContextType.NONE:
+                pass
             elif context == ContextType.TIMING:
                 beatmap = Beatmap.from_path(beatmap_path)
                 data["events"], data["event_times"] = self.parser.parse_timing(beatmap)
+            elif context == ContextType.MAP:
+                beatmap = Beatmap.from_path(beatmap_path)
+                data["events"], data["event_times"] = self.parser.parse(beatmap)
+                data["class"] = self.get_class_vector(generation_config_from_beatmap(beatmap, self.tokenizer), song_length)
             elif context == ContextType.NO_HS:
                 beatmap = Beatmap.from_path(beatmap_path)
                 hs_events, hs_event_times = self.parser.parse(beatmap)
@@ -468,7 +499,7 @@ class Processor(object):
             self,
             *,
             in_context: list[ContextType],
-            beatmap_path: Optional[Path],
+            beatmap_path: Optional[str],
             extra_in_context: Optional[dict[ContextType, tuple[list[Event], list[int]]]],
             song_length: float,
     ) -> list[dict[str, Any]]:
@@ -483,7 +514,7 @@ class Processor(object):
             out_context: list[ContextType],
             generation_config: GenerationConfig,
             given_context: list[ContextType],
-            beatmap_path: Optional[Path],
+            beatmap_path: Optional[str],
             extra_in_context: Optional[dict[ContextType, tuple[list[Event], list[int]]]],
             song_length: float,
             verbose: bool = True
@@ -533,7 +564,7 @@ class Processor(object):
         if self.add_mapper_token:
             mapper_token = self.tokenizer.encode_mapper_id(config.mapper_id) if config.mapper_id != -1 else self.tokenizer.mapper_unk
             cond_tokens.append(mapper_token)
-            if config.mapper_id != -1 and config.mapper_id not in self.tokenizer.beatmap_mapper and verbose:
+            if config.mapper_id != -1 and config.mapper_id not in self.tokenizer.mapper_idx and verbose:
                 print(f"Mapper class {config.mapper_id} not found. Using default.")
         if self.add_year_token:
             year_token = self.tokenizer.encode_year(config.year) if config.year != -1 else self.tokenizer.year_unk
@@ -609,7 +640,7 @@ class Processor(object):
                 predicted_tokens[-1] == self.tokenizer.context_eos[context["context_type"]]):
             predicted_tokens = predicted_tokens[:-1]
 
-        if trim_lookahead and predicted_tokens[-1] in self.lookahead_time_range:
+        if len(predicted_tokens) > 0 and trim_lookahead and predicted_tokens[-1] in self.lookahead_time_range:
             # If the type token comes before the timeshift token we should remove the type token too
             if self.types_first:
                 predicted_tokens = predicted_tokens[:-2]
@@ -625,24 +656,42 @@ class Processor(object):
             lookahead_time = frame_time + self.lookahead_max_time
             self._trim_events_after_time(context["events"], context["event_times"], lookahead_time)
 
-    def get_eos_token_id(self, trim_lookahead: bool = False, context_type: ContextType = None):
+    def get_eos_token_id(self, trim_lookback: bool = False, trim_lookahead: bool = False, context_type: ContextType = None):
         eos_token_id = [self.tokenizer.eos_id]
+        if trim_lookback:
+            eos_token_id += self.lookback_time_range
         if trim_lookahead:
             eos_token_id += self.lookahead_time_range
         if self.add_out_context_types and context_type is not None:
             eos_token_id.append(self.tokenizer.context_eos[context_type])
         return eos_token_id
 
-    def prepare_context_sequences(self, contexts: list[dict], frame_time, out_context: bool) -> list[dict]:
+    def get_required_extra_special_tokens(self, all_out_context: list[ContextType]) -> list[str]:
+        result = []
+        if ContextType.KIAI in all_out_context or (self.add_kiai and any(c in all_out_context for c in [ContextType.GD, ContextType.MAP])):
+            result.append("last_kiai")
+        if ContextType.SV in all_out_context or ((self.add_sv or self.add_mania_sv) and any(c in all_out_context for c in [ContextType.GD, ContextType.MAP])):
+            result.append("last_sv")
+        if self.add_song_position_token:
+            result.append("song_position")
+        return result
+
+    def prepare_context_sequences(self, contexts: list[dict], frame_time, out_context: bool, req_special_tokens: list[str]) -> list[dict]:
         results = []
-        for context in contexts:
+        for i, context in enumerate(contexts):
             result = self.prepare_context_sequence(context, frame_time)
             results.append(result)
             # Extra special tokens are to be stored in the first output context
-            if out_context:
+            if out_context and i != 0:
                 for k, v in result["extra_special_events"].items():
                     results[0]["extra_special_events"][k] = v
                 del result["extra_special_events"]
+
+        # Make sure the output context has the required special tokens
+        if out_context:
+            for k in req_special_tokens:
+                if k not in results[0]["extra_special_events"]:
+                    results[0]["extra_special_events"][k] = self._default_special_event(k)
 
         # Tokenize extra special tokens in the correct order
         special_token_order = ["last_kiai", "last_sv", "song_position"]
@@ -814,19 +863,24 @@ class Processor(object):
 
         return events
 
-    def _rescale_positions(self, events: list[Event]) -> list[Event]:
+    def _rescale_positions(self, events: list[Event], event_times: list[int]) -> tuple[list[Event], list[int]]:
         new_events = []
+        new_event_times = []
         offset = self.position_precision // 2 if self.position_precision > 1 else 0
-        for event in events:
+        for i, event in enumerate(events):
             if event.type == EventType.POS_X or event.type == EventType.POS_Y:
                 new_events.append(Event(type=event.type, value=event.value * self.position_precision))
+                new_event_times.append(event_times[i])
             elif event.type == EventType.POS:
                 new_events.append(Event(type=EventType.POS_X, value=((event.value % self.x_count) + self.x_min) * self.position_precision + offset))
                 new_events.append(Event(type=EventType.POS_Y, value=((event.value // self.x_count) + self.y_min) * self.position_precision + offset))
+                new_event_times.append(event_times[i])
+                new_event_times.append(event_times[i])
             else:
                 new_events.append(event)
+                new_event_times.append(event_times[i])
 
-        return new_events
+        return new_events, new_event_times
 
     def _get_beat_time_token_from_context(self, context_tokens, generated_tokens):
         context_tokens = context_tokens.cpu()
@@ -852,21 +906,32 @@ class Processor(object):
         for i in range(len(events) - 1, -1, -1):
             if events[i].type == EventType.KIAI and event_times[i] < time:
                 return events[i]
-        return Event(EventType.KIAI, 0)
+        return self._default_special_event("last_kiai")
 
     def _sv_before_time(self, events, event_times, time) -> Event:
         for i in range(len(events) - 1, -1, -1):
             if events[i].type == EventType.SCROLL_SPEED and event_times[i] < time:
                 return events[i]
-        return Event(EventType.SCROLL_SPEED, 100)
+        return self._default_special_event("last_sv")
 
-    def _convert_column_to_position(self, events, key_count) -> list[Event]:
+    def _default_special_event(self, name: str) -> Event:
+        if name == "last_kiai":
+            return Event(EventType.KIAI, 0)
+        if name == "last_sv":
+            return Event(EventType.SCROLL_SPEED, 100)
+        raise ValueError(f"Invalid special event name {name}.")
+
+    def _convert_column_to_position(self, events, event_times, key_count) -> tuple[list[Event], list[int]]:
         new_events = []
-        for event in events:
+        new_event_times = []
+        for i, event in enumerate(events):
             if event.type == EventType.MANIA_COLUMN:
                 x = int((event.value + 0.5) * 512 / key_count)
                 new_events.append(Event(EventType.POS_X, x))
                 new_events.append(Event(EventType.POS_Y, 192))
+                new_event_times.append(event_times[i])
+                new_event_times.append(event_times[i])
             else:
                 new_events.append(event)
-        return new_events
+                new_event_times.append(event_times[i])
+        return new_events, new_event_times
