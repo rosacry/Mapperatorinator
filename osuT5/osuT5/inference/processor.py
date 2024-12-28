@@ -347,7 +347,7 @@ class Processor(object):
             if verbose:
                 print(f"Generating {context['context_type'].value}")
 
-            iterator = tqdm(zip(*sequences)) if verbose else zip(*sequences)
+            iterator = tqdm(list(zip(*sequences))) if verbose else zip(*sequences)
             for sequence_index, (frames, frame_time) in enumerate(iterator):
                 trim_lookback = sequence_index != 0 and context["context_type"] in [ContextType.KIAI, ContextType.SV]
                 trim_lookahead = sequence_index != len(sequences[0]) - 1

@@ -54,7 +54,7 @@ class SuperTimingGenerator:
         if verbose:
             print("Generating timing")
 
-        iterator = tqdm(range(iterations)) if verbose else range(iterations)
+        iterator = tqdm(list(range(iterations))) if verbose else range(iterations)
         for _ in iterator:
             audio_offset = np.random.randint(-(self.miliseconds_per_sequence // 2), self.miliseconds_per_sequence // 2)
             begin_pad = max(0, audio_offset * self.sample_rate // MILISECONDS_PER_SECOND)
