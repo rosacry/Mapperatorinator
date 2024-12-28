@@ -95,24 +95,24 @@ class OsuParser:
 
         # Sort events by time
         events, event_times = zip(*sorted(zip(events, event_times), key=lambda x: x[1]))
-        events, event_times = list(events), list(event_times)
+        result = list(events), list(event_times)
 
         if self.add_mania_sv and beatmap.mode == 3:
-            scroll_speed_events, scroll_speed_times = self.parse_scroll_speeds(beatmap)
-            events, event_times = merge_events(scroll_speed_events, scroll_speed_times, events, event_times)
+            scroll_speed_events = self.parse_scroll_speeds(beatmap)
+            result = merge_events(scroll_speed_events, result)
 
         if self.add_kiai:
-            kiai_events, kiai_times = self.parse_kiai(beatmap)
-            events, event_times = merge_events(kiai_events, kiai_times, events, event_times)
+            kiai_events = self.parse_kiai(beatmap)
+            result = merge_events(kiai_events, result)
 
         if self.add_timing:
-            timing_events, timing_times = self.parse_timing(beatmap)
-            events, event_times = merge_events(timing_events, timing_times, events, event_times)
+            timing_events = self.parse_timing(beatmap)
+            result = merge_events(timing_events, result)
 
         if speed != 1.0:
-            events, event_times = speed_events(events, event_times, speed)
+            result = speed_events(result, speed)
 
-        return events, event_times
+        return result
 
     def parse_scroll_speeds(self, beatmap: Beatmap, speed: float = 1.0) -> tuple[list[Event], list[int]]:
         """Extract all BPM-normalized scroll speed changes from a beatmap."""
@@ -146,7 +146,7 @@ class OsuParser:
                 last_normalized_scroll_speed = normalized_scroll_speed
 
         if speed != 1.0:
-            events, event_times = speed_events(events, event_times, speed)
+            events, event_times = speed_events((events, event_times), speed)
 
         return events, event_times
 
@@ -171,7 +171,7 @@ class OsuParser:
             kiai = tp.kiai_mode
 
         if speed != 1.0:
-            events, event_times = speed_events(events, event_times, speed)
+            events, event_times = speed_events((events, event_times), speed)
 
         return events, event_times
 
@@ -214,7 +214,7 @@ class OsuParser:
                 time += beat_delta
 
         if speed != 1.0:
-            events, event_times = speed_events(events, event_times, speed)
+            events, event_times = speed_events((events, event_times), speed)
 
         return events, event_times
 

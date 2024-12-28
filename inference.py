@@ -5,7 +5,7 @@ from pathlib import Path
 import hydra
 import torch
 from accelerate.utils import set_seed
-from omegaconf import OmegaConf, DictConfig
+from omegaconf import OmegaConf
 from slider import Beatmap
 
 import osu_diffusion
@@ -192,14 +192,15 @@ def generate(
         timing_events, timing_times = super_timing_generator.generate(audio, generation_config, verbose=verbose)
         extra_in_context[ContextType.TIMING] = (timing_events, timing_times)
         timing = postprocessor.generate_timing(timing_events)
-    elif (ContextType.TIMING in output_type or
-          (ContextType.NONE in args.in_context and ContextType.MAP in output_type and
-           not any("none" in ctx["in"] and ctx["out"] == "map" for ctx in args.osut5.data.context_types))):
+        if ContextType.TIMING in output_type:
+            output_type.remove(ContextType.TIMING)
+    elif (ContextType.NONE in args.in_context and ContextType.MAP in output_type and
+          not any("none" in ctx["in"] and ctx["out"] == "map" for ctx in args.osut5.data.context_types)):
         # Generate timing and convert in_context to timing context
         timing_events, timing_times = processor.generate(
             sequences=sequences,
             generation_config=generation_config,
-            in_context=args.in_context,
+            in_context=[ContextType.NONE],
             out_context=[ContextType.TIMING],
             verbose=verbose,
         )[0]
@@ -225,7 +226,10 @@ def generate(
             verbose=verbose,
         )
 
-        events, _ = reduce(lambda x, y: merge_events(x[0], x[1], y[0], y[1]), result)
+        events, _ = reduce(merge_events, result)
+
+        if timing is None and (ContextType.TIMING in args.output_type or args.osut5.data.add_timing):
+            timing = postprocessor.generate_timing(events)
 
         # Resnap timing events
         if timing is not None:
@@ -331,6 +335,7 @@ def main(args: InferenceConfig):
     generate(
         args,
         generation_config=generation_config,
+        beatmap_path=args.beatmap_path,
         beatmap_config=beatmap_config,
         model=model,
         tokenizer=tokenizer,

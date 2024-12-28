@@ -1,7 +1,6 @@
 from dataclasses import dataclass, field
 from typing import Any
 
-from hydra.conf import HydraConf
 from hydra.core.config_store import ConfigStore
 from omegaconf import OmegaConf, MISSING
 
@@ -179,6 +178,7 @@ class TrainConfig:
     logging: LoggingConfig = field(default_factory=LoggingConfig)
     profile: ProfileConfig = field(default_factory=ProfileConfig)
     hydra: Any = MISSING
+    mode: str = "train"
 
 
 OmegaConf.register_new_resolver("context_type", lambda x: ContextType(x.lower()))
