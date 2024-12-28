@@ -386,6 +386,10 @@ class Postprocessor(object):
 
                 timing = self.set_sv(timedelta(milliseconds=group.time), group.scroll_speed, timing)
 
+        # Remove any greenlines before the first timingpoint where parent is None
+        first_timing_point = next(tp for tp in timing if tp.parent is None)
+        timing = [tp for tp in timing if tp.offset >= first_timing_point.offset]
+
         # Write .osu file
         with open(OSU_TEMPLATE_PATH, "r") as tf:
             template = Template(tf.read())
