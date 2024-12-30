@@ -158,12 +158,13 @@ class LookBackBiasLogitsWarper(LogitsProcessor):
                 # The scores are for a timeshift event
                 last_probs = F.softmax(self.last_scores[0], dim=-1).cpu()
                 probs = F.softmax(scores[0], dim=-1).cpu()
-                prob_eos = last_probs[self.eos_ids].sum()
+                prob_eos = last_probs[self.eos_ids].sum().item()
                 prob_event = 1 - prob_eos
                 s = 1 / (probs[self.other_range].sum() * prob_event + prob_eos)
                 probs[self.lookback_range] = 0
                 probs[self.other_range] *= s
-                prob_eos_extra = (s - 1) * prob_eos / prob_event  # Probability of eos now which should have been at the previous token
+                # Probability of eos now which should have been at the previous token
+                prob_eos_extra = torch.clip((s - 1) * prob_eos / prob_event, 0, 1)  # Clip to avoid numerical instability
                 probs[self.lookback_start] = prob_eos_extra  # This will be treated as eos if trim lookback is true
 
                 scores_processed = torch.log(probs).unsqueeze(0).to(scores.device)
