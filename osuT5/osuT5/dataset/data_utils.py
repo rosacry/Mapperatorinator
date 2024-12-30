@@ -18,6 +18,57 @@ BEAT_TYPES = [
 ]
 TIMING_TYPES = BEAT_TYPES + [EventType.TIME_SHIFT]
 
+TYPE_EVENTS = [
+    EventType.CIRCLE,
+    EventType.SPINNER,
+    EventType.SPINNER_END,
+    EventType.SLIDER_HEAD,
+    EventType.BEZIER_ANCHOR,
+    EventType.PERFECT_ANCHOR,
+    EventType.CATMULL_ANCHOR,
+    EventType.RED_ANCHOR,
+    EventType.LAST_ANCHOR,
+    EventType.SLIDER_END,
+    EventType.BEAT,
+    EventType.MEASURE,
+    EventType.TIMING_POINT,
+    EventType.KIAI,
+    EventType.HOLD_NOTE,
+    EventType.HOLD_NOTE_END,
+    EventType.DRUMROLL,
+    EventType.DRUMROLL_END,
+    EventType.DENDEN,
+    EventType.DENDEN_END,
+    EventType.SCROLL_SPEED_CHANGE,
+]
+
+NON_TIMED_EVENTS = [
+    EventType.BEZIER_ANCHOR,
+    EventType.PERFECT_ANCHOR,
+    EventType.CATMULL_ANCHOR,
+    EventType.RED_ANCHOR,
+]
+
+TIMED_EVENTS = [
+    EventType.CIRCLE,
+    EventType.SPINNER,
+    EventType.SPINNER_END,
+    EventType.SLIDER_HEAD,
+    EventType.LAST_ANCHOR,
+    EventType.SLIDER_END,
+    EventType.BEAT,
+    EventType.MEASURE,
+    EventType.TIMING_POINT,
+    EventType.KIAI,
+    EventType.HOLD_NOTE,
+    EventType.HOLD_NOTE_END,
+    EventType.DRUMROLL,
+    EventType.DRUMROLL_END,
+    EventType.DENDEN,
+    EventType.DENDEN_END,
+    EventType.SCROLL_SPEED_CHANGE,
+]
+
 
 def load_audio_file(file: str, sample_rate: int, speed: float = 1.0) -> npt.NDArray:
     """Load an audio file as a numpy time-series array
@@ -56,32 +107,6 @@ def update_event_times(
         end_time: End time of the events, for interpolation.
         types_first: If True, the type token is at the start of the group before the timeshift token.
     """
-    non_timed_events = [
-        EventType.BEZIER_ANCHOR,
-        EventType.PERFECT_ANCHOR,
-        EventType.CATMULL_ANCHOR,
-        EventType.RED_ANCHOR,
-    ]
-    timed_events = [
-        EventType.CIRCLE,
-        EventType.SPINNER,
-        EventType.SPINNER_END,
-        EventType.SLIDER_HEAD,
-        EventType.LAST_ANCHOR,
-        EventType.SLIDER_END,
-        EventType.BEAT,
-        EventType.MEASURE,
-        EventType.TIMING_POINT,
-        EventType.KIAI,
-        EventType.HOLD_NOTE,
-        EventType.HOLD_NOTE_END,
-        EventType.DRUMROLL,
-        EventType.DRUMROLL_END,
-        EventType.DENDEN,
-        EventType.DENDEN_END,
-        EventType.SCROLL_SPEED_CHANGE,
-    ]
-
     start_index = len(event_times)
     end_index = len(events)
     current_time = 0 if len(event_times) == 0 else event_times[-1]
@@ -110,17 +135,17 @@ def update_event_times(
     for i in index:
         event = events[i]
 
-        if event.type in timed_events:
+        if event.type in TIMED_EVENTS:
             interpolate = False
 
-        if event.type in non_timed_events:
+        if event.type in NON_TIMED_EVENTS:
             interpolate = True
 
         if not interpolate:
             current_time = event_times[i]
             continue
 
-        if event.type not in non_timed_events:
+        if event.type not in NON_TIMED_EVENTS:
             event_times[i] = current_time
             continue
 
@@ -134,7 +159,7 @@ def update_event_times(
             if event2.type == EventType.TIME_SHIFT:
                 other_time = event_times[j]
                 break
-            if event2.type in non_timed_events:
+            if event2.type in NON_TIMED_EVENTS:
                 count += 1
             j += step
         if j < 0:
@@ -262,31 +287,6 @@ class Group:
     scroll_speed: float = None
 
 
-type_events = [
-    EventType.CIRCLE,
-    EventType.SPINNER,
-    EventType.SPINNER_END,
-    EventType.SLIDER_HEAD,
-    EventType.BEZIER_ANCHOR,
-    EventType.PERFECT_ANCHOR,
-    EventType.CATMULL_ANCHOR,
-    EventType.RED_ANCHOR,
-    EventType.LAST_ANCHOR,
-    EventType.SLIDER_END,
-    EventType.BEAT,
-    EventType.MEASURE,
-    EventType.TIMING_POINT,
-    EventType.KIAI,
-    EventType.HOLD_NOTE,
-    EventType.HOLD_NOTE_END,
-    EventType.DRUMROLL,
-    EventType.DRUMROLL_END,
-    EventType.DENDEN,
-    EventType.DENDEN_END,
-    EventType.SCROLL_SPEED_CHANGE,
-]
-
-
 def get_groups(
         events: list[Event],
         *,
@@ -314,7 +314,7 @@ def get_groups(
             group.volumes.append(event.value)
         elif event.type == EventType.SCROLL_SPEED:
             group.scroll_speed = event.value / 100
-        elif event.type in type_events:
+        elif event.type in TYPE_EVENTS:
             if types_first:
                 if group.event_type is not None:
                     groups.append(group)
@@ -342,7 +342,7 @@ def get_group_indices(events: list[Event], types_first: bool = False) -> list[li
     indices = []
     for i, event in enumerate(events):
         indices.append(i)
-        if event.type in type_events:
+        if event.type in TYPE_EVENTS:
             if types_first:
                 if len(indices) > 1:
                     groups.append(indices[:-1])
