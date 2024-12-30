@@ -291,7 +291,7 @@ def load_diff_model(ckpt_path, diff_args: DiffusionTrainConfig):
     tokenizer = osu_diffusion.utils.tokenizer.Tokenizer()
     tokenizer.load_state_dict(tokenizer_state)
 
-    ema_state = torch.load(ckpt_path / "custom_checkpoint_0.pkl", pickle_module=routed_pickle, weights_only=False)
+    ema_state = torch.load(ckpt_path / "custom_checkpoint_0.pkl", pickle_module=routed_pickle, weights_only=False, map_location=device)
     model = DiT_models[diff_args.model.model](
         context_size=diff_args.model.context_size,
         class_size=tokenizer.num_tokens,
