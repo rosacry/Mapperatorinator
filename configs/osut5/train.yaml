@@ -1,5 +1,5 @@
 defaults:
-  - base_train
+  - /osut5/base_train@_here_
 
 compile: true          # PyTorch 2.0 optimization
 device: gpu             # Training device (cpu/gpu)
