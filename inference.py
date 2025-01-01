@@ -106,6 +106,8 @@ def get_config(args: InferenceConfig):
         negative_descriptors=args.negative_descriptors,
         timing_leniency=args.timing_leniency,
         seed=args.seed,
+        start_time=args.start_time,
+        end_time=args.end_time,
         cfg_scale=args.cfg_scale,
         temperature=args.temperature,
         timing_temperature=args.timing_temperature,

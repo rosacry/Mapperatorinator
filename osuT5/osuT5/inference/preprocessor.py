@@ -20,6 +20,11 @@ class Preprocessor(object):
         if parallel:
             self.sequence_stride = self.samples_per_sequence
         self.miliseconds_per_stride = self.sequence_stride * MILISECONDS_PER_SECOND / self.sample_rate
+        self.miliseconds_per_sequence = self.samples_per_sequence * MILISECONDS_PER_SECOND / self.sample_rate
+        self.lookback_max_time = args.lookback * self.miliseconds_per_sequence
+        self.lookahead_max_time = (1 - args.lookahead) * self.miliseconds_per_sequence
+        self.start_time = args.start_time
+        self.end_time = args.end_time
 
     def load(self, path: str) -> npt.ArrayLike:
         """Load an audio file as audio frames. Convert stereo to mono, normalize.
@@ -58,6 +63,24 @@ class Preprocessor(object):
         sequences = torch.from_numpy(sequences).to(torch.float32)
         sequence_times = torch.arange(0, len(sequences) * self.miliseconds_per_stride,
                                       self.miliseconds_per_stride).to(torch.int32)
+
+        if self.start_time is not None:
+            # Remove all sequences whose generation window is before the start_time
+            # If this removes all the sequences, keep the last one
+            start_idx = torch.searchsorted(sequence_times, self.start_time - self.lookahead_max_time, right=True)
+            if start_idx == len(sequence_times):
+                start_idx -= 1
+            sequences = sequences[start_idx:]
+            sequence_times = sequence_times[start_idx:]
+        if self.end_time is not None:
+            # Remove all sequences whose generation window is after the end_time
+            # If this removes all the sequences, keep the first one
+            end_idx = torch.searchsorted(sequence_times, self.end_time - self.lookback_max_time, right=False)
+            if end_idx == 0:
+                end_idx += 1
+            sequences = sequences[:end_idx]
+            sequence_times = sequence_times[:end_idx]
+
         return sequences, sequence_times
 
     @staticmethod

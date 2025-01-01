@@ -36,6 +36,8 @@ class InferenceConfig:
     # Inference settings
     seed: int = 0  # Random seed
     device: str = 'gpu'  # Inference device (cpu/gpu)
+    start_time: Optional[int] = None  # Start time of audio to generate beatmap for
+    end_time: Optional[int] = None  # End time of audio to generate beatmap for
     lookback: float = 0.5  # Fraction of audio sequence to fill with tokens from previous inference window
     lookahead: float = 0.4  # Fraction of audio sequence to skip at the end of the audio window
     timing_leniency: int = 20  # Number of milliseconds of error to allow for timing generation
