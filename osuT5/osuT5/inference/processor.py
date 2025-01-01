@@ -164,15 +164,32 @@ class LookbackBiasLogitsWarper(LogitsProcessor):
                 prob_event = 1 - prob_eos
                 s = 1 / (probs[:, self.other_range].sum(dim=-1) * prob_event + prob_eos)
                 probs[:, self.lookback_range] = 0
-                probs[:, self.other_range] *= s
+                probs[:, self.other_range] *= s.unsqueeze(1)
                 # Probability of eos now which should have been at the previous token
                 prob_eos_extra = torch.clip((s - 1) * prob_eos / prob_event, 0, 1)  # Clip to avoid numerical instability
                 probs[:, self.lookback_start] = prob_eos_extra  # This will be treated as eos if trim lookback is true
 
-                scores_processed = torch.where(last_timed, torch.log(probs), scores)
+                scores_processed = torch.where(last_timed.unsqueeze(1), torch.log(probs), scores)
 
         self.last_scores = scores
         return scores_processed
+
+
+class ClassifierFreeGuidanceLogitsProcessor(LogitsProcessor):
+    def __init__(self, guidance_scale):
+        if guidance_scale > 1:
+            self.guidance_scale = guidance_scale
+        else:
+            raise ValueError(
+                "Require guidance scale >1 to use the classifier free guidance processor, got guidance scale "
+                f"{guidance_scale}."
+            )
+
+    def __call__(self, input_ids: torch.LongTensor, scores: torch.FloatTensor) -> torch.FloatTensor:
+        unguided_bsz = scores.shape[0] // 2
+        cond_logits, uncond_logits = scores.split(unguided_bsz, dim=0)
+        scores_processed = uncond_logits + (cond_logits - uncond_logits) * self.guidance_scale
+        return scores_processed.repeat((2, 1))
 
 
 class Processor(object):
@@ -245,6 +262,8 @@ class Processor(object):
         self.types_first = args.osut5.data.types_first
 
         self.base_logit_processor = LogitsProcessorList()
+        if self.cfg_scale > 1:
+            self.base_logit_processor.append(ClassifierFreeGuidanceLogitsProcessor(self.cfg_scale))
         if self.timeshift_bias != 0:
             self.base_logit_processor.append(TimeshiftBias(self.timeshift_bias, self.time_range))
 
@@ -256,7 +275,6 @@ class Processor(object):
             top_k=self.top_k,
             do_sample=self.do_sample,
             num_beams=self.num_beams,
-            guidance_scale=self.cfg_scale,
             use_cache=True,
             cache_implementation="static",
         )
@@ -402,10 +420,10 @@ class Processor(object):
                 trim_lookback = sequence_index != 0 and self.types_first and self.lookback_max_time > 0
                 trim_lookahead = sequence_index != len(sequences[0]) - 1
 
-                logit_processor2 = LogitsProcessorList([self.lookback_bias_logit_processor] + logit_processor) if trim_lookback else logit_processor
+                logit_processor2 = LogitsProcessorList(logit_processor + [self.lookback_bias_logit_processor]) if trim_lookback else logit_processor
 
                 # noinspection PyUnresolvedReferences
-                frames = frames.to(self.device).unsqueeze(0)
+                frames = self.prepare_frames(frames)
                 frame_time = frame_time.item()
 
                 # Get relevant tokens for current frame
@@ -414,17 +432,18 @@ class Processor(object):
                     self.prepare_context_sequences(out_context[:i + 1], frame_time, True, req_special_tokens),
                 )
 
+                prompt, max_len = self.stack_prompts([cond_prompt], [uncond_prompt])
+
                 result = self._generate(
                     frames,
-                    decoder_input_ids=cond_prompt,
+                    decoder_input_ids=prompt,
                     beatmap_idx=beatmap_idx,
                     logits_processor=logit_processor2,
-                    negative_prompt_ids=uncond_prompt,
                     eos_token_id=self.get_eos_token_id(trim_lookback, trim_lookahead, context["context_type"]),
                 )
 
-                # Only support batch size 1 for now
-                predicted_tokens = result[0].cpu()[cond_prompt.shape[1]:]
+                # Only support batch size 1
+                predicted_tokens = result[0, max_len:].cpu()
                 self.add_predicted_tokens_to_context(context, predicted_tokens, frame_time, trim_lookback, trim_lookahead)
 
     def generate_parallel(
@@ -439,7 +458,7 @@ class Processor(object):
             verbose: bool = True,
     ):
         # Get relevant inputs
-        frames = sequences[0].to(self.device)
+        frames = self.prepare_frames(sequences[0])
         frame_times = sequences[1]
         cond_prompts = []
         uncond_prompts = []
@@ -453,27 +472,18 @@ class Processor(object):
             cond_prompts.append(cond_prompt)
             uncond_prompts.append(uncond_prompt)
 
-        # Padding to make sizes compatible
-        max_len = max(tensor.size(1) for tensor in cond_prompts)
-        cond_prompts = [torch.nn.functional.pad(tensor, (0, 0, max_len - tensor.size(1), 0)) for tensor in cond_prompts]
-        cond_prompt = torch.cat(cond_prompts, dim=0)
-        if self.cfg_scale > 1:
-            uncond_prompts = [torch.nn.functional.pad(tensor, (0, 0, max_len - tensor.size(1), 0)) for tensor in uncond_prompts]
-            uncond_prompt = torch.cat(uncond_prompts, dim=0)
-        else:
-            uncond_prompt = None
+        prompt, max_len = self.stack_prompts(cond_prompts, uncond_prompts)
 
         # Start generation
         result = self._generate(
             frames,
-            decoder_input_ids=cond_prompt,
+            decoder_input_ids=prompt,
             beatmap_idx=beatmap_idx,
             logits_processor=logit_processor,
-            negative_prompt_ids=uncond_prompt,
             eos_token_id=self.get_eos_token_id(context_type=out_context[-1]["context_type"]),
         )
 
-        predicted_tokens = result[:, max_len:].cpu()
+        predicted_tokens = result[:len(cond_prompts), max_len:].cpu()
         for i in range(len(predicted_tokens)):
             frame_time = frame_times[i].item()
             if self.add_out_context_types:
@@ -488,6 +498,29 @@ class Processor(object):
                     self.add_predicted_tokens_to_context(context, predicted_tokens[i, start:end], frame_time)
             else:
                 self.add_predicted_tokens_to_context(out_context[0], predicted_tokens[i], frame_time)
+
+    def prepare_frames(self, frames: torch.Tensor) -> torch.Tensor:
+        frames = frames.to(self.device)
+
+        if frames.dim() == 1:
+            frames = frames.unsqueeze(0)
+
+        if self.cfg_scale > 1:
+            frames = frames.repeat((2, 1))
+
+        return frames
+
+    def stack_prompts(self, cond_prompts, uncond_prompts):
+        max_len = max(tensor.size(1) if tensor is not None else 0 for tensor in cond_prompts + uncond_prompts)
+        cond_prompts = [torch.nn.functional.pad(tensor, (0, 0, max_len - tensor.size(1), 0)) for tensor in cond_prompts]
+
+        if self.cfg_scale > 1:
+            uncond_prompts = [torch.nn.functional.pad(tensor, (0, 0, max_len - tensor.size(1), 0)) for tensor in uncond_prompts]
+            stacked_prompt = torch.cat(cond_prompts + uncond_prompts, dim=0)
+        else:
+            stacked_prompt = torch.cat(cond_prompts, dim=0)
+
+        return stacked_prompt, max_len
 
     def get_context(
             self,
