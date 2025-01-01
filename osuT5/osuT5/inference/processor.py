@@ -235,6 +235,8 @@ class Processor(object):
         self.context_types: list[dict[str, list[ContextType]]] = \
             [{k: [ContextType(t) for t in v] for k, v in ct.items()} for ct in args.osut5.data.context_types]
         self.add_out_context_types = args.osut5.data.add_out_context_types
+        self.start_time = args.start_time
+        self.end_time = args.end_time
 
         if self.add_positions:
             self.position_precision = args.osut5.data.position_precision
@@ -383,6 +385,12 @@ class Processor(object):
             # Regenerate event times
             context["event_times"] = []
             update_event_times(context["events"], context["event_times"], song_length, self.types_first)
+
+            # Trim events to start and end time
+            if self.start_time is not None:
+                self._trim_events_before_time(context["events"], context["event_times"], self.start_time)
+            if self.end_time is not None:
+                self._trim_events_after_time(context["events"], context["event_times"], self.end_time)
 
             if context["context_type"] != ContextType.MAP:
                 continue
@@ -911,9 +919,15 @@ class Processor(object):
                 break
         return events[s:e]
 
-    def _trim_events_after_time(self, events, event_times, lookahead_time):
+    def _trim_events_before_time(self, events, event_times, time):
         for i in range(len(event_times) - 1, -1, -1):
-            if event_times[i] > lookahead_time:
+            if event_times[i] < time:
+                del events[i]
+                del event_times[i]
+
+    def _trim_events_after_time(self, events, event_times, time):
+        for i in range(len(event_times) - 1, -1, -1):
+            if event_times[i] > time:
                 del events[i]
                 del event_times[i]
             else:

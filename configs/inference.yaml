@@ -22,6 +22,8 @@ negative_descriptors: null # List of descriptors to avoid when using classifier-
 # Inference settings
 seed: 0                 # Random seed
 device: gpu             # Inference device (cpu/gpu)
+start_time: null          # Start time of audio to generate beatmap for
+end_time: null            # End time of audio to generate beatmap for
 lookback: 0.5             # Fraction of audio sequence to fill with tokens from previous inference window
 lookahead: 0.4            # Fraction of audio sequence to skip at the end of the audio window
 timing_leniency: 20     # Number of milliseconds of error to allow for timing generation
