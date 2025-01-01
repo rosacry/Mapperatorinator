@@ -105,17 +105,17 @@ def worker(beatmap_paths, args: FidConfig, return_dict, idx):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     prepare_args(args)
 
-    model, tokenizer = load_model(args.model_path, args.osut5)
+    model, tokenizer = load_model(args.model_path, args.osut5, args.device)
 
     if args.compile:
         model.transformer.forward = torch.compile(model.transformer.forward, mode="reduce-overhead", fullgraph=True)
 
     diff_model, diff_tokenizer, refine_model = None, None, None
     if args.generate_positions:
-        diff_model, diff_tokenizer = load_diff_model(args.diff_ckpt, args.diffusion)
+        diff_model, diff_tokenizer = load_diff_model(args.diff_ckpt, args.diffusion, args.device)
 
         if os.path.exists(args.diff_refine_ckpt):
-            refine_model = load_diff_model(args.diff_refine_ckpt, args.diffusion)[0]
+            refine_model = load_diff_model(args.diff_refine_ckpt, args.diffusion, args.device)[0]
 
         if args.compile:
             diff_model.forward = torch.compile(diff_model.forward, mode="reduce-overhead", fullgraph=False)

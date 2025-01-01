@@ -34,12 +34,13 @@ class InferenceConfig:
     negative_descriptors: Optional[list[str]] = None  # List of descriptors to avoid when using classifier-free guidance
 
     # Inference settings
+    seed: int = 0  # Random seed
+    device: str = 'gpu'  # Inference device (cpu/gpu)
     lookback: float = 0.5  # Fraction of audio sequence to fill with tokens from previous inference window
     lookahead: float = 0.4  # Fraction of audio sequence to skip at the end of the audio window
     timing_leniency: int = 20  # Number of milliseconds of error to allow for timing generation
     in_context: list[ContextType] = field(default_factory=lambda: [ContextType.NONE])  # Context types of other beatmap(s)
     output_type: list[ContextType] = field(default_factory=lambda: [ContextType.MAP])  # Output type (map, timing)
-    seed: int = 0  # Random seed
     cfg_scale: float = 1.0  # Scale of classifier-free guidance
     temperature: float = 1.0  # Sampling temperature
     timing_temperature: float = 0.1  # Sampling temperature for timing
