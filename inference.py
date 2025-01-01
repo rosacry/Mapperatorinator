@@ -268,9 +268,8 @@ def generate(
 def load_model(
         ckpt_path: str,
         t5_args: TrainConfig,
+        device,
 ):
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
     ckpt_path = Path(ckpt_path)
     model_state = torch.load(ckpt_path / "pytorch_model.bin", map_location=device, weights_only=True)
     tokenizer_state = torch.load(ckpt_path / "custom_checkpoint_0.pkl", pickle_module=routed_pickle, weights_only=False)
@@ -286,9 +285,11 @@ def load_model(
     return model, tokenizer
 
 
-def load_diff_model(ckpt_path, diff_args: DiffusionTrainConfig):
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
+def load_diff_model(
+        ckpt_path,
+        diff_args: DiffusionTrainConfig,
+        device,
+):
     ckpt_path = Path(ckpt_path)
     assert ckpt_path.exists(), f"Could not find DiT checkpoint at {ckpt_path}"
 
@@ -322,14 +323,14 @@ def main(args: InferenceConfig):
 
     prepare_args(args)
 
-    model, tokenizer = load_model(args.model_path, args.osut5)
+    model, tokenizer = load_model(args.model_path, args.osut5, args.device)
 
     diff_model, diff_tokenizer, refine_model = None, None, None
     if args.generate_positions:
-        diff_model, diff_tokenizer = load_diff_model(args.diff_ckpt, args.diffusion)
+        diff_model, diff_tokenizer = load_diff_model(args.diff_ckpt, args.diffusion, args.device)
 
         if os.path.exists(args.diff_refine_ckpt):
-            refine_model = load_diff_model(args.diff_refine_ckpt, args.diffusion)[0]
+            refine_model = load_diff_model(args.diff_refine_ckpt, args.diffusion, args.device)[0]
 
         if args.compile:
             diff_model.forward = torch.compile(diff_model.forward, mode="reduce-overhead", fullgraph=True)

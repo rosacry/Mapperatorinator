@@ -195,7 +195,7 @@ class ClassifierFreeGuidanceLogitsProcessor(LogitsProcessor):
 class Processor(object):
     def __init__(self, args: InferenceConfig, model: OsuT, tokenizer: Tokenizer, parallel: bool = False):
         """Model inference stage that processes sequences."""
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.device = args.device
         self.args = args
         self.model = model
         self.tokenizer = tokenizer

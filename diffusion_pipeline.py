@@ -31,7 +31,7 @@ class DiffisionPipeline(object):
             refine_model: DiT = None,
     ):
         """Model inference stage that generates positions for distance events."""
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.device = args.device
         self.model = model
         self.tokenizer = tokenizer
         self.refine_model = refine_model
