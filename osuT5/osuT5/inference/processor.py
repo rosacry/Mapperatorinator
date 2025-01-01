@@ -25,19 +25,19 @@ MILISECONDS_PER_STEP = 10
 
 @dataclass
 class GenerationConfig:
-    gamemode: int = -1
-    beatmap_id: int = -1
-    difficulty: float = -1
-    mapper_id: int = -1
-    year: int = -1
+    gamemode: int = 0
+    beatmap_id: Optional[int] = None
+    difficulty: Optional[float] = None
+    mapper_id: Optional[int] = None
+    year: Optional[int] = None
     hitsounded: bool = True
     slider_multiplier: float = 1.4
-    circle_size: float = -1
-    keycount: int = -1
-    hold_note_ratio: float = -1
-    scroll_speed_ratio: float = -1
-    descriptors: list[str] = None
-    negative_descriptors: list[str] = None
+    circle_size: Optional[float] = None
+    keycount: int = 4
+    hold_note_ratio: Optional[float] = None
+    scroll_speed_ratio: Optional[float] = None
+    descriptors: Optional[list[str]] = None
+    negative_descriptors: Optional[list[str]] = None
 
 
 def generation_config_from_beatmap(beatmap: Beatmap, tokenizer: Tokenizer) -> GenerationConfig:
@@ -45,15 +45,15 @@ def generation_config_from_beatmap(beatmap: Beatmap, tokenizer: Tokenizer) -> Ge
     return GenerationConfig(
         gamemode=gamemode,
         beatmap_id=beatmap.beatmap_id,
-        difficulty=round(float(beatmap.stars()), 2) if gamemode == 0 else -1,  # We don't have diffcalc for other gamemodes
-        mapper_id=tokenizer.beatmap_mapper.get(beatmap.beatmap_id, -1),
+        difficulty=round(float(beatmap.stars()), 2) if gamemode == 0 else None,  # We don't have diffcalc for other gamemodes
+        mapper_id=tokenizer.beatmap_mapper.get(beatmap.beatmap_id, None),
         slider_multiplier=beatmap.slider_multiplier,
         circle_size=beatmap.circle_size,
         hitsounded=get_hitsounded_status(beatmap),
-        keycount=int(beatmap.circle_size),
-        hold_note_ratio=get_hold_note_ratio(beatmap) if gamemode == 3 else -1,
-        scroll_speed_ratio=get_scroll_speed_ratio(beatmap) if gamemode in [1, 3] else -1,
-        descriptors=[tokenizer.descriptor_name(idx) for idx in tokenizer.beatmap_descriptors.get(beatmap.beatmap_id, [])],
+        keycount=int(beatmap.circle_size) if gamemode == 3 else 4,
+        hold_note_ratio=get_hold_note_ratio(beatmap) if gamemode == 3 else None,
+        scroll_speed_ratio=get_scroll_speed_ratio(beatmap) if gamemode in [1, 3] else None,
+        descriptors=[tokenizer.descriptor_name(idx) for idx in tokenizer.beatmap_descriptors.get(beatmap.beatmap_id, [])] if beatmap.beatmap_id in tokenizer.beatmap_descriptors else None,
     )
 
 
@@ -339,7 +339,7 @@ class Processor(object):
 
         # Prepare special input for legacy model
         beatmap_idx = torch.tensor([self.tokenizer.num_classes], dtype=torch.long, device=self.device)
-        if self.need_beatmap_idx:
+        if self.need_beatmap_idx and generation_config.beatmap_id is not None:
             beatmap_idx = torch.tensor(
                 [self.tokenizer.beatmap_idx[generation_config.beatmap_id]], dtype=torch.long, device=self.device)
 
@@ -605,20 +605,20 @@ class Processor(object):
             gamemode_token = self.tokenizer.encode_gamemode(config.gamemode)
             cond_tokens.append(gamemode_token)
         if self.add_style_token:
-            style_token = self.tokenizer.encode_style(config.beatmap_id) if config.beatmap_id != -1 else self.tokenizer.style_unk
+            style_token = self.tokenizer.encode_style(config.beatmap_id) if config.beatmap_id is not None else self.tokenizer.style_unk
             cond_tokens.append(style_token)
-            if config.beatmap_id != -1 and config.beatmap_id not in self.tokenizer.beatmap_idx and verbose:
+            if config.beatmap_id is not None and config.beatmap_id not in self.tokenizer.beatmap_idx and verbose:
                 print(f"Beatmap class {config.beatmap_id} not found. Using default.")
         if self.add_diff_token:
-            diff_token = self.tokenizer.encode_diff(config.difficulty) if config.difficulty != -1 else self.tokenizer.diff_unk
+            diff_token = self.tokenizer.encode_diff(config.difficulty) if config.difficulty is not None else self.tokenizer.diff_unk
             cond_tokens.append(diff_token)
         if self.add_mapper_token:
-            mapper_token = self.tokenizer.encode_mapper_id(config.mapper_id) if config.mapper_id != -1 else self.tokenizer.mapper_unk
+            mapper_token = self.tokenizer.encode_mapper_id(config.mapper_id) if config.mapper_id is not None else self.tokenizer.mapper_unk
             cond_tokens.append(mapper_token)
-            if config.mapper_id != -1 and config.mapper_id not in self.tokenizer.mapper_idx and verbose:
+            if config.mapper_id is not None and config.mapper_id not in self.tokenizer.mapper_idx and verbose:
                 print(f"Mapper class {config.mapper_id} not found. Using default.")
         if self.add_year_token:
-            year_token = self.tokenizer.encode_year(config.year) if config.year != -1 else self.tokenizer.year_unk
+            year_token = self.tokenizer.encode_year(config.year) if config.year is not None else self.tokenizer.year_unk
             cond_tokens.append(year_token)
         if self.add_hitsounded_token:
             hitsounded_token = self.tokenizer.encode(Event(EventType.HITSOUNDED, int(config.hitsounded)))
@@ -630,15 +630,15 @@ class Processor(object):
             global_sv_token = self.tokenizer.encode_global_sv(config.slider_multiplier)
             cond_tokens.append(global_sv_token)
         if self.add_cs_token and config.gamemode in [0, 2]:
-            cs_token = self.tokenizer.encode_cs(config.circle_size) if config.circle_size != -1 else self.tokenizer.cs_unk
+            cs_token = self.tokenizer.encode_cs(config.circle_size) if config.circle_size is not None else self.tokenizer.cs_unk
             cond_tokens.append(cs_token)
         if config.gamemode == 3:
             keycount_token = self.tokenizer.encode(Event(EventType.MANIA_KEYCOUNT, config.keycount))
             cond_tokens.append(keycount_token)
-            hold_note_ratio_token = self.tokenizer.encode_hold_note_ratio(config.hold_note_ratio) if config.hold_note_ratio != -1 else self.tokenizer.hold_note_ratio_unk
+            hold_note_ratio_token = self.tokenizer.encode_hold_note_ratio(config.hold_note_ratio) if config.hold_note_ratio is not None else self.tokenizer.hold_note_ratio_unk
             cond_tokens.append(hold_note_ratio_token)
         if config.gamemode in [1, 3]:
-            scroll_speed_ratio_token = self.tokenizer.encode_scroll_speed_ratio(config.scroll_speed_ratio) if config.scroll_speed_ratio != -1 else self.tokenizer.scroll_speed_ratio_unk
+            scroll_speed_ratio_token = self.tokenizer.encode_scroll_speed_ratio(config.scroll_speed_ratio) if config.scroll_speed_ratio is not None else self.tokenizer.scroll_speed_ratio_unk
             cond_tokens.append(scroll_speed_ratio_token)
 
         descriptors = config.descriptors if config.descriptors is not None else []

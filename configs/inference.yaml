@@ -1,26 +1,31 @@
+# Paths
 model_path: ''          # Path to trained model
 audio_path: ''          # Path to input audio
 output_path: ''         # Path to output directory
 beatmap_path: ''        # Path to .osu file to autofill metadata and use as reference
+
+# Conditional generation settings
+gamemode: null             # Gamemode of the beatmap
+beatmap_id: null          # Beatmap ID to use as style
+difficulty: null          # Difficulty star rating to map
+mapper_id: null           # Mapper ID to use as style
+year: null                # Year to use as style
+hitsounded: null        # Whether the beatmap has hitsounds
+slider_multiplier: null   # Multiplier for slider velocity
+circle_size: null         # Circle size to use for style
+keycount: null            # Number of keys to use for mania
+hold_note_ratio: null     # Ratio of how many hold notes to generate in mania
+scroll_speed_ratio: null  # Ratio of how many scroll speed changes to generate in mania and taiko
+descriptors: null          # List of descriptors to use for style
+negative_descriptors: null # List of descriptors to avoid when using classifier-free guidance
+
+# Inference settings
+seed: 0                 # Random seed
 lookback: 0.5             # Fraction of audio sequence to fill with tokens from previous inference window
 lookahead: 0.4            # Fraction of audio sequence to skip at the end of the audio window
-gamemode: 0             # Gamemode of the beatmap
-beatmap_id: -1          # Beatmap ID to use as style
-difficulty: -1          # Difficulty star rating to map
-mapper_id: -1           # Mapper ID to use as style
-year: -1                # Year to use as style
-hitsounded: true        # Whether the beatmap has hitsounds
-slider_multiplier: -1   # Multiplier for slider velocity
-circle_size: -1         # Circle size to use for style
-keycount: 4             # Number of keys to use for mania
-hold_note_ratio: -1     # Ratio of how many hold notes to generate in mania
-scroll_speed_ratio: -1  # Ratio of how many scroll speed changes to generate in mania and taiko
-descriptors: []         # List of descriptors to use for style
-negative_descriptors: []# List of descriptors to avoid when using classifier-free guidance
 timing_leniency: 20     # Number of milliseconds of error to allow for timing generation
 in_context: [NONE]          # Context types of other beatmap(s)
 output_type: [MAP]    # Output type (map, timing)
-seed: 0                 # Random seed
 cfg_scale: 1.0              # Scale of classifier-free guidance
 temperature: 1.0        # Sampling temperature
 timing_temperature: 0.1 # Sampling temperature for timing
@@ -36,6 +41,7 @@ super_timing: false     # Use super timing generator (slow but accurate timing)
 timer_num_beams: 2            # Number of beams for beam search
 timer_bpm_threshold: 0.7  # Threshold requirement for BPM change in timer, higher values will result in less BPM changes
 
+# Metadata settings
 bpm: 120                # Beats per minute of input audio
 offset: 0               # Start of beat, in miliseconds, from the beginning of input audio
 title: ''               # Song title
