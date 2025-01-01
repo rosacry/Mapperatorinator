@@ -128,46 +128,48 @@ class ConditionalTemperatureLogitsWarper(LogitsProcessor):
         return scores / self.temperature
 
 
-class LookBackBiasLogitsWarper(LogitsProcessor):
+class LookbackBiasLogitsWarper(LogitsProcessor):
     """This logit processor adjusts for bias in the frequency of generated events in case there is a lookback window,
     and it is not full of generated tokens. In this case, the lookback window will be considered multiple times for
     generating the next token, so we nill the scores of the lookback tokens and increase the chance of eos.
     """
-    def __init__(self, lookback_max_time: float, tokenizer: Tokenizer, types_first: bool):
+    def __init__(self, lookback_max_time: float, tokenizer: Tokenizer, types_first: bool, device: torch.device):
         assert types_first, "Lookback bias is only supported for types_first=True"
 
         self.lookback_start = tokenizer.event_start[EventType.TIME_SHIFT]
         self.lookback_end = tokenizer.encode(Event(EventType.TIME_SHIFT, int(lookback_max_time / MILISECONDS_PER_STEP)))
-        self.lookback_range = torch.full((tokenizer.vocab_size_out,), False, dtype=torch.bool)
+        self.lookback_range = torch.full((tokenizer.vocab_size_out,), False, dtype=torch.bool, device=device)
         self.lookback_range[self.lookback_start:self.lookback_end] = True
         self.other_range = ~self.lookback_range
-        self.eos_ids = torch.tensor([tokenizer.eos_id] + [tokenizer.context_eos[context] for context in tokenizer.context_eos])
+        self.eos_ids = torch.tensor([tokenizer.eos_id] + [tokenizer.context_eos[context] for context in tokenizer.context_eos], dtype=torch.long, device=device)
 
         self.last_scores = None
         self.timed_tokens = []
         for event_type in TIMED_EVENTS:
             if event_type in tokenizer.event_start:
                 self.timed_tokens.extend(list(range(tokenizer.event_start[event_type], tokenizer.event_end[event_type])))
+        self.timed_tokens = torch.tensor(self.timed_tokens, dtype=torch.long, device=device)
 
     def __call__(self, input_ids: torch.LongTensor, scores: torch.FloatTensor) -> torch.Tensor:
         scores_processed = scores
 
         if input_ids.shape[1] != 0 and self.last_scores is not None:
-            last_token = input_ids[0, -1].item()
-            if last_token in self.timed_tokens:
+            last_token = input_ids[:, -1]
+            last_timed = torch.isin(last_token, self.timed_tokens)
+            if last_timed.any():
                 # The scores are for a timeshift event
-                last_probs = F.softmax(self.last_scores[0], dim=-1).cpu()
-                probs = F.softmax(scores[0], dim=-1).cpu()
-                prob_eos = last_probs[self.eos_ids].sum().item()
+                last_probs = F.softmax(self.last_scores, dim=-1)
+                probs = F.softmax(scores, dim=-1)
+                prob_eos = last_probs[:, self.eos_ids].sum(dim=-1)
                 prob_event = 1 - prob_eos
-                s = 1 / (probs[self.other_range].sum() * prob_event + prob_eos)
-                probs[self.lookback_range] = 0
-                probs[self.other_range] *= s
+                s = 1 / (probs[:, self.other_range].sum(dim=-1) * prob_event + prob_eos)
+                probs[:, self.lookback_range] = 0
+                probs[:, self.other_range] *= s
                 # Probability of eos now which should have been at the previous token
                 prob_eos_extra = torch.clip((s - 1) * prob_eos / prob_event, 0, 1)  # Clip to avoid numerical instability
-                probs[self.lookback_start] = prob_eos_extra  # This will be treated as eos if trim lookback is true
+                probs[:, self.lookback_start] = prob_eos_extra  # This will be treated as eos if trim lookback is true
 
-                scores_processed = torch.log(probs).unsqueeze(0).to(scores.device)
+                scores_processed = torch.where(last_timed, torch.log(probs), scores)
 
         self.last_scores = scores
         return scores_processed
@@ -246,7 +248,7 @@ class Processor(object):
         if self.timeshift_bias != 0:
             self.base_logit_processor.append(TimeshiftBias(self.timeshift_bias, self.time_range))
 
-        self.lookback_bias_logit_processor = LookBackBiasLogitsWarper(self.lookback_max_time, tokenizer, self.types_first)
+        self.lookback_bias_logit_processor = LookbackBiasLogitsWarper(self.lookback_max_time, tokenizer, self.types_first, self.device)
 
         self._generate = partial(
             self.model.generate,
