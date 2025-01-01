@@ -54,19 +54,19 @@ class DiffisionPipeline(object):
         """Get class vector for the given beatmap."""
         class_vector = torch.zeros(self.tokenizer.num_tokens)
         if self.tokenizer.num_classes > 0:
-            if config.beatmap_id != -1:
+            if config.beatmap_id is not None:
                 class_vector[self.tokenizer.encode_style(config.beatmap_id)] = 1
                 if config.beatmap_id not in self.tokenizer.beatmap_idx:
                     print(f"Beatmap class {config.beatmap_id} not found. Using default.")
             else:
                 class_vector[self.tokenizer.style_unk] = 1
         if self.tokenizer.num_diff_classes > 0:
-            if config.difficulty != -1:
+            if config.difficulty is not None:
                 class_vector[self.tokenizer.encode_diff(config.difficulty)] = 1
             else:
                 class_vector[self.tokenizer.diff_unk] = 1
         if self.tokenizer.num_mapper_classes > 0:
-            if config.mapper_id != -1:
+            if config.mapper_id is not None:
                 class_vector[self.tokenizer.encode_mapper(config.mapper_id)] = 1
                 if config.mapper_id not in self.tokenizer.mapper_idx:
                     print(f"Mapper class {config.mapper_id} not found. Using default.")
@@ -86,7 +86,7 @@ class DiffisionPipeline(object):
             else:
                 class_vector[self.tokenizer.descriptor_unk] = 1
         if self.tokenizer.num_cs_classes > 0:
-            if config.circle_size != -1:
+            if config.circle_size is not None:
                 class_vector[self.tokenizer.encode_cs(config.circle_size)] = 1
             else:
                 class_vector[self.tokenizer.cs_unk] = 1

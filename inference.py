@@ -46,34 +46,37 @@ def get_args_from_beatmap(args: InferenceConfig, tokenizer: Tokenizer):
 
     generation_config = generation_config_from_beatmap(beatmap, tokenizer)
 
-    if args.gamemode == -1:
+    if args.gamemode is None:
         args.gamemode = generation_config.gamemode
         print(f"Using game mode {args.gamemode}")
-    if args.beatmap_id == -1 and generation_config.beatmap_id:
+    if args.beatmap_id is None and generation_config.beatmap_id:
         args.beatmap_id = generation_config.beatmap_id
         print(f"Using beatmap ID {args.beatmap_id}")
-    if args.difficulty == -1 and generation_config.difficulty != -1 and len(beatmap.hit_objects(stacking=False)) > 0:
+    if args.difficulty is None and generation_config.difficulty != -1 and len(beatmap.hit_objects(stacking=False)) > 0:
         args.difficulty = generation_config.difficulty
         print(f"Using difficulty {args.difficulty}")
-    if args.mapper_id == -1 and beatmap.beatmap_id in tokenizer.beatmap_mapper:
+    if args.mapper_id is None and beatmap.beatmap_id in tokenizer.beatmap_mapper:
         args.mapper_id = generation_config.mapper_id
         print(f"Using mapper ID {args.mapper_id}")
-    if len(args.descriptors) == 0 and beatmap.beatmap_id in tokenizer.beatmap_descriptors:
+    if args.descriptors is None and beatmap.beatmap_id in tokenizer.beatmap_descriptors:
         args.descriptors = generation_config.descriptors
         print(f"Using descriptors {args.descriptors}")
-    if args.circle_size == -1:
+    if args.circle_size is None:
         args.circle_size = generation_config.circle_size
         print(f"Using circle size {args.circle_size}")
-    if args.slider_multiplier == -1:
+    if args.slider_multiplier is None:
         args.slider_multiplier = generation_config.slider_multiplier
         print(f"Using slider multiplier {args.slider_multiplier}")
-    if args.keycount == -1 and args.gamemode == 3:
+    if args.hitsounded is None:
+        args.hitsounded = generation_config.hitsounded
+        print(f"Using hitsounded {args.hitsounded}")
+    if args.keycount is None and args.gamemode == 3:
         args.keycount = int(generation_config.keycount)
         print(f"Using keycount {args.keycount}")
-    if args.hold_note_ratio == -1 and args.gamemode == 3:
+    if args.hold_note_ratio is None and args.gamemode == 3:
         args.hold_note_ratio = generation_config.hold_note_ratio
         print(f"Using hold note ratio {args.hold_note_ratio}")
-    if args.scroll_speed_ratio == -1 and args.gamemode == 3:
+    if args.scroll_speed_ratio is None and args.gamemode == 3:
         args.scroll_speed_ratio = generation_config.scroll_speed_ratio
         print(f"Using scroll speed ratio {args.scroll_speed_ratio}")
 
@@ -126,16 +129,18 @@ def get_config(args: InferenceConfig):
     tags = {k: v for k, v in tags.items() if v != defaults[k]}
     # To string separated by spaces
     tags = " ".join(f"{k}={v}" for k, v in tags.items())
+
+    # Set defaults for generation config that does not allow an unknown value
     return GenerationConfig(
-        gamemode=args.gamemode,
+        gamemode=args.gamemode if args.gamemode is not None else 0,
         beatmap_id=args.beatmap_id,
         difficulty=args.difficulty,
         mapper_id=args.mapper_id,
         year=args.year,
-        hitsounded=args.hitsounded,
-        slider_multiplier=args.slider_multiplier,
+        hitsounded=args.hitsounded if args.hitsounded is not None else True,
+        slider_multiplier=args.slider_multiplier if args.slider_multiplier is not None else 1.4,
         circle_size=args.circle_size,
-        keycount=args.keycount,
+        keycount=args.keycount if args.keycount is not None else 4,
         hold_note_ratio=args.hold_note_ratio,
         scroll_speed_ratio=args.scroll_speed_ratio,
         descriptors=args.descriptors,

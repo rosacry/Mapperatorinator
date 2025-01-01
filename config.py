@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Optional
 
 from hydra.core.config_store import ConfigStore
 from omegaconf import MISSING
@@ -17,21 +17,25 @@ class InferenceConfig:
     audio_path: str = ''  # Path to input audio
     output_path: str = ''  # Path to output directory
     beatmap_path: str = ''  # Path to .osu file to autofill metadata and use as reference
+
+    # Conditional generation settings
+    gamemode: Optional[int] = None  # Gamemode of the beatmap
+    beatmap_id: Optional[int] = None  # Beatmap ID to use as style
+    difficulty: Optional[float] = None  # Difficulty star rating to map
+    mapper_id: Optional[int] = None  # Mapper ID to use as style
+    year: Optional[int] = None  # Year to use as style
+    hitsounded: Optional[bool] = None  # Whether the beatmap has hitsounds
+    slider_multiplier: Optional[float] = None  # Multiplier for slider velocity
+    circle_size: Optional[float] = None  # Circle size to use for style
+    keycount: Optional[int] = None  # Number of keys to use for mania
+    hold_note_ratio: Optional[float] = None  # Ratio of how many hold notes to generate in mania
+    scroll_speed_ratio: Optional[float] = None  # Ratio of how many scroll speed changes to generate in mania and taiko
+    descriptors: Optional[list[str]] = None  # List of descriptors to use for style
+    negative_descriptors: Optional[list[str]] = None  # List of descriptors to avoid when using classifier-free guidance
+
+    # Inference settings
     lookback: float = 0.5  # Fraction of audio sequence to fill with tokens from previous inference window
     lookahead: float = 0.4  # Fraction of audio sequence to skip at the end of the audio window
-    gamemode: int = 0  # Gamemode of the beatmap
-    beatmap_id: int = -1  # Beatmap ID to use as style
-    difficulty: float = -1  # Difficulty star rating to map
-    mapper_id: int = -1  # Mapper ID to use as style
-    year: int = -1  # Year to use as style
-    hitsounded: bool = True  # Whether the beatmap has hitsounds
-    slider_multiplier: float = -1  # Multiplier for slider velocity
-    circle_size: float = -1  # Circle size to use for style
-    keycount: int = 4  # Number of keys to use for mania
-    hold_note_ratio: float = -1  # Ratio of how many hold notes to generate in mania
-    scroll_speed_ratio: float = -1  # Ratio of how many scroll speed changes to generate in mania and taiko
-    descriptors: list[str] = field(default_factory=lambda: [])  # List of descriptors to use for style
-    negative_descriptors: list[str] = field(default_factory=lambda: [])  # List of descriptors to avoid when using classifier-free guidance
     timing_leniency: int = 20  # Number of milliseconds of error to allow for timing generation
     in_context: list[ContextType] = field(default_factory=lambda: [ContextType.NONE])  # Context types of other beatmap(s)
     output_type: list[ContextType] = field(default_factory=lambda: [ContextType.MAP])  # Output type (map, timing)
@@ -51,6 +55,7 @@ class InferenceConfig:
     timer_num_beams: int = 2  # Number of beams for beam search
     timer_bpm_threshold: float = 0.7  # Threshold requirement for BPM change in timer, higher values will result in less BPM changes
 
+    # Metadata settings
     bpm: int = 120  # Beats per minute of input audio
     offset: int = 0  # Start of beat, in miliseconds, from the beginning of input audio
     title: str = ''  # Song title
