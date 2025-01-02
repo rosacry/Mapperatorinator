@@ -4,3 +4,4 @@ logs
 tensorboard_logs
 .idea
 test
+test_inference.py
