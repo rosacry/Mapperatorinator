@@ -26,15 +26,9 @@ class OsuParser:
         self.add_sv = args.data.add_sv
         self.add_mania_sv = args.data.add_mania_sv
         self.mania_bpm_normalized_scroll_speed = args.data.mania_bpm_normalized_scroll_speed
-        if self.add_positions:
-            self.position_precision = args.data.position_precision
-            self.position_split_axes = args.data.position_split_axes
-            x_min, x_max, y_min, y_max = args.data.position_range
-            self.x_min = x_min / self.position_precision
-            self.x_max = x_max / self.position_precision
-            self.y_min = y_min / self.position_precision
-            self.y_max = y_max / self.position_precision
-            self.x_count = self.x_max - self.x_min + 1
+        self.position_precision = args.data.position_precision
+        self.position_split_axes = args.data.position_split_axes
+        self.x_min, self.x_max, self.y_min, self.y_max = args.data.position_range
         if self.add_distances:
             dist_range = tokenizer.event_range[EventType.DISTANCE]
             self.dist_min = dist_range.min_value
@@ -297,7 +291,8 @@ class OsuParser:
     def _scale_clip_pos(self, pos: npt.NDArray) -> Tuple[int, int]:
         """Clip position to valid range."""
         p = pos / self.position_precision
-        return int(np.clip(p[0], self.x_min, self.x_max)), int(np.clip(p[1], self.y_min, self.y_max))
+        return (int(np.clip(p[0], self.x_min / self.position_precision, self.x_max / self.position_precision)),
+                int(np.clip(p[1], self.y_min / self.position_precision, self.y_max / self.position_precision)))
 
     def _add_position_event(self, pos: npt.NDArray, last_pos: npt.NDArray, time: timedelta, events: list[Event], event_times: list[int]) -> npt.NDArray:
         time_ms = int(time.total_seconds() * 1000)
@@ -314,7 +309,10 @@ class OsuParser:
                 event_times.append(time_ms)
                 event_times.append(time_ms)
             else:
-                events.append(Event(EventType.POS, (p[0] - self.x_min) + (p[1] - self.y_min) * self.x_count))
+                events.append(Event(EventType.POS, int((p[0] - self.x_min / self.position_precision) +
+                                                       (p[1] - self.y_min / self.position_precision) *
+                                                       ((self.x_max - self.x_min) / self.position_precision + 1))
+                                    ))
                 event_times.append(time_ms)
 
         return pos

@@ -126,6 +126,8 @@ class Postprocessor(object):
         self.types_first = args.osut5.data.types_first
         self.has_pos = args.osut5.data.add_positions
         self.mania_bpm_normalized_scroll_speed = args.osut5.data.mania_bpm_normalized_scroll_speed
+        self.start_time = args.start_time
+        self.end_time = args.end_time
 
     def generate(
             self,
@@ -399,6 +401,58 @@ class Postprocessor(object):
             beatmap_config = dataclasses.asdict(beatmap_config)
             result = template.safe_substitute({**beatmap_config, **hit_objects, **timing_points})
             return result
+
+    # noinspection PyProtectedMember
+    def add_to_beatmap(self, result: str, beatmap_path: str):
+        # Parse the result and the beatmap
+        result_beatmap = Beatmap.parse(result)
+        beatmap = Beatmap.from_path(beatmap_path)
+
+        # Replace between start and end time
+        start_time = timedelta(milliseconds=self.start_time) if self.start_time is not None else timedelta.min
+        end_time = timedelta(milliseconds=self.end_time) if self.end_time is not None else timedelta.max
+
+        # Remove all objects between start and end time
+        beatmap._hit_objects = [ho for ho in beatmap._hit_objects if ho.time < start_time or ho.time > end_time]
+        # Also remove all timing points between start and end time
+        beatmap.timing_points = [tp for tp in beatmap.timing_points if tp.offset < start_time or tp.offset > end_time]
+
+        # Get the result beatmap's hit objects and timing points between start and end time
+        result_hit_objects = [ho for ho in result_beatmap._hit_objects if start_time <= ho.time <= end_time]
+        result_timing_points = [tp for tp in result_beatmap.timing_points if start_time <= tp.offset <= end_time]
+
+        # Add the new objects
+        beatmap._hit_objects.extend(result_hit_objects)
+        beatmap.timing_points.extend(result_timing_points)
+
+        # Sort the hit objects and timing points
+        beatmap._hit_objects.sort(key=lambda ho: ho.time)
+        beatmap.timing_points.sort(key=lambda tp: tp.offset)
+
+        # If the SV or volume or BPM differs at the start time, add a new timing point
+        if len(result_beatmap.timing_points) > 0 and len(beatmap.timing_points) > 0:
+            result_tp = result_beatmap.timing_point_at(start_time)
+            beatmap_tp = beatmap.timing_point_at(start_time)
+
+            result_sv = result_tp.ms_per_beat if result_tp.parent is not None else -100
+            tp = TimingPoint(result_tp.offset, result_sv, 4, 2, 0, result_tp.volume, None, result_tp.kiai_mode)
+            tp_change = TimingPointsChange(tp, mpb=True, volume=True, kiai=True)
+            beatmap.timing_points = tp_change.add_change(beatmap.timing_points, False)
+
+            result_redline = result_tp if result_tp.parent is None else result_tp.parent
+            beatmap_redline = beatmap_tp if beatmap_tp.parent is None else beatmap_tp.parent
+            result_counter = ((start_time - result_redline.offset).total_seconds() * 1000 / result_redline.ms_per_beat + 1e-4) % result_redline.meter
+            beatmap_counter = ((start_time - beatmap_redline.offset).total_seconds() * 1000 / beatmap_redline.ms_per_beat + 1e-4) % beatmap_redline.meter
+            if (result_redline.meter != beatmap_redline.meter or
+                    abs(result_counter - beatmap_counter) > 1e-4 or
+                    abs(result_redline.ms_per_beat - beatmap_redline.ms_per_beat) > 1e-4):
+                offset = start_time - timedelta(milliseconds=result_counter * result_redline.ms_per_beat)
+                tp = TimingPoint(offset, result_redline.ms_per_beat, result_redline.meter, 2, 0, 100, None, False)
+                tp_change = TimingPointsChange(tp, mpb=True, meter=True, uninherited=True)
+                beatmap.timing_points = tp_change.add_change(beatmap.timing_points, False)
+
+        # Write the beatmap to the file
+        beatmap.write_path(beatmap_path)
 
     def write_result(self, result: str, output_path: str):
         # Write .osu file to directory

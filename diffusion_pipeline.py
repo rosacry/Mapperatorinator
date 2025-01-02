@@ -46,6 +46,8 @@ class DiffisionPipeline(object):
         self.random_init = args.random_init
         self.types_first = args.osut5.data.types_first
         self.pad_sequence = args.pad_sequence
+        self.start_time = args.start_time
+        self.end_time = args.end_time
 
     def get_class_vector(
             self,
@@ -109,7 +111,7 @@ class DiffisionPipeline(object):
             events: List of Event objects with position events.
         """
 
-        seq_x, seq_c, seq_len, seq_indices = self.events_to_sequence(events)
+        seq_x, seq_o, seq_c, seq_len, seq_indices = self.events_to_sequence(events)
         if verbose:
             print(f"seq len {seq_len}")
 
@@ -152,6 +154,7 @@ class DiffisionPipeline(object):
         def sample_part(z, start, end, start_mask_size=0):
             z_part = z[:, :, start:end]
             c_part = c[:, :, start:end]
+            o_part = seq_o[start:end].contiguous()
             attn_mask_part = attn_mask[start:end, start:end]
             key_padding_mask = None
 
@@ -179,6 +182,19 @@ class DiffisionPipeline(object):
             # True means it will be generated
             mask = torch.full_like(z_part, False, dtype=torch.bool)
             mask[:, :, start_mask_size:] = True
+
+            # Mask parts that are outside the generation window
+            if self.start_time is not None:
+                start_idx = torch.searchsorted(o_part, self.start_time, right=False)
+                mask[:, :, :start_idx] = False
+            if self.end_time is not None:
+                end_idx = torch.searchsorted(o_part, self.end_time, right=True)
+                mask[:, :, end_idx:] = False
+
+            # If everything is masked, skip generation
+            if not mask.any():
+                return z_part[:, :, :-pad_amount] if pad_amount > 0 else z_part
+
             z_part = in_paint_mask(z_part)
 
             # Sample positions:
@@ -235,7 +251,7 @@ class DiffisionPipeline(object):
         positions = to_positions(full_samples)
         return self.events_with_pos(events, positions.squeeze(0), seq_indices)
 
-    def events_to_sequence(self, events: list[Event]) -> tuple[torch.Tensor, torch.Tensor, int, dict[int, int]]:
+    def events_to_sequence(self, events: list[Event]) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, int, dict[int, int]]:
         # Calculate the time of every event and interpolate time for control point events
         event_times = []
         update_event_times(events, event_times, types_first=self.types_first)
@@ -316,7 +332,7 @@ class DiffisionPipeline(object):
             seq_indices[j] = len(data_chunks) - 1
 
         if len(data_chunks) == 0:
-            return torch.zeros(2, 0), torch.zeros(1, 0), 0, {}
+            return torch.zeros(2, 0), torch.zeros(1, 0), torch.zeros(1, 0), 0, {}
 
         seq = torch.stack(data_chunks, 0)
         seq = torch.swapaxes(seq, 0, 1)
@@ -332,7 +348,7 @@ class DiffisionPipeline(object):
             0,
         )
 
-        return seq_x, seq_c, seq.shape[1], seq_indices
+        return seq_x, seq_o, seq_c, seq.shape[1], seq_indices
 
     @staticmethod
     def events_with_pos(events: list[Event], sampled_seq: torch.Tensor, seq_indices: dict[int, int]) -> list[Event]:

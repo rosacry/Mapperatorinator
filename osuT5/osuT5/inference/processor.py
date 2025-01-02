@@ -133,7 +133,7 @@ class LookbackBiasLogitsWarper(LogitsProcessor):
     and it is not full of generated tokens. In this case, the lookback window will be considered multiple times for
     generating the next token, so we nill the scores of the lookback tokens and increase the chance of eos.
     """
-    def __init__(self, lookback_max_time: float, tokenizer: Tokenizer, types_first: bool, device: torch.device):
+    def __init__(self, lookback_max_time: float, tokenizer: Tokenizer, types_first: bool, device):
         assert types_first, "Lookback bias is only supported for types_first=True"
 
         self.lookback_start = tokenizer.event_start[EventType.TIME_SHIFT]
@@ -235,6 +235,7 @@ class Processor(object):
         self.context_types: list[dict[str, list[ContextType]]] = \
             [{k: [ContextType(t) for t in v] for k, v in ct.items()} for ct in args.osut5.data.context_types]
         self.add_out_context_types = args.osut5.data.add_out_context_types
+        self.add_to_beatmap = args.add_to_beatmap
         self.start_time = args.start_time
         self.end_time = args.end_time
 
@@ -387,21 +388,46 @@ class Processor(object):
             update_event_times(context["events"], context["event_times"], song_length, self.types_first)
 
             # Trim events to start and end time
+            # Add extra leniency because generated events may not be exactly on time
             if self.start_time is not None:
-                self._trim_events_before_time(context["events"], context["event_times"], self.start_time)
+                self._trim_events_before_time(context["events"], context["event_times"], self.start_time - 10)
             if self.end_time is not None:
-                self._trim_events_after_time(context["events"], context["event_times"], self.end_time)
-
-            if context["context_type"] != ContextType.MAP:
-                continue
+                self._trim_events_after_time(context["events"], context["event_times"], self.end_time + 10)
 
             # Rescale and unpack position events
-            if self.add_positions:
+            if context["context_type"] == ContextType.MAP and self.add_positions:
                 context["events"], context["event_times"] = self._rescale_positions(context["events"], context["event_times"])
 
-            # Turn mania key column into X position
-            if generation_config.gamemode == 3:
-                context["events"], context["event_times"] = self._convert_column_to_position(context["events"], context["event_times"], generation_config.keycount)
+        # If we are adding to beatmap, add back the events of the reference beatmap
+        if self.add_to_beatmap and (self.start_time is not None or self.end_time is not None):
+            parser = OsuParser(self.args.osut5, self.tokenizer)
+            parser.position_precision = 1
+            parser.position_split_axes = True
+            for context in out_context_data:
+                ref_context = self.get_context(
+                    context["context_type"],
+                    beatmap_path=beatmap_path,
+                    extra_in_context=extra_in_context,
+                    finished=True,
+                    parser=parser,
+                )
+                if self.start_time is not None:
+                    ref_events, ref_event_times = ref_context["events"].copy(), ref_context["event_times"].copy()
+                    self._trim_events_after_time(ref_events, ref_event_times, self.start_time - 1)
+                    context["events"] = ref_events + context["events"]
+                    context["event_times"] = ref_event_times + context["event_times"]
+                if self.end_time is not None:
+                    ref_events, ref_event_times = ref_context["events"].copy(), ref_context["event_times"].copy()
+                    self._trim_events_before_time(ref_events, ref_event_times, self.end_time + 1)
+                    context["events"] += ref_events
+                    context["event_times"] += ref_event_times
+
+        # Turn mania key column into X position
+        for context in out_context_data:
+            if context["context_type"] != ContextType.MAP or generation_config.gamemode != 3:
+                continue
+
+            context["events"], context["event_times"] = self._convert_column_to_position(context["events"], context["event_times"], generation_config.keycount)
 
         return [(context["events"], context["event_times"]) for context in out_context_data if context["context_type"] in out_context]
 
@@ -533,12 +559,15 @@ class Processor(object):
     def get_context(
             self,
             context: ContextType,
-            beatmap_path: str,
-            extra_in_context: Optional[dict[ContextType, tuple[list[Event], list[int]]]],
-            song_length: float,
-            add_type: bool,
-            add_class: bool,
-            finished: bool,
+            *,
+            beatmap_path: Optional[str] = None,
+            extra_in_context: Optional[dict[ContextType, tuple[list[Event], list[int]]]] = None,
+            song_length: Optional[float] = None,
+            add_type: bool = False,
+            add_class: bool = False,
+            finished: bool = False,
+            partial: bool = False,
+            parser: Optional[OsuParser] = None,
     ):
         if context != ContextType.NONE and finished:
             beatmap_path = Path(beatmap_path)
@@ -556,7 +585,9 @@ class Processor(object):
             "finished": finished,
         }
 
-        if finished:
+        if finished or partial:
+            parser = parser or self.parser
+
             if extra_in_context is not None and context in extra_in_context:
                 data["events"], data["event_times"] = extra_in_context[context]
                 if len(extra_in_context[context]) > 2:
@@ -565,28 +596,33 @@ class Processor(object):
                 pass
             elif context == ContextType.TIMING:
                 beatmap = Beatmap.from_path(beatmap_path)
-                data["events"], data["event_times"] = self.parser.parse_timing(beatmap)
+                data["events"], data["event_times"] = parser.parse_timing(beatmap)
             elif context == ContextType.MAP:
                 beatmap = Beatmap.from_path(beatmap_path)
-                data["events"], data["event_times"] = self.parser.parse(beatmap)
-                data["class"] = self.get_class_vector(generation_config_from_beatmap(beatmap, self.tokenizer), song_length)
+                data["events"], data["event_times"] = parser.parse(beatmap)
+                if add_class:
+                    data["class"] = self.get_class_vector(generation_config_from_beatmap(beatmap, self.tokenizer), song_length)
             elif context == ContextType.NO_HS:
                 beatmap = Beatmap.from_path(beatmap_path)
-                hs_events, hs_event_times = self.parser.parse(beatmap)
+                hs_events, hs_event_times = parser.parse(beatmap)
                 data["events"], data["event_times"] = remove_events_of_type(hs_events, hs_event_times,
                                                                             [EventType.HITSOUND, EventType.VOLUME])
             elif context == ContextType.GD:
                 beatmap = Beatmap.from_path(beatmap_path)
-                data["events"], data["event_times"] = self.parser.parse(beatmap)
-                data["class"] = self.get_class_vector(generation_config_from_beatmap(beatmap, self.tokenizer), song_length)
+                data["events"], data["event_times"] = parser.parse(beatmap)
+                if add_class:
+                    data["class"] = self.get_class_vector(generation_config_from_beatmap(beatmap, self.tokenizer), song_length)
             elif context == ContextType.KIAI:
                 beatmap = Beatmap.from_path(beatmap_path)
-                data["events"], data["event_times"] = self.parser.parse_kiai(beatmap)
+                data["events"], data["event_times"] = parser.parse_kiai(beatmap)
             elif context == ContextType.SV:
                 beatmap = Beatmap.from_path(beatmap_path)
-                data["events"], data["event_times"] = self.parser.parse_scroll_speeds(beatmap)
+                data["events"], data["event_times"] = parser.parse_scroll_speeds(beatmap)
             else:
                 raise ValueError(f"Invalid context type {context}")
+
+            if not finished and partial:
+                self._trim_events_after_time(data["events"], data["event_times"], self.start_time - 1)
         return data
 
     def get_in_context(
@@ -597,9 +633,25 @@ class Processor(object):
             extra_in_context: Optional[dict[ContextType, tuple[list[Event], list[int]]]],
             song_length: float,
     ) -> list[dict[str, Any]]:
-        in_context = [self.get_context(context, beatmap_path, extra_in_context, song_length, True, True, True) for context in in_context]
+        in_context = [self.get_context(
+            context,
+            beatmap_path=beatmap_path,
+            extra_in_context=extra_in_context,
+            song_length=song_length,
+            add_type=True,
+            add_class=True,
+            finished=True,
+        ) for context in in_context]
         if self.add_gd_context:
-            in_context.append(self.get_context(ContextType.GD, beatmap_path, extra_in_context, song_length, False, True, True))
+            in_context.append(self.get_context(
+                ContextType.GD,
+                beatmap_path=beatmap_path,
+                extra_in_context=extra_in_context,
+                song_length=song_length,
+                add_type=False,
+                add_class=True,
+                finished=True,
+            ))
         return in_context
 
     def get_out_context(
@@ -615,7 +667,16 @@ class Processor(object):
     ):
         out = []
         for i, context in enumerate(out_context):
-            context_data = self.get_context(context, beatmap_path, extra_in_context, song_length, self.add_out_context_types, False, context in given_context)
+            context_data = self.get_context(
+                context,
+                beatmap_path=beatmap_path,
+                extra_in_context=extra_in_context,
+                song_length=song_length,
+                add_type=self.add_out_context_types,
+                add_class=False,
+                finished=context in given_context,
+                partial=self.add_to_beatmap and self.start_time is not None,
+            )
 
             # Add class vector to the first out context
             if i == 0:
@@ -820,8 +881,7 @@ class Processor(object):
             result["pre_tokens"] = pre_tokens
 
         context_events = self._get_events_time_range(
-            context["events"], context["event_times"], frame_time,
-            frame_time + self.miliseconds_per_sequence)
+            context["events"], context["event_times"], frame_time, frame_time + self.miliseconds_per_sequence)
         result["tokens"] = self._encode(context_events, frame_time)
 
         # Prepare extra special tokens

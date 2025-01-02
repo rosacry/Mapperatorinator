@@ -106,6 +106,7 @@ def get_config(args: InferenceConfig):
         negative_descriptors=args.negative_descriptors,
         timing_leniency=args.timing_leniency,
         seed=args.seed,
+        add_to_beatmap=args.add_to_beatmap,
         start_time=args.start_time,
         end_time=args.end_time,
         cfg_scale=args.cfg_scale,
@@ -259,10 +260,14 @@ def generate(
         timing=timing,
     )
 
-    if args.output_path is not None and args.output_path != "":
+    if args.add_to_beatmap:
+        postprocessor.add_to_beatmap(result, beatmap_path)
+        if verbose:
+            print(f"Added generated content to {beatmap_path}")
+    elif args.output_path is not None and args.output_path != "":
+        postprocessor.write_result(result, args.output_path)
         if verbose:
             print(f"Generated beatmap saved to {args.output_path}")
-        postprocessor.write_result(result, args.output_path)
 
     return result
 
