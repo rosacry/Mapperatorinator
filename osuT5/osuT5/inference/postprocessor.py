@@ -43,7 +43,7 @@ class BeatmapConfig:
     circle_size: float = 4
     overall_difficulty: float = 8
     approach_rate: float = 9
-    slider_multiplier: float = 1.8
+    slider_multiplier: float = 1.4
 
     # Timing
     bpm: float = 120
@@ -128,6 +128,7 @@ class Postprocessor(object):
         self.mania_bpm_normalized_scroll_speed = args.osut5.data.mania_bpm_normalized_scroll_speed
         self.start_time = args.start_time
         self.end_time = args.end_time
+        self.has_sv = args.osut5.data.add_sv
 
     def generate(
             self,
@@ -321,25 +322,29 @@ class Postprocessor(object):
                 slides = max(int(round(total_duration / span_duration)), 1)
                 span_duration = total_duration / slides
                 slider_path = SliderPath(self.curve_type_shorthand[curve_type], np.array([(slider_head.x, slider_head.y)] + [(cp[1], cp[2]) for cp in anchor_info], dtype=float))
-                length = slider_path.get_distance()
-
-                req_length = length * position_to_progress(
-                    slider_path,
-                    np.array((group.x, group.y)),
-                ) if self.has_pos else length - np.linalg.norm(np.array((group.x, group.y)) - np.array((last_anchor.x, last_anchor.y)))
-
-                if req_length < 1e-4:
-                    continue
+                max_length = slider_path.get_distance()
 
                 tp = self.timing_point_at(timedelta(milliseconds=slider_start_time), timing)
                 redline = tp if tp.parent is None else tp.parent
                 last_sv = 1 if tp.parent is None else -100 / tp.ms_per_beat
 
-                sv, length = self.get_human_sv_and_length(req_length, length, span_duration, last_sv, redline, slider_head.new_combo, beatmap_config.slider_multiplier)
+                if not self.has_sv or slider_head.scroll_speed is None:
+                    req_length = max_length * position_to_progress(
+                        slider_path,
+                        np.array((group.x, group.y)),
+                    ) if self.has_pos else max_length - np.linalg.norm(np.array((group.x, group.y)) - np.array((last_anchor.x, last_anchor.y)))
 
-                # If the adjusted length is too long, scale the control points to fit the length
-                if length > length + 1e-4:
-                    scale = length / length
+                    if req_length < 1e-4:
+                        continue
+
+                    sv, length = self.get_human_sv_and_length(req_length, max_length, span_duration, last_sv, redline, slider_head.new_combo, beatmap_config.slider_multiplier)
+                else:
+                    sv = slider_head.scroll_speed
+                    length = self.calc_length(sv, span_duration, redline, beatmap_config.slider_multiplier)
+
+                # If the adjusted length is too long, scale the control points to fit the max_length
+                if length > max_length + 1e-4:
+                    scale = length / max_length
                     anchor_info = [(cp[0], (cp[1] - slider_head.x) * scale + slider_head.x, (cp[2] - slider_head.y) * scale + slider_head.y) for cp in anchor_info]
 
                 if sv != last_sv:
@@ -505,9 +510,12 @@ class Postprocessor(object):
             sv = rounded_sv if rounded_sv > 1E-5 else sv
 
         # Recalculate the required length to align with the actual sv
-        adjusted_length = sv * span_duration * 100 / redline.ms_per_beat * slider_multiplier
+        adjusted_length = self.calc_length(sv, span_duration, redline, slider_multiplier)
 
         return sv, adjusted_length
+
+    def calc_length(self, sv, span_duration, redline, slider_multiplier):
+        return sv * span_duration * 100 / redline.ms_per_beat * slider_multiplier
 
     def resnap_events(self, events: list[Event], timing: list[TimingPoint]) -> list[Event]:
         """Resnap events to the designated beat snap divisors."""
