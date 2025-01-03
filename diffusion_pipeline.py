@@ -425,13 +425,14 @@ class DiffisionPipeline(object):
                     span_duration = last_anchor.time - slider_head.time
                     tp = self.timing_point_at(timedelta(milliseconds=int(round(slider_head.time))), timing)
                     redline = tp if tp.parent is None else tp.parent
-                    length = slider_head.scroll_speed * span_duration * 100 / redline.ms_per_beat * slider_multiplier
-                    sliders.append(DiffusionSlider(
-                        np.array([info[1] for info in anchor_info]),
-                        seq_indices[group_indices[i][0]],
-                        curve_type,
-                        length,
-                    ))
+                    if slider_head.scroll_speed is not None:
+                        length = slider_head.scroll_speed * span_duration * 100 / redline.ms_per_beat * slider_multiplier
+                        sliders.append(DiffusionSlider(
+                            np.array([info[1] for info in anchor_info]),
+                            seq_indices[group_indices[i][0]],
+                            curve_type,
+                            length,
+                        ))
                     slider_head = None
                     last_anchor = None
                     anchor_info = []
