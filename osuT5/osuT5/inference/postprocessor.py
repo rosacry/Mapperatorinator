@@ -342,6 +342,12 @@ class Postprocessor(object):
                     sv = slider_head.scroll_speed
                     length = self.calc_length(sv, span_duration, redline, beatmap_config.slider_multiplier)
 
+                # Reduce sv if it is way too long
+                if length > max_length * 1.5:
+                    sv = max_length / 100 / span_duration * redline.ms_per_beat / beatmap_config.slider_multiplier
+                    sv = round(sv * 20) / 20
+                    length = self.calc_length(sv, span_duration, redline, beatmap_config.slider_multiplier)
+
                 # If the adjusted length is too long, scale the control points to fit the max_length
                 if length > max_length + 1e-4:
                     scale = length / max_length
