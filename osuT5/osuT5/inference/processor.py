@@ -135,8 +135,7 @@ class LookbackBiasLogitsWarper(LogitsProcessor):
     generating the next token, so we nill the scores of the lookback tokens and increase the chance of eos.
     """
     def __init__(self, lookback_max_time: float, tokenizer: Tokenizer, types_first: bool, device):
-        assert types_first, "Lookback bias is only supported for types_first=True"
-
+        self.types_first = types_first  # Lookback bias is only supported for types_first=True
         self.lookback_start = tokenizer.event_start[EventType.TIME_SHIFT]
         self.lookback_end = tokenizer.encode(Event(EventType.TIME_SHIFT, int(lookback_max_time / MILISECONDS_PER_STEP)))
         self.lookback_range = torch.full((tokenizer.vocab_size_out,), False, dtype=torch.bool, device=device)
@@ -152,6 +151,9 @@ class LookbackBiasLogitsWarper(LogitsProcessor):
         self.timed_tokens = torch.tensor(self.timed_tokens, dtype=torch.long, device=device)
 
     def __call__(self, input_ids: torch.LongTensor, scores: torch.FloatTensor) -> torch.Tensor:
+        if not self.types_first:
+            return scores
+
         scores_processed = scores
 
         if input_ids.shape[1] != 0 and self.last_scores is not None:
@@ -776,7 +778,7 @@ class Processor(object):
     def get_logits_processor(self, generation_config: GenerationConfig) -> LogitsProcessorList:
         processors = LogitsProcessorList(self.base_logit_processor)
 
-        if self.do_sample:
+        if self.do_sample and self.types_first:
             processors.append(ConditionalTemperatureLogitsWarper(
                 self.temperature,
                 self.timing_temperature,
@@ -800,7 +802,8 @@ class Processor(object):
         # Trim prompt and eos tokens
         while len(predicted_tokens) > 0 and (
                 predicted_tokens[-1] == self.tokenizer.eos_id or
-                predicted_tokens[-1] == self.tokenizer.context_eos[context["context_type"]]):
+                (context["context_type"] in self.tokenizer.context_eos and
+                 predicted_tokens[-1] == self.tokenizer.context_eos[context["context_type"]])):
             predicted_tokens = predicted_tokens[:-1]
 
         if len(predicted_tokens) > 0 and ((trim_lookahead and predicted_tokens[-1] in self.lookahead_time_range) or
