@@ -40,12 +40,13 @@ class GenerationConfig:
     negative_descriptors: Optional[list[str]] = None
 
 
+# noinspection PyProtectedMember
 def generation_config_from_beatmap(beatmap: Beatmap, tokenizer: Tokenizer) -> GenerationConfig:
     gamemode = int(beatmap.mode)
     return GenerationConfig(
         gamemode=gamemode,
         beatmap_id=beatmap.beatmap_id,
-        difficulty=round(float(beatmap.stars()), 2) if gamemode == 0 else None,  # We don't have diffcalc for other gamemodes
+        difficulty=round(float(beatmap.stars()), 2) if gamemode == 0 and len(beatmap._hit_objects) > 0 else None,  # We don't have diffcalc for other gamemodes
         mapper_id=tokenizer.beatmap_mapper.get(beatmap.beatmap_id, None),
         slider_multiplier=beatmap.slider_multiplier,
         circle_size=beatmap.circle_size,
