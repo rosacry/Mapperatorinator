@@ -1,7 +1,12 @@
 import pickle
+from dataclasses import dataclass
+from datetime import timedelta
 from pathlib import Path
+from typing import Optional
 
+import numpy as np
 import torch
+from slider import TimingPoint
 from tqdm import tqdm
 
 from config import InferenceConfig
@@ -9,7 +14,7 @@ from osu_diffusion import timestep_embedding, Tokenizer
 from osu_diffusion import repeat_type
 from osu_diffusion import create_diffusion
 from osu_diffusion import DiT
-from osuT5.osuT5.inference import GenerationConfig
+from osuT5.osuT5.inference import GenerationConfig, SliderPath
 from osuT5.osuT5.dataset import update_event_times
 from osuT5.osuT5.tokenizer import Event, EventType
 from osuT5.osuT5.dataset.data_utils import get_groups, get_group_indices
@@ -20,6 +25,14 @@ def get_beatmap_idx(path) -> dict[int, int]:
     with p.open("rb") as f:
         beatmap_idx = pickle.load(f)
     return beatmap_idx
+
+
+@dataclass
+class DiffusionSlider:
+    seq_indices: np.ndarray
+    end_index: int
+    curve_type: Optional[str]
+    length: Optional[float]
 
 
 class DiffisionPipeline(object):
@@ -48,6 +61,7 @@ class DiffisionPipeline(object):
         self.pad_sequence = args.pad_sequence
         self.start_time = args.start_time
         self.end_time = args.end_time
+        self.has_sv = args.osut5.data.add_sv
 
     def get_class_vector(
             self,
@@ -98,6 +112,7 @@ class DiffisionPipeline(object):
             self,
             events: list[Event],
             generation_config: GenerationConfig,
+            timing: list[TimingPoint],
             verbose: bool = False,
     ) -> list[Event]:
         """Generate position events for distance events in the Event list.
@@ -105,13 +120,16 @@ class DiffisionPipeline(object):
         Args:
             events: List of Event objects with distance events.
             generation_config: GenerationConfig object with beatmap metadata.
+            timing: List of TimingPoint objects to recalculate slider end positions during diffusion.
             verbose: Whether to print debug information.
 
         Returns:
             events: List of Event objects with position events.
         """
 
-        seq_x, seq_o, seq_c, seq_len, seq_indices = self.events_to_sequence(events)
+        # seq_indices maps event indices to sequence indices
+        seq_x, seq_o, seq_c, seq_len, seq_indices, sliders = self.events_to_sequence(events, timing, generation_config.slider_multiplier)
+
         if verbose:
             print(f"seq len {seq_len}")
 
@@ -151,6 +169,13 @@ class DiffisionPipeline(object):
         if self.random_init:
             z = torch.randn(*z.shape, device=z.device)
 
+        def to_positions(samples):
+            samples, _ = samples.clone().chunk(2, dim=0)  # Remove null class samples
+            samples += 1
+            samples /= 2
+            samples *= torch.tensor((512, 384), device=self.device).repeat(n, 1).unsqueeze(2)
+            return samples.cpu()
+
         def sample_part(z, start, end, start_mask_size=0):
             z_part = z[:, :, start:end]
             c_part = c[:, :, start:end]
@@ -175,9 +200,26 @@ class DiffisionPipeline(object):
                 key_padding_mask=key_padding_mask,
             )
 
-            # Make in-paint mask
-            def in_paint_mask(x):
-                return torch.where(mask, x, z_part)
+            def denoised_fn(x):
+                # in-paint mask
+                x = torch.where(mask, x, z_part)
+
+                # Recalculate slider end positions
+                if len(sliders) > 0:
+                    x2 = to_positions(x).squeeze(0).T.numpy()
+                    for slider in sliders:
+                        if np.any((slider.seq_indices < start) | (slider.seq_indices >= end)) or slider.end_index < start or slider.end_index >= end:
+                            continue
+                        slider_path = SliderPath(slider.curve_type, x2[slider.seq_indices - start])
+                        max_length = slider_path.get_distance()
+                        if max_length == 0:
+                            continue
+                        end_pos = slider_path.position_at(slider.length / max_length)
+                        # Update the position of the slider end event
+                        x2[slider.end_index - start] = end_pos
+                    x[:, :, :] = torch.from_numpy(x2.T) / torch.tensor((512, 384)).unsqueeze(1) * 2 - 1
+
+                return x
 
             # True means it will be generated
             mask = torch.full_like(z_part, False, dtype=torch.bool)
@@ -195,14 +237,14 @@ class DiffisionPipeline(object):
             if not mask.any():
                 return z_part[:, :, :-pad_amount] if pad_amount > 0 else z_part
 
-            z_part = in_paint_mask(z_part)
+            z_part = denoised_fn(z_part)
 
             # Sample positions:
             samples = diffusion.p_sample_loop(
                 self.model.forward_with_cfg,
                 z_part.shape,
                 z_part,
-                denoised_fn=in_paint_mask,
+                denoised_fn=denoised_fn,
                 clip_denoised=True,
                 model_kwargs=model_kwargs,
                 progress=verbose,
@@ -219,7 +261,7 @@ class DiffisionPipeline(object):
                             self.model.forward_with_cfg,
                             samples,
                             t,
-                            denoised_fn=in_paint_mask,
+                            denoised_fn=denoised_fn,
                             clip_denoised=True,
                             model_kwargs=model_kwargs,
                         )
@@ -241,17 +283,15 @@ class DiffisionPipeline(object):
             samples = sample_part(full_samples, i, end, start_mask_size=self.overlap_buffer if i > 0 else 0)
             full_samples[:, :, i:end] = samples
 
-        def to_positions(samples):
-            samples, _ = samples.chunk(2, dim=0)  # Remove null class samples
-            samples += 1
-            samples /= 2
-            samples *= torch.tensor((512, 384), device=self.device).repeat(n, 1).unsqueeze(2)
-            return samples.cpu()
-
         positions = to_positions(full_samples)
         return self.events_with_pos(events, positions.squeeze(0), seq_indices)
 
-    def events_to_sequence(self, events: list[Event]) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, int, dict[int, int]]:
+    def events_to_sequence(
+            self,
+            events: list[Event],
+            timing: list[TimingPoint],
+            slider_multiplier: float,
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, int, dict[int, int], list[DiffusionSlider]]:
         # Calculate the time of every event and interpolate time for control point events
         event_times = []
         update_event_times(events, event_times, types_first=self.types_first)
@@ -332,7 +372,7 @@ class DiffisionPipeline(object):
             seq_indices[j] = len(data_chunks) - 1
 
         if len(data_chunks) == 0:
-            return torch.zeros(2, 0), torch.zeros(1, 0), torch.zeros(1, 0), 0, {}
+            return torch.zeros(2, 0), torch.zeros(1, 0), torch.zeros(1, 0), 0, {}, []
 
         seq = torch.stack(data_chunks, 0)
         seq = torch.swapaxes(seq, 0, 1)
@@ -348,7 +388,63 @@ class DiffisionPipeline(object):
             0,
         )
 
-        return seq_x, seq_o, seq_c, seq.shape[1], seq_indices
+        # Create sliders for slider end position recalculation
+        sliders = []
+        if self.has_sv and timing is not None:
+            slider_head = None
+            last_anchor = None
+            anchor_info = []
+            for i, group in enumerate(groups):
+                hit_type = group.event_type
+
+                if group.event_type == EventType.SLIDER_HEAD:
+                    anchor_info = [('Bezier', seq_indices[group_indices[i][0]])]
+                    slider_head = group
+                    last_anchor = None
+
+                elif hit_type == EventType.BEZIER_ANCHOR:
+                    anchor_info.append(('Bezier', seq_indices[group_indices[i][0]]))
+
+                elif hit_type == EventType.PERFECT_ANCHOR:
+                    anchor_info.append(('PerfectCurve', seq_indices[group_indices[i][0]]))
+
+                elif hit_type == EventType.CATMULL_ANCHOR:
+                    anchor_info.append(('Catmull', seq_indices[group_indices[i][0]]))
+
+                elif hit_type == EventType.RED_ANCHOR:
+                    anchor_info.append(('Bezier', seq_indices[group_indices[i][0]]))
+                    anchor_info.append(('Bezier', seq_indices[group_indices[i][0]]))
+
+                elif hit_type == EventType.LAST_ANCHOR:
+                    anchor_info.append(('Bezier', seq_indices[group_indices[i][0]]))
+                    last_anchor = group
+
+                elif group.event_type == EventType.SLIDER_END and slider_head is not None and last_anchor is not None:
+                    # Calculate the length of the slider
+                    curve_type = anchor_info[1][0]
+                    span_duration = last_anchor.time - slider_head.time
+                    tp = self.timing_point_at(timedelta(milliseconds=int(round(slider_head.time))), timing)
+                    redline = tp if tp.parent is None else tp.parent
+                    length = slider_head.scroll_speed * span_duration * 100 / redline.ms_per_beat * slider_multiplier
+                    sliders.append(DiffusionSlider(
+                        np.array([info[1] for info in anchor_info]),
+                        seq_indices[group_indices[i][0]],
+                        curve_type,
+                        length,
+                    ))
+                    slider_head = None
+                    last_anchor = None
+                    anchor_info = []
+
+        return seq_x, seq_o, seq_c, seq.shape[1], seq_indices, sliders
+
+    @staticmethod
+    def timing_point_at(time: timedelta, timing_points: list[TimingPoint]) -> TimingPoint:
+        for tp in reversed(timing_points):
+            if tp.offset <= time:
+                return tp
+
+        return timing_points[0]
 
     @staticmethod
     def events_with_pos(events: list[Event], sampled_seq: torch.Tensor, seq_indices: dict[int, int]) -> list[Event]:

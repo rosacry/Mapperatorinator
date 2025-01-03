@@ -251,6 +251,7 @@ def generate(
         events = diffusion_pipeline.generate(
             events=events,
             generation_config=generation_config,
+            timing=timing,
             verbose=verbose,
         )
 

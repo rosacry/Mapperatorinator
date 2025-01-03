@@ -109,6 +109,10 @@ def update_event_times(
     """
     start_index = len(event_times)
     end_index = len(events)
+
+    if start_index == end_index:
+        return
+
     current_time = 0 if len(event_times) == 0 else event_times[-1]
     for i in range(start_index, end_index):
         if types_first:
@@ -125,7 +129,7 @@ def update_event_times(
         # 1-----1-1-1--1-1--1-7---7-7-9---9-9
         # 1-----1-1-3--3-5--5-7---7-7-9---9-9
         index = range(start_index, end_index)
-        current_time = 0 if len(event_times) == 0 else event_times[-1]
+        current_time = 0 if len(event_times) == 0 else event_times[start_index]
     else:
         # T-D-Start-D-CP-D-CP-T-D-LCP-T-D-End
         # 1-1-1-----1-1--1-1--7-7--7--9-9-9--
