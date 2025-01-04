@@ -6,7 +6,7 @@ import torch
 import torch.nn as nn
 from transformers import T5Config, T5ForConditionalGeneration, WhisperForConditionalGeneration, WhisperConfig, \
     PreTrainedModel
-from transformers.modeling_outputs import Seq2SeqLMOutput
+from transformers.modeling_outputs import Seq2SeqLMOutput, BaseModelOutput
 from transformers.models.whisper.modeling_whisper import WhisperEncoder
 
 from .configuration_nwhisper import NWhisperConfig
@@ -191,8 +191,22 @@ class OsuT(PreTrainedModel):
         beatmap_idx=None,
         decoder_attention_mask=None,
         cache_position=None,
+        negative_prompt=None,
+        negative_prompt_attention_mask=None,
         **kwargs,
     ):
+        # Add negative prompt to the input for classifier free guidance
+        if negative_prompt is not None:
+            decoder_input_ids = decoder_input_ids.repeat((2, 1))
+            decoder_input_ids[:decoder_input_ids.shape[0] // 2, :negative_prompt.shape[1]] = negative_prompt
+
+            if decoder_attention_mask is not None:
+                decoder_attention_mask = decoder_attention_mask.repeat((2, 1))
+                if negative_prompt_attention_mask is not None:
+                    decoder_attention_mask[:decoder_attention_mask.shape[0] // 2, :negative_prompt_attention_mask.shape[1]] = negative_prompt_attention_mask
+
+            encoder_outputs = BaseModelOutput(last_hidden_state=encoder_outputs.last_hidden_state.repeat((2, 1, 1)))
+
         inputs = self.transformer.prepare_inputs_for_generation(
             decoder_input_ids=decoder_input_ids,
             past_key_values=past_key_values,

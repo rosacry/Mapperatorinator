@@ -10,7 +10,8 @@ import torch
 import torch.nn.functional as F
 from slider import Beatmap
 from tqdm import tqdm
-from transformers import LogitsProcessorList, LogitsProcessor
+from transformers import LogitsProcessorList, LogitsProcessor, EncoderDecoderCache, StaticCache, \
+    ClassifierFreeGuidanceLogitsProcessor
 
 from config import InferenceConfig
 from ..dataset import OsuParser
@@ -178,23 +179,6 @@ class LookbackBiasLogitsWarper(LogitsProcessor):
         return scores_processed
 
 
-class ClassifierFreeGuidanceLogitsProcessor(LogitsProcessor):
-    def __init__(self, guidance_scale):
-        if guidance_scale > 1:
-            self.guidance_scale = guidance_scale
-        else:
-            raise ValueError(
-                "Require guidance scale >1 to use the classifier free guidance processor, got guidance scale "
-                f"{guidance_scale}."
-            )
-
-    def __call__(self, input_ids: torch.LongTensor, scores: torch.FloatTensor) -> torch.FloatTensor:
-        unguided_bsz = scores.shape[0] // 2
-        cond_logits, uncond_logits = scores.split(unguided_bsz, dim=0)
-        scores_processed = uncond_logits + (cond_logits - uncond_logits) * self.guidance_scale
-        return scores_processed.repeat((2, 1))
-
-
 class Processor(object):
     def __init__(self, args: InferenceConfig, model: OsuT, tokenizer: Tokenizer, parallel: bool = False):
         """Model inference stage that processes sequences."""
@@ -282,7 +266,6 @@ class Processor(object):
             do_sample=self.do_sample,
             num_beams=self.num_beams,
             use_cache=True,
-            cache_implementation="static",
         )
 
     def generate(
@@ -469,13 +452,18 @@ class Processor(object):
                     self.prepare_context_sequences(out_context[:i + 1], frame_time, True, req_special_tokens),
                 )
 
-                prompt, max_len = self.stack_prompts([cond_prompt], [uncond_prompt])
+                [prompt, uncond_prompt], max_len = self.pad_prompts([cond_prompt, uncond_prompt])
+                cache = self.get_cache(prompt.size(0))
 
                 result = self._generate(
                     frames,
                     decoder_input_ids=prompt,
+                    decoder_attention_mask=prompt.ne(self.tokenizer.pad_id),
                     beatmap_idx=beatmap_idx,
                     logits_processor=logit_processor2,
+                    negative_prompt=uncond_prompt,
+                    negative_prompt_attention_mask=uncond_prompt.ne(self.tokenizer.pad_id) if uncond_prompt is not None else None,
+                    past_key_values=cache,
                     eos_token_id=self.get_eos_token_id(trim_lookback, trim_lookahead, context["context_type"]),
                 )
 
@@ -509,7 +497,8 @@ class Processor(object):
             cond_prompts.append(cond_prompt)
             uncond_prompts.append(uncond_prompt)
 
-        prompt, max_len = self.stack_prompts(cond_prompts, uncond_prompts)
+        prompt, uncond_prompt, max_len = self.stack_prompts(cond_prompts, uncond_prompts)
+        cache = self.get_cache(prompt.size(0))
 
         # Start generation
         result = self._generate(
@@ -517,6 +506,8 @@ class Processor(object):
             decoder_input_ids=prompt,
             beatmap_idx=beatmap_idx,
             logits_processor=logit_processor,
+            negative_prompt=uncond_prompt,
+            past_key_values=cache,
             eos_token_id=self.get_eos_token_id(context_type=out_context[-1]["context_type"]),
         )
 
@@ -536,28 +527,45 @@ class Processor(object):
             else:
                 self.add_predicted_tokens_to_context(out_context[0], predicted_tokens[i], frame_time)
 
+    def get_cache(self, batch_size: int):
+        cache_kwargs = {
+            "config": self.model.config,
+            "batch_size": batch_size * 2 if self.cfg_scale > 1 else batch_size,
+            "max_cache_len": self.model.config.max_target_positions,
+            "device": self.device,
+            "dtype": self.model.dtype,
+            "layer_device_map": None,
+        }
+        decoder_cache = StaticCache(**cache_kwargs)
+        encoder_kwargs = cache_kwargs.copy()
+        encoder_kwargs["max_cache_len"] = self.model.config.max_source_positions
+        encoder_cache = StaticCache(**encoder_kwargs)
+        return EncoderDecoderCache(decoder_cache, encoder_cache)
+
     def prepare_frames(self, frames: torch.Tensor) -> torch.Tensor:
         frames = frames.to(self.device)
 
         if frames.dim() == 1:
             frames = frames.unsqueeze(0)
 
-        if self.cfg_scale > 1:
-            frames = frames.repeat((2, 1))
-
         return frames
 
+    def pad_prompts(self, prompts):
+        max_len = max(tensor.size(1) if tensor is not None else 0 for tensor in prompts)
+        prompts = [torch.nn.functional.pad(tensor, (max_len - tensor.size(1), 0)) if tensor is not None else None for tensor in prompts]
+        return prompts, max_len
+
     def stack_prompts(self, cond_prompts, uncond_prompts):
-        max_len = max(tensor.size(1) if tensor is not None else 0 for tensor in cond_prompts + uncond_prompts)
-        cond_prompts = [torch.nn.functional.pad(tensor, (0, 0, max_len - tensor.size(1), 0)) for tensor in cond_prompts]
+        length = len(cond_prompts)
+        padded_prompts, max_len = self.pad_prompts(cond_prompts + uncond_prompts)
+        cond_prompt = torch.cat(padded_prompts[:length], dim=0)
 
         if self.cfg_scale > 1:
-            uncond_prompts = [torch.nn.functional.pad(tensor, (0, 0, max_len - tensor.size(1), 0)) for tensor in uncond_prompts]
-            stacked_prompt = torch.cat(cond_prompts + uncond_prompts, dim=0)
+            uncond_prompt = torch.cat(padded_prompts[length:], dim=0)
         else:
-            stacked_prompt = torch.cat(cond_prompts, dim=0)
+            uncond_prompt = None
 
-        return stacked_prompt, max_len
+        return cond_prompt, uncond_prompt, max_len
 
     def get_context(
             self,
