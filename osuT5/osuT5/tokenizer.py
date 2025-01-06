@@ -580,16 +580,16 @@ class Tokenizer:
     def state_dict(self):
         return {
             "offset": self.offset,
-            "context_sos": self.context_sos,
-            "context_eos": self.context_eos,
-            "event_ranges": self.event_ranges,
-            "input_event_ranges": self.input_event_ranges,
+            "context_sos": {k.value: v for k, v in self.context_sos.items()},
+            "context_eos": {k.value: v for k, v in self.context_eos.items()},
+            "event_ranges": [self.event_range_state_dict(er) for er in self.event_ranges],
+            "input_event_ranges": [self.event_range_state_dict(er) for er in self.input_event_ranges],
             "num_classes": self.num_classes,
             "num_diff_classes": self.num_diff_classes,
             "max_difficulty": self.max_difficulty,
-            "event_range": self.event_range,
-            "event_start": self.event_start,
-            "event_end": self.event_end,
+            "event_range": {k.value: self.event_range_state_dict(v) for k, v in self.event_range.items()},
+            "event_start": {k.value: v for k, v in self.event_start.items()},
+            "event_end": {k.value: v for k, v in self.event_end.items()},
             "vocab_size_out": self.vocab_size_out,
             "vocab_size_in": self.vocab_size_in,
             "beatmap_idx": self.beatmap_idx,
@@ -609,17 +609,26 @@ class Tokenizer:
             # Backward compatibility. Old models use offset 3.
             self.offset = 3
         if "context_sos" in state_dict:
-            self.context_sos = state_dict["context_sos"]
+            self.context_sos = self.load_context_type_dict(state_dict["context_sos"])
         if "context_eos" in state_dict:
-            self.context_eos = state_dict["context_eos"]
-        self.event_ranges = state_dict["event_ranges"]
-        self.input_event_ranges = state_dict["input_event_ranges"]
+            self.context_eos = self.load_context_type_dict(state_dict["context_eos"])
+        if "event_ranges" in state_dict:
+            self.event_ranges = self.load_event_range_list(state_dict["event_ranges"])
+        if "input_event_ranges" in state_dict:
+            self.input_event_ranges = self.load_event_range_list(state_dict["input_event_ranges"])
         self.num_classes = state_dict["num_classes"]
         self.num_diff_classes = state_dict["num_diff_classes"]
         self.max_difficulty = state_dict["max_difficulty"]
-        self.event_range = state_dict["event_range"]
-        self.event_start = state_dict["event_start"]
-        self.event_end = state_dict["event_end"]
+        if "event_range" in state_dict:
+            d = state_dict["event_range"]
+            if isinstance(d, dict) and all(isinstance(k, EventType) and isinstance(v, EventRange) for k, v in d.items()):
+                self.event_range = d
+            else:
+                self.event_range = {EventType(k): self.load_event_range(v) for k, v in d.items()}
+        if "event_start" in state_dict:
+            self.event_start = self.load_event_type_dict(state_dict["event_start"])
+        if "event_end" in state_dict:
+            self.event_end = self.load_event_type_dict(state_dict["event_end"])
         self.vocab_size_out = state_dict["vocab_size_out"]
         self.vocab_size_in = state_dict["vocab_size_in"]
         self.beatmap_idx = state_dict["beatmap_idx"]
@@ -637,3 +646,31 @@ class Tokenizer:
             self.num_descriptor_classes = state_dict["num_descriptor_classes"]
         if "num_cs_classes" in state_dict:
             self.num_cs_classes = state_dict["num_cs_classes"]
+
+    def load_context_type_dict(self, d):
+        if isinstance(d, dict) and all(isinstance(k, ContextType) and isinstance(v, int) for k, v in d.items()):
+            return d
+        else:
+            return {ContextType(k): v for k, v in d.items()}
+
+    def load_event_range_list(self, d):
+        if isinstance(d, list) and all(isinstance(x, EventRange) for x in d):
+            return d
+        else:
+            return [self.load_event_range(x) for x in d]
+
+    def event_range_state_dict(self, x: EventRange):
+        return {
+                "type": x.type.value,
+                "min_value": x.min_value,
+                "max_value": x.max_value,
+            }
+
+    def load_event_range(self, x):
+        return EventRange(EventType(x['type']), x['min_value'], x['max_value'])
+
+    def load_event_type_dict(self, d):
+        if isinstance(d, dict) and all(isinstance(k, EventType) and isinstance(v, int) for k, v in d.items()):
+            return d
+        else:
+            return {EventType(k): v for k, v in d.items()}
