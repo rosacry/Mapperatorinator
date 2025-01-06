@@ -17,7 +17,7 @@ from config import InferenceConfig
 from ..dataset import OsuParser
 from ..dataset.data_utils import (update_event_times, remove_events_of_type, get_hold_note_ratio,
                                   get_scroll_speed_ratio, get_hitsounded_status, TIMED_EVENTS)
-from ..model import OsuT
+from ..model import Mapperatorinator
 from ..tokenizer import Event, EventType, Tokenizer, ContextType
 
 MILISECONDS_PER_SECOND = 1000
@@ -180,7 +180,7 @@ class LookbackBiasLogitsWarper(LogitsProcessor):
 
 
 class Processor(object):
-    def __init__(self, args: InferenceConfig, model: OsuT, tokenizer: Tokenizer, parallel: bool = False):
+    def __init__(self, args: InferenceConfig, model: Mapperatorinator, tokenizer: Tokenizer, parallel: bool = False):
         """Model inference stage that processes sequences."""
         self.device = args.device
         self.args = args

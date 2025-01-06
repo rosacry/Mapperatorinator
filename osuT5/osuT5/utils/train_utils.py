@@ -15,14 +15,14 @@ from torch.utils.data import DataLoader
 from ..dataset.ors_dataset import LABEL_IGNORE_ID
 from ..model.modeling_nwhisper import NWhisperForConditionalGeneration
 from ..tokenizer import Tokenizer, EventType, ContextType
-from ..model import OsuT
+from ..model import Mapperatorinator
 from .log_utils import Averager
 from ..config import TrainConfig
 
 logger = get_logger(__name__)
 
 
-def forward(model: OsuT, batch):
+def forward(model: Mapperatorinator, batch):
     outputs = model(**batch)
     loss = outputs.loss
 
@@ -30,7 +30,7 @@ def forward(model: OsuT, batch):
     return loss, stats
 
 
-def forward_eval(model: OsuT, batch):
+def forward_eval(model: Mapperatorinator, batch):
     if isinstance(model.transformer, NWhisperForConditionalGeneration):
         outputs = torch.compiler.disable(model.forward)(**batch)
     else:
@@ -91,7 +91,7 @@ def maybe_save_checkpoint(accelerator: Accelerator, args: TrainConfig, shared: N
 
 
 def maybe_eval(
-        model: OsuT,
+        model: Mapperatorinator,
         accelerator: Accelerator,
         dataloader: DataLoader,
         tokenizer: Tokenizer,
@@ -112,7 +112,7 @@ def maybe_eval(
 
 
 def maybe_logging(
-        model: OsuT,
+        model: Mapperatorinator,
         accelerator: Accelerator,
         optimizer: Optimizer,
         averager: Averager,
@@ -150,7 +150,7 @@ def maybe_logging(
 
 
 def maybe_grad_clip_and_grad_calc(
-        model: OsuT,
+        model: Mapperatorinator,
         accelerator: Accelerator,
         args: TrainConfig,
 ):
@@ -179,7 +179,7 @@ def maybe_grad_clip_and_grad_calc(
 
 # noinspection PyUnresolvedReferences,PyTypeChecker
 def eval_model(
-        model: OsuT,
+        model: Mapperatorinator,
         accelerator: Accelerator,
         dataloader: DataLoader,
         tokenizer: Tokenizer,
@@ -320,7 +320,7 @@ def fuzzy_acc_range(preds, labels, start_index, end_index, fuzzyness=0):
 
 
 def train(
-        model: OsuT,
+        model: Mapperatorinator,
         train_dataloader: DataLoader,
         test_dataloader: DataLoader,
         accelerator: Accelerator,
@@ -379,7 +379,7 @@ def train(
 
 
 def train_profiling(
-        model: OsuT,
+        model: Mapperatorinator,
         train_dataloader: DataLoader,
         test_dataloader: DataLoader,
         accelerator: Accelerator,

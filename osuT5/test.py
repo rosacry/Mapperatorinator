@@ -235,7 +235,6 @@ def main(args: TrainConfig):
             "wandb": {
                 "entity": "mappingtools",
                 "job_type": "testing",
-                "config": dict(args),
             }
         }
     )

@@ -9,58 +9,12 @@ from transformers import T5Config, T5ForConditionalGeneration, WhisperForConditi
 from transformers.modeling_outputs import Seq2SeqLMOutput, BaseModelOutput
 from transformers.models.whisper.modeling_whisper import WhisperEncoder
 
+from .configuration_mapperatorinator import MapperatorinatorConfig
 from .configuration_nwhisper import NWhisperConfig
 from .modeling_nwhisper import NWhisperForConditionalGeneration
 from ..model.spectrogram import MelSpectrogram
-from ..tokenizer import Tokenizer, EventType
-from ..config import TrainConfig
 
 LABEL_IGNORE_ID = -100
-
-
-def get_backbone_config(args: TrainConfig, tokenizer: Tokenizer):
-    if args.model.name.startswith("google/t5"):
-        config = T5Config.from_pretrained(args.model.name)
-    elif args.model.name.startswith("openai/whisper"):
-        config = WhisperConfig.from_pretrained(args.model.name)
-    elif args.model.name.startswith("olibomby/nwhisper"):
-        config = NWhisperConfig.from_pretrained(args.model.config_base)
-    else:
-        raise NotImplementedError
-
-    config.vocab_size = tokenizer.vocab_size_out
-    config.use_cache = False
-
-    if hasattr(args.model, "overwrite"):
-        for k, v in args.model.overwrite.items():
-            assert hasattr(config, k), f"config does not have attribute {k}"
-            setattr(config, k, v)
-
-    if hasattr(args.model, "add_config"):
-        for k, v in args.model.add_config.items():
-            assert not hasattr(config, k), f"config already has attribute {k}"
-            setattr(config, k, v)
-
-    if isinstance(config, WhisperConfig):
-        config.num_mel_bins = config.d_model
-        config.pad_token_id = tokenizer.pad_id
-        config.bos_token_id = tokenizer.sos_id
-        config.eos_token_id = tokenizer.eos_id
-        config.max_source_positions = args.data.src_seq_len // 2
-        config.max_target_positions = args.data.tgt_seq_len
-        config.begin_suppress_tokens = None
-        config.decoder_start_token_id = tokenizer.sos_id
-        config.do_sample = True
-        config.forced_decoder_ids = None
-        config.max_length = args.data.tgt_seq_len
-        config.suppress_tokens = None
-        config.top_k = 0
-        if args.flash_attention:
-            config._attn_implementation = "flash_attention_2"
-    if isinstance(config, NWhisperConfig):
-        config.input_vocab_size = tokenizer.vocab_size_in
-
-    return config
 
 
 def get_backbone_model(config):
@@ -76,52 +30,42 @@ def get_backbone_model(config):
     return model
 
 
-class OsuT(PreTrainedModel):
+class Mapperatorinator(PreTrainedModel):
     __slots__ = ["spectrogram", "decoder_embedder", "encoder_embedder", "transformer", "style_embedder", "num_classes"]
-    config_class = WhisperConfig
+    config_class = MapperatorinatorConfig
     base_model_prefix = "model"
     main_input_name = "frames"
     supports_gradient_checkpointing = True
-    _no_split_modules = ["WhisperEncoderLayer", "WhisperDecoderLayer"]
     _supports_flash_attn_2 = True
     _supports_sdpa = True
     _supports_cache_class = True
     _supports_static_cache = True
 
-    def __init__(self, args: TrainConfig, tokenizer: Tokenizer):
-        config = get_backbone_config(args, tokenizer)
-        d_model = config.d_model
-
+    def __init__(self, config: MapperatorinatorConfig):
         super().__init__(config)
 
-        self.transformer: WhisperForConditionalGeneration = get_backbone_model(config)
+        self.spectrogram = MelSpectrogram(config.sample_rate, config.n_fft, config.n_mels, config.hop_length)
+        self.transformer: WhisperForConditionalGeneration = get_backbone_model(config.backbone_config)
 
-        self.num_classes = tokenizer.num_classes
-        self.input_features = args.model.input_features
-        self.embed_decoder_input = args.model.embed_decoder_input
+        self.num_classes = config.num_classes
+        self.input_features = config.input_features
+        self.embed_decoder_input = config.embed_decoder_input
+        self.do_style_embed = config.do_style_embed
+        d_model = config.hidden_size
 
         if self.embed_decoder_input:
-            self.decoder_embedder = nn.Embedding(tokenizer.vocab_size_in, d_model)
+            self.decoder_embedder = nn.Embedding(config.vocab_size_in, d_model)
             self.decoder_embedder.weight.data.normal_(mean=0.0, std=1.0)
-        # self.class_ids = Parameter(torch.full([self.num_classes + 1], -1, dtype=torch.long), requires_grad=False)
-
-        self.spectrogram = MelSpectrogram(
-            args.model.spectrogram.sample_rate, args.model.spectrogram.n_fft,
-            args.model.spectrogram.n_mels, args.model.spectrogram.hop_length
-        )
-
-        self.do_style_embed = args.model.do_style_embed
 
         if self.do_style_embed:
             self.style_embedder = LabelEmbedder(self.num_classes, d_model)
-            self.encoder_embedder = nn.Linear(args.model.spectrogram.n_mels + d_model, d_model)
-            nn.init.normal_(self.style_embedder.embedding_table.weight, std=0.02)
+            self.encoder_embedder = nn.Linear(config.n_mels + d_model, d_model)
+            nn.init.normal_(self.style_embedder.embedding_table.weight, std=config.init_std)
         else:
-            self.encoder_embedder = nn.Linear(args.model.spectrogram.n_mels, d_model)
+            self.encoder_embedder = nn.Linear(config.n_mels, d_model)
 
-        self.vocab_size_out = tokenizer.vocab_size_out
-        class_weights = torch.ones(self.vocab_size_out)
-        class_weights[tokenizer.event_start[EventType.TIME_SHIFT]:tokenizer.event_end[EventType.TIME_SHIFT]] = args.data.rhythm_weight
+        class_weights = torch.ones(config.vocab_size)
+        class_weights[config.rhythm_token_start:config.rhythm_token_end] = config.rhythm_weight
         self.loss_fn = nn.CrossEntropyLoss(weight=class_weights, reduction="none", ignore_index=LABEL_IGNORE_ID)
 
     def forward(
