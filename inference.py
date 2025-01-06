@@ -7,6 +7,7 @@ import torch
 from accelerate.utils import set_seed
 from omegaconf import OmegaConf
 from slider import Beatmap
+from transformers.utils import cached_file
 
 import osu_diffusion
 import routed_pickle
@@ -304,14 +305,19 @@ def load_diff_model(
         diff_args: DiffusionTrainConfig,
         device,
 ):
-    ckpt_path = Path(ckpt_path)
-    assert ckpt_path.exists(), f"Could not find DiT checkpoint at {ckpt_path}"
+    if not os.path.exists(ckpt_path):
+        tokenizer_file = cached_file(ckpt_path, "tokenizer.pkl")
+        model_file = cached_file(ckpt_path, "model_ema.pkl")
+    else:
+        ckpt_path = Path(ckpt_path)
+        tokenizer_file = ckpt_path / "tokenizer.pkl"
+        model_file = ckpt_path / "model_ema.pkl"
 
-    tokenizer_state = torch.load(ckpt_path / "custom_checkpoint_1.pkl", pickle_module=routed_pickle, weights_only=False)
+    tokenizer_state = torch.load(tokenizer_file, pickle_module=routed_pickle, weights_only=False)
     tokenizer = osu_diffusion.utils.tokenizer.Tokenizer()
     tokenizer.load_state_dict(tokenizer_state)
 
-    ema_state = torch.load(ckpt_path / "custom_checkpoint_0.pkl", pickle_module=routed_pickle, weights_only=False, map_location=device)
+    ema_state = torch.load(model_file, pickle_module=routed_pickle, weights_only=False, map_location=device)
     model = DiT_models[diff_args.model.model](
         context_size=diff_args.model.context_size,
         class_size=tokenizer.num_tokens,
