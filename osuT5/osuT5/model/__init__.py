@@ -1,1 +1,1 @@
-from .osu_t import OsuT
+from .modeling_mapperatorinator import Mapperatorinator

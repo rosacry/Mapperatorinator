@@ -8,7 +8,6 @@ do_style_embed: false
 embed_decoder_input: false
 manual_norm_weights: true
 
-config_base: 'openai/whisper-base'
 overwrite:
   tie_word_embeddings: false
   manual_norm_weights: true

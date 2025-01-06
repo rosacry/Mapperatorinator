@@ -15,7 +15,9 @@ from torch.optim.lr_scheduler import (
 
 from ..dataset import OrsDataset, OsuParser
 from ..dataset.mmrs_dataset import MmrsDataset
-from ..model.osu_t import OsuT
+from ..event import EventType
+from ..model.configuration_mapperatorinator import MapperatorinatorConfig
+from ..model.modeling_mapperatorinator import Mapperatorinator
 from ..tokenizer import Tokenizer
 from ..config import TrainConfig
 
@@ -31,8 +33,36 @@ def get_shared_training_state() -> Namespace:
     return shared
 
 
-def get_model(args: TrainConfig, tokenizer: Tokenizer) -> OsuT:
-    model = OsuT(args, tokenizer)
+def get_model_config(args: TrainConfig, tokenizer: Tokenizer) -> MapperatorinatorConfig:
+    return MapperatorinatorConfig(
+        backbone_model_name=args.model.name,
+        backbone_overwrite=args.model.overwrite,
+        backbone_add_config=args.model.add_config,
+        flash_attention=args.flash_attention,
+        vocab_size_in=tokenizer.vocab_size_in,
+        vocab_size_out=tokenizer.vocab_size_out,
+        num_classes=tokenizer.num_classes,
+        input_features=args.model.input_features,
+        embed_decoder_input=args.model.embed_decoder_input,
+        do_style_embed=args.model.do_style_embed,
+        sample_rate=args.model.spectrogram.sample_rate,
+        n_fft=args.model.spectrogram.n_fft,
+        n_mels=args.model.spectrogram.n_mels,
+        hop_length=args.model.spectrogram.hop_length,
+        rhythm_weight=args.data.rhythm_weight,
+        rhythm_token_start=tokenizer.event_start[EventType.TIME_SHIFT],
+        rhythm_token_end=tokenizer.event_end[EventType.TIME_SHIFT],
+        src_seq_len=args.data.src_seq_len,
+        tgt_seq_len=args.data.tgt_seq_len,
+        pad_token_id=tokenizer.pad_id,
+        bos_token_id=tokenizer.sos_id,
+        eos_token_id=tokenizer.eos_id,
+        decoder_start_token_id=tokenizer.sos_id,
+    )
+
+
+def get_model(args: TrainConfig, tokenizer: Tokenizer) -> Mapperatorinator:
+    model = Mapperatorinator(get_model_config(args, tokenizer))
     return model
 
 
@@ -40,7 +70,7 @@ def get_tokenizer(args: TrainConfig) -> Tokenizer:
     return Tokenizer(args)
 
 
-def get_optimizer(model: OsuT, args: TrainConfig) -> Optimizer:
+def get_optimizer(model: Mapperatorinator, args: TrainConfig) -> Optimizer:
     no_decay = ["bias", "LayerNorm", "layernorm", "layer_norm", "ln"]
 
     optimizer_grouped_parameters = [
