@@ -5,3 +5,6 @@ defaults:
 name: 'openai/whisper-small'
 input_features: true
 do_style_embed: false
+
+overwrite:
+  tie_word_embeddings: false

@@ -35,6 +35,9 @@ class MapperatorinatorConfig(PretrainedConfig):
         eos_token_id=2,
         is_encoder_decoder=True,
         decoder_start_token_id=1,
+        do_sample=True,
+        top_k=0,
+        max_length=2048,
         **kwargs,
     ):
         # Get backbone model config
@@ -42,7 +45,7 @@ class MapperatorinatorConfig(PretrainedConfig):
             config = T5Config.from_pretrained(backbone_model_name)
         elif backbone_model_name.startswith("openai/whisper"):
             config = WhisperConfig.from_pretrained(backbone_model_name)
-        elif backbone_model_name.startswith("olibomby/nwhisper"):
+        elif backbone_model_name.startswith("OliBomby/nwhisper"):
             config = NWhisperConfig.from_pretrained("openai/whisper" + backbone_model_name[17:])
         else:
             raise NotImplementedError
@@ -76,6 +79,7 @@ class MapperatorinatorConfig(PretrainedConfig):
         if isinstance(config, NWhisperConfig):
             config.input_vocab_size = vocab_size_in
 
+        self.backbone_model_name = backbone_model_name
         self.backbone_config = config
         self.hidden_size = config.hidden_size
         self.num_attention_heads = config.num_attention_heads
@@ -103,8 +107,8 @@ class MapperatorinatorConfig(PretrainedConfig):
             eos_token_id=eos_token_id,
             is_encoder_decoder=is_encoder_decoder,
             decoder_start_token_id=decoder_start_token_id,
-            do_sample=True,
-            max_length=tgt_seq_len,
-            top_k=0,
+            do_sample=do_sample,
+            top_k=top_k,
+            max_length=max_length,
             **kwargs,
         )

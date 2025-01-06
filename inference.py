@@ -17,6 +17,7 @@ from osuT5.osuT5.dataset.data_utils import events_of_type, TIMING_TYPES, merge_e
 from osuT5.osuT5.inference import Preprocessor, Processor, Postprocessor, BeatmapConfig, GenerationConfig, \
     generation_config_from_beatmap, beatmap_config_from_beatmap, background_line
 from osuT5.osuT5.inference.super_timing_generator import SuperTimingGenerator
+from osuT5.osuT5.model import Mapperatorinator
 from osuT5.osuT5.tokenizer import Tokenizer, ContextType
 from osuT5.osuT5.utils import get_model
 from osu_diffusion import DiT_models
@@ -278,15 +279,20 @@ def load_model(
         t5_args: TrainConfig,
         device,
 ):
-    ckpt_path = Path(ckpt_path)
-    model_state = torch.load(ckpt_path / "pytorch_model.bin", map_location=device, weights_only=True)
-    tokenizer_state = torch.load(ckpt_path / "custom_checkpoint_0.pkl", pickle_module=routed_pickle, weights_only=False)
+    if not os.path.exists(ckpt_path):
+        model = Mapperatorinator.from_pretrained(ckpt_path)
+        tokenizer = Tokenizer.from_pretrained(ckpt_path)
+    else:
+        ckpt_path = Path(ckpt_path)
+        model_state = torch.load(ckpt_path / "pytorch_model.bin", map_location=device, weights_only=True)
+        tokenizer_state = torch.load(ckpt_path / "custom_checkpoint_0.pkl", pickle_module=routed_pickle, weights_only=False)
 
-    tokenizer = Tokenizer()
-    tokenizer.load_state_dict(tokenizer_state)
+        tokenizer = Tokenizer()
+        tokenizer.load_state_dict(tokenizer_state)
 
-    model = get_model(t5_args, tokenizer)
-    model.load_state_dict(model_state)
+        model = get_model(t5_args, tokenizer)
+        model.load_state_dict(model_state)
+
     model.eval()
     model.to(device)
 

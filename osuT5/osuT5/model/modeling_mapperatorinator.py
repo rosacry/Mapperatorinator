@@ -17,12 +17,18 @@ from ..model.spectrogram import MelSpectrogram
 LABEL_IGNORE_ID = -100
 
 
-def get_backbone_model(config):
-    if isinstance(config, T5Config):
+def get_backbone_model(name, config):
+    if name.startswith("google/t5"):
+        if isinstance(config, dict):
+            config = T5Config(**config)
         model = T5ForConditionalGeneration(config)
-    elif isinstance(config, NWhisperConfig):
+    elif name.startswith("OliBomby/nwhisper"):
+        if isinstance(config, dict):
+            config = NWhisperConfig(**config)
         model = NWhisperForConditionalGeneration(config)
-    elif isinstance(config, WhisperConfig):
+    elif name.startswith("openai/whisper"):
+        if isinstance(config, dict):
+            config = WhisperConfig(**config)
         model = WhisperForConditionalGeneration(config)
     else:
         raise NotImplementedError
@@ -45,7 +51,7 @@ class Mapperatorinator(PreTrainedModel):
         super().__init__(config)
 
         self.spectrogram = MelSpectrogram(config.sample_rate, config.n_fft, config.n_mels, config.hop_length)
-        self.transformer: WhisperForConditionalGeneration = get_backbone_model(config.backbone_config)
+        self.transformer: WhisperForConditionalGeneration = get_backbone_model(config.backbone_model_name, config.backbone_config)
 
         self.num_classes = config.num_classes
         self.input_features = config.input_features
