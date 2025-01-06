@@ -1,11 +1,14 @@
 import json
+import os
 import pickle
 from pathlib import Path
+from typing import Union, Optional
 
 import numpy as np
 import pandas as pd
 from pandas import DataFrame
 from tqdm import tqdm
+from transformers.utils import PushToHubMixin, cached_file
 
 from .event import Event, EventType, EventRange, ContextType
 from .config import TrainConfig
@@ -14,7 +17,7 @@ MILISECONDS_PER_SECOND = 1000
 MILISECONDS_PER_STEP = 10
 
 
-class Tokenizer:
+class Tokenizer(PushToHubMixin):
     __slots__ = [
         "offset",
         "event_ranges",
@@ -576,6 +579,46 @@ class Tokenizer:
                                     .apply(lambda x: None if np.count_nonzero(x) == 0 else [self.descriptor_idx[y] for y in x]).dropna().to_dict())
 
         self.num_descriptor_classes = len(self.descriptor_idx)
+
+    def save_pretrained(self, save_directory: str, **kwargs):
+        """Save the tokenizer to the given directory as a JSON file."""
+        with open(Path(save_directory) / "tokenizer.json", "w", encoding="utf-8") as f:
+            out_str = json.dumps(self.state_dict(), ensure_ascii=False)
+            f.write(out_str)
+
+    @classmethod
+    def from_pretrained(
+            cls,
+            pretrained_model_name_or_path: Union[str, os.PathLike],
+            *,
+            cache_dir: Optional[Union[str, os.PathLike]] = None,
+            local_files_only: bool = False,
+            token: Optional[Union[str, bool]] = None,
+            revision: str = "main",
+            **kwargs,
+    ):
+        user_agent = {"file_type": "tokenizer", "from_auto_class": False, "is_fast": False}
+
+        pretrained_model_name_or_path = str(pretrained_model_name_or_path)
+
+        resolved_config_file = cached_file(
+            pretrained_model_name_or_path,
+            "tokenizer.json",
+            cache_dir=cache_dir,
+            token=token,
+            revision=revision,
+            local_files_only=local_files_only,
+            user_agent=user_agent,
+            _raise_exceptions_for_gated_repo=False,
+            _raise_exceptions_for_missing_entries=False,
+            _raise_exceptions_for_connection_errors=False,
+        )
+
+        with open(resolved_config_file, encoding="utf-8") as reader:
+            tokenizer_config = json.load(reader)
+            tokenizer = cls()
+            tokenizer.load_state_dict(tokenizer_config)
+            return tokenizer
 
     def state_dict(self):
         return {
