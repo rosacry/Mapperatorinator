@@ -466,6 +466,9 @@ class Postprocessor(object):
         beatmap.write_path(beatmap_path)
 
     def write_result(self, result: str, output_path: str):
+        if not os.path.exists(output_path):
+            os.makedirs(output_path)
+
         # Write .osu file to directory
         osu_path = os.path.join(output_path, f"beatmap{str(uuid.uuid4().hex)}{OSU_FILE_EXTENSION}")
         with open(osu_path, "w", encoding='utf-8-sig') as osu_file:
