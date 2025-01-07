@@ -47,6 +47,7 @@ def get_backbone_model(args, tokenizer: Tokenizer):
     if args.model.name.startswith("google/t5"):
         model = T5Model(config)
     elif args.model.name.startswith("openai/whisper"):
+        config.use_cache = False
         config.num_mel_bins = config.d_model
         config.pad_token_id = tokenizer.pad_id
         config.max_source_positions = args.data.src_seq_len // 2
