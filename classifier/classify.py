@@ -94,7 +94,7 @@ def create_example_from_path(
 
 
 def get_mapper_names():
-    path = Path(r"C:\Users\Olivier\Documents\GitHub\Mapperatorinator\datasets\beatmap_users.json")
+    path = Path(r"..\datasets\beatmap_users.json")
 
     # Load JSON data from file
     with open(path, 'r') as file:
@@ -114,22 +114,6 @@ def get_mapper_names():
 
 @hydra.main(config_path="configs", config_name="inference", version_base="1.1")
 def main(args: DictConfig):
-    # args.beatmap_path = "C:\\Users\\Olivier\\AppData\\Local\\osu!\\Songs\\584787 Yuiko Ohara - Hoshi o Tadoreba\\Yuiko Ohara - Hoshi o Tadoreba (Yumeno Himiko) [015's Hard].osu"
-    # args.beatmap_path = "C:\\Users\\Olivier\\AppData\\Local\\osu!\\Songs\\859916 DJ Noriken (Remixed _ Covered by Camellia) - Jingle (Metal Arrange _ Cover)\\DJ Noriken (Remixed  Covered by Camellia) - Jingle (Metal Arrange  Cover) (StunterLetsPlay) [Extra].osu"
-    # args.beatmap_path = "C:\\Users\\Olivier\\AppData\\Local\\osu!\\Songs\\989342 Denkishiki Karen Ongaku Shuudan - Aoki Kotou no Anguis\\Denkishiki Karen Ongaku Shuudan - Aoki Kotou no Anguis (OliBomby) [Ardens Spes].osu"
-    # args.beatmap_path = "C:\\Users\\Olivier\\AppData\\Local\\osu!\\Songs\\Kou_ - RE_generate_fractal (OliBomby)\\Kou! - RE_generatefractal (OliBomby) [I love lazer hexgrid].osu"
-    # args.beatmap_path = "C:\\Users\\Olivier\\AppData\\Local\\osu!\\Songs\\the answer\\MIMI - Answer (feat. Wanko) (OliBomby) [AI's Insane].osu"
-    # args.beatmap_path = "C:\\Users\\Olivier\\AppData\\Local\\osu!\\Songs\\518426 Bernd Krueger - Sonata No14 in cis-Moll, Op 27-2 - 3 Satz\\Bernd Krueger - Sonata No.14 in cis-Moll, Op. 272 - 3. Satz (Fenza) [Presto Agitato].osu"
-    # args.beatmap_path = "C:\\Users\\Olivier\\AppData\\Local\\osu!\\Songs\\2036508 Sydosys - Lunar Gateway\\Sydosys - Lunar Gateway (Gamelan4) [Hivie's Oni].osu"
-    args.beatmap_path = r"C:\Users\Olivier\AppData\Local\osu!\Songs\1790119 THE ORAL CIGARETTES - ReI\THE ORAL CIGARETTES - ReI (Sotarks) [Cataclysm.].osu"
-    # args.beatmap_path = r"C:\Users\Olivier\AppData\Local\osu!\Songs\1790119 THE ORAL CIGARETTES - ReI\THE ORAL CIGARETTES - ReI (OliBomby) [osuT5 V21 timing cheri cfg 4].osu"
-    # args.beatmap_path = r"C:\Users\Olivier\AppData\Local\osu!\Songs\1790119 THE ORAL CIGARETTES - ReI\THE ORAL CIGARETTES - ReI (Sotarks) [banter's Insane].osu"
-    # args.beatmap_path = r"C:\Users\Olivier\AppData\Local\osu!\Songs\1790119 THE ORAL CIGARETTES - ReI\THE ORAL CIGARETTES - ReI (Sotarks) [Pepekcz's Hard].osu"
-    # args.beatmap_path = "C:\\Users\\Olivier\\AppData\\Local\\osu!\\Songs\\634147 Kaneko Chiharu - iLLness LiLin\\Kaneko Chiharu - iLLness LiLin (Kroytz) [TERMiNALLY iLL].osu"
-    # args.beatmap_path = r"C:\Users\Olivier\AppData\Local\osu!\Songs\glass beach - neon glow\glass beach - neon glow (OliBomby) [e].osu"
-    args.checkpoint_path = r"C:\Users\Olivier\Documents\GitHub\Mapperatorinator\test\classifier_v3\model.ckpt"
-    args.time = 60
-
     torch.set_grad_enabled(False)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
