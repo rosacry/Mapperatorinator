@@ -67,7 +67,7 @@ python inference.py \
   start_time           [Generation start time in milliseconds] \
   end_time             [Generation end time in milliseconds] \
   in_context           [List of additional context to provide to the model [NONE,TIMING,KIAI,MAP,GD,NO_HS]] \
-  out_context          [List of content types to generate] \
+  output_type          [List of content types to generate] \
   cfg_scale            [Scale of the classifier-free guidance] \
   super_timing         [Whether to use slow accurate variable BPM timing generator] \
 ```
@@ -88,7 +88,7 @@ python inference.py beatmap_path="'C:\Users\USER\AppData\Local\osu!\Songs\1 Kenj
 - To remap just a part of your beatmap, use the `beatmap_path`, `start_time`, `end_time`, and `add_to_beatmap=true` arguments.
 - To generate a guest difficulty for a beatmap, use the `beatmap_path` and `in_context=[GD,TIMING,KIAI]` arguments.
 - To generate hitsounds for a beatmap, use the `beatmap_path` and `in_context=[NO_HS,TIMING,KIAI]` arguments.
-- To generate only timing for a song, use the `super_timing=true` and `out_context=[TIMING]` arguments.
+- To generate only timing for a song, use the `super_timing=true` and `output_type=[TIMING]` arguments.
 
 ## Training
 
