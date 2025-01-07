@@ -6,3 +6,4 @@ defaults:
   - _self_
 
 version: 'Mapperatorinator V23'        # Beatmap version
+super_timing: true     # Use super timing generator (slow but accurate timing)
