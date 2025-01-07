@@ -43,9 +43,9 @@ def get_args_from_beatmap(args: InferenceConfig, tokenizer: Tokenizer):
     beatmap = Beatmap.from_path(beatmap_path)
     print(f"Using metadata from beatmap: {beatmap.display_name}")
 
-    if args.audio_path is '':
+    if args.audio_path == '':
         args.audio_path = beatmap_path.parent / beatmap.audio_filename
-    if args.output_path is '':
+    if args.output_path == '':
         args.output_path = beatmap_path.parent
 
     generation_config = generation_config_from_beatmap(beatmap, tokenizer)
