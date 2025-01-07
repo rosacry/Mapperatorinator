@@ -70,6 +70,7 @@ python inference.py \
   output_type          [List of content types to generate] \
   cfg_scale            [Scale of the classifier-free guidance] \
   super_timing         [Whether to use slow accurate variable BPM timing generator] \
+  seed                 [Random seed for generation] \
 ```
 
 Example:
