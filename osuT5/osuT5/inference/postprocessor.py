@@ -468,7 +468,7 @@ class Postprocessor(object):
     def write_result(self, result: str, output_path: str):
         # Write .osu file to directory
         osu_path = os.path.join(output_path, f"beatmap{str(uuid.uuid4().hex)}{OSU_FILE_EXTENSION}")
-        with open(osu_path, "w") as osu_file:
+        with open(osu_path, "w", encoding='utf-8-sig') as osu_file:
             osu_file.write(result)
 
     @staticmethod
