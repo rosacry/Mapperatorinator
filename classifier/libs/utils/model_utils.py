@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 
 import lightning
@@ -14,6 +15,7 @@ from torch.optim.lr_scheduler import (
 )
 from torch.utils.data import DataLoader
 from transformers.modeling_outputs import Seq2SeqSequenceClassifierOutput
+from transformers.utils import cached_file
 
 import routed_pickle
 from ..dataset import OrsDataset, OsuParser
@@ -70,7 +72,11 @@ class LitOsuClassifier(lightning.LightningModule):
 
 def load_ckpt(ckpt_path, route_pickle=True):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    ckpt_path = Path(ckpt_path)
+
+    if not os.path.exists(ckpt_path):
+        ckpt_path = cached_file(ckpt_path, "model.ckpt")
+    else:
+        ckpt_path = Path(ckpt_path)
 
     checkpoint = torch.load(
         ckpt_path,

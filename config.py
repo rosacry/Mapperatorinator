@@ -99,9 +99,9 @@ class FidConfig(InferenceConfig):
     dataset_start: int = 16200
     dataset_end: int = 16291
 
-    model_path: str = '/workspace/Mapperatorinator/test/ckpt_v28'
-    diff_ckpt: str = '/workspace/Mapperatorinator/test/diff_ckpt2'
-    classifier_ckpt: str = '/workspace/Mapperatorinator/test/classifier_v3/model.ckpt'
+    model_path: str = 'OliBomby/Mapperatorinator-v28'
+    diff_ckpt: str = 'OliBomby/osu-diffusion-v2'
+    classifier_ckpt: str = 'OliBomby/osu-classifier'
 
 
 cs = ConfigStore.instance()
