@@ -13,7 +13,7 @@ This project is built upon [osuT5](https://github.com/gyataro/osuT5) and [osu-di
 ### Tokenization
 
 Mapperatorinator converts osu! beatmaps into an intermediate event representation that can be directly converted to and from tokens.
-It includes hit objects, hitsounds, new combos, timing points, kiai times, and mania SVs.
+It includes hit objects, hitsounds, slider velocities, new combos, timing points, kiai times, and taiko/mania scroll speeds.
 
 Here is a small examle of the tokenization process:
 
@@ -21,7 +21,10 @@ Here is a small examle of the tokenization process:
 
 To save on vocabulary size, time events are quantized to 10ms intervals and position coordinates are quantized to 32 pixel grid points.
 
-### Model IO
+### Model architecture
+The model is basically a wrapper around the [HF Transformers Whisper](https://huggingface.co/docs/transformers/en/model_doc/whisper#transformers.WhisperForConditionalGeneration) model, with custom input embeddings and loss function.
+This model was found to be faster and more accurate than T5 for this task.
+
 The high-level overview of the model's input-output is as follows:
 
 ![Picture2](https://user-images.githubusercontent.com/28675590/201044116-1384ad72-c540-44db-a285-7319dd01caad.svg)
