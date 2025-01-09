@@ -17,7 +17,7 @@ It includes hit objects, hitsounds, new combos, timing points, kiai times, and m
 
 Here is a small examle of the tokenization process:
 
-![mapperatorinator_parser](https://github.com/user-attachments/assets/4069a944-2377-4498-bea5-a6e1a166ed64)
+![mapperatorinator_parser](https://github.com/user-attachments/assets/84efde76-4c27-48a1-b8ce-beceddd9e695)
 
 To save on vocabulary size, time events are quantized to 10ms intervals and position coordinates are quantized to 32 pixel grid points.
 
