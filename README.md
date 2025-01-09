@@ -33,7 +33,7 @@ The model uses Mel spectrogram frames as encoder input, with one frame per input
 
 ### Multitask training format
 
-![Multitask training format](https://github.com/user-attachments/assets/f43f94f6-7e11-4bda-b007-5209df8a0a10)
+![Multitask training format](https://github.com/user-attachments/assets/62f490bc-a567-4671-a7ce-dbcc5f9cd6d9)
 
 Before the SOS token are additional tokens that facilitate conditional generation. These tokens include the gamemode, difficulty, mapper ID, year, and other metadata.
 During training, these tokens do not have accompanying labels, so they are never output by the model. 
