@@ -31,6 +31,10 @@ The high-level overview of the model's input-output is as follows:
 
 The model uses Mel spectrogram frames as encoder input, with one frame per input position. The model decoder output at each step is a softmax distribution over a discrete, predefined, vocabulary of events. Outputs are sparse, events are only needed when a hit-object occurs, instead of annotating every single audio frame.
 
+### Multitask training format
+
+![Multitask training format](https://github.com/user-attachments/assets/f43f94f6-7e11-4bda-b007-5209df8a0a10)
+
 Before the SOS token are additional tokens that facilitate conditional generation. These tokens include the gamemode, difficulty, mapper ID, year, and other metadata.
 During training, these tokens do not have accompanying labels, so they are never output by the model. 
 Also during training there is a random chance that a metadata token gets replaced by an 'unknown' token, so during inference we can use these 'unknown' tokens to reduce the amount of metadata we have to give to the model.
