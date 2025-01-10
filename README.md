@@ -4,7 +4,7 @@ Try the model [here](https://colab.research.google.com/github/OliBomby/Mapperato
 
 Mapperatorinator is multi-model framework that uses spectrogram inputs to generate fully featured osu! beatmaps for all gamemodes. The goal of this project is to automatically generate rankable quality osu! beatmaps from any song with a high degree of customizability.
 
-This project is built upon [osuT5](https://github.com/gyataro/osuT5) and [osu-diffusion](https://github.com/OliBomby/osu-diffusion).
+This project is built upon [osuT5](https://github.com/gyataro/osuT5) and [osu-diffusion](https://github.com/OliBomby/osu-diffusion). In developing this, I spent about 2500 hours of GPU compute across 142 runs on my 4060 Ti and rented 4090 instances on vast.ai.
 
 #### Use this tool responsibly. Always disclose the use of AI in your beatmaps. You do not own the generated beatmaps.
 
@@ -47,6 +47,9 @@ Each generation window except the first starts with the decoder pre-filled up to
 We use a logit processor to make sure that the model can't generate time tokens that are in the first 50% of the generation window.
 Additionally, the last 40% of the generation window is reserved for the next window. Any generated time tokens in that range are treated as EOS tokens.
 This ensures that each generated token is conditioned on at least 4 seconds of previous tokens and 3.3 seconds of future audio to anticipate.
+
+To prevent offset drifting during long generation, random offsets have been added to time events in the decoder during training.
+This forces it to correct timing errors by listening to the onsets in the audio instead, and results in a consistently accurate offset.
 
 ### Refined coordinates with diffusion
 
