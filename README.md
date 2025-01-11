@@ -6,7 +6,7 @@ Mapperatorinator is multi-model framework that uses spectrogram inputs to genera
 
 This project is built upon [osuT5](https://github.com/gyataro/osuT5) and [osu-diffusion](https://github.com/OliBomby/osu-diffusion). In developing this, I spent about 2500 hours of GPU compute across 142 runs on my 4060 Ti and rented 4090 instances on vast.ai.
 
-#### Use this tool responsibly. Always disclose the use of AI in your beatmaps. You do not own the generated beatmaps.
+#### Use this tool responsibly. Always disclose the use of AI in your beatmaps. Do not upload the generated beatmaps.
 
 ## Overview
 
