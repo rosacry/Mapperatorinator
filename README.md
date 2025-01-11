@@ -156,8 +156,6 @@ The instruction below creates a training environment on your local machine.
 
 ### 1. Clone the repository
 
-Clone the repo and create a Python virtual environment. Activate the virtual environment.
-
 ```sh
 git clone https://github.com/OliBomby/Mapperatorinator.git
 cd Mapperatorinator
@@ -172,7 +170,7 @@ Mapperator.ConsoleApp.exe dataset2 -t "/Mapperatorinator/datasets/beatmap_descri
 ```
 
 ### 3. Create docker container
-Training in your venv is also possible, but we recommend using Docker on WSL for performance.
+Training in your venv is also possible, but we recommend using Docker on WSL for better performance.
 ```sh
 docker compose up -d --force-recreate
 docker attach mapperatorinator_space
@@ -185,6 +183,10 @@ All configurations are located in `./configs/osut5/train.yaml`. Begin training b
 ```sh
 python osuT5/train.py -cn train_v28 train_dataset_path="/workspace/datasets/cool_dataset" test_dataset_path="/workspace/datasets/cool_dataset" train_dataset_end=90 test_dataset_start=90 test_dataset_end=100
 ```
+
+## See also
+- [Mapper Classifier](./classifier/README.md)
+- [RComplexion](./rcomplexion/README.md)
 
 ## Credits
 

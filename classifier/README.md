@@ -1,8 +1,17 @@
-# osu-classifier
-
-osu-classifier is a model that predicts which osu! ranked mapper mapped a given beatmap.
+# Mapper Classifier
 
 Try the model [here](https://colab.research.google.com/github/OliBomby/Mapperatorinator/blob/main/colab/mapperatorinator_inference.ipynb).
+
+Mapper Classifier is a model that predicts which osu! standard ranked mapper mapped a given beatmap.
+
+This model is built using transfer learning on the Mapperatorinator V22 model.
+It achieves a top-1 validation accuracy of 12.5% on a random sample of ranked beatmaps and recognizes 3,731 unique mappers.
+To make its predictions, the model analyzes an 8-second segment of beatmap.
+
+The purpose of this classifier is actually to calculate high-level feature vectors for beatmaps, which can be used to calculate the similarity between generated beatmaps and real beatmaps.
+This is a technique often used to assess the quality of image generation models with the [Fréchet Inception Distance](https://arxiv.org/abs/1706.08500).
+However, in my testing I found that the computed FID scores for beatmap generation models were not very close to the actual quality of the generated beatmaps.
+This classifier might not be able to recognize all the necessary features to accurately assess the quality of a beatmap, but it's a start.
 
 ## Usage
 
