@@ -76,6 +76,7 @@ def create_example(
 
 def create_example_from_path(
         beatmap_path: str,
+        audio_path: str,
         time: float,
         model_args: DictConfig,
         tokenizer: Tokenizer,
@@ -87,7 +88,9 @@ def create_example_from_path(
     beatmap = Beatmap.from_path(beatmap_path)
 
     # Get audio frames
-    audio_path = beatmap_path.parent / beatmap.audio_filename
+    if audio_path == '':
+        audio_path = beatmap_path.parent / beatmap.audio_filename
+
     audio = load_audio_file(audio_path, sample_rate)
 
     return create_example(beatmap, audio, time, model_args, tokenizer, device)
@@ -120,7 +123,7 @@ def main(args: DictConfig):
     model, model_args, tokenizer = load_ckpt(args.checkpoint_path)
     model.eval().to(device)
 
-    example = create_example_from_path(args.beatmap_path, args.time, model_args, tokenizer, device)
+    example = create_example_from_path(args.beatmap_path, args.audio_path, args.time, model_args, tokenizer, device)
     result: OsuClassifierOutput = model(**example)
     logits = result.logits
 

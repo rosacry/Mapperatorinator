@@ -2,6 +2,8 @@
 
 osu-classifier is a model that predicts which osu! ranked mapper mapped a given beatmap.
 
+Try the model [here](https://colab.research.google.com/github/OliBomby/Mapperatorinator/blob/main/colab/mapperatorinator_inference.ipynb).
+
 ## Usage
 
 Run `classify.py` with the path to the beatmap you want to classify and the time in seconds of the segment you want to use to classify the beatmap.
