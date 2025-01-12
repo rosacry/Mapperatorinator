@@ -607,7 +607,7 @@ class Processor(object):
                 pass
             elif context == ContextType.TIMING:
                 beatmap = Beatmap.from_path(beatmap_path)
-                data["events"], data["event_times"] = parser.parse_timing(beatmap)
+                data["events"], data["event_times"] = parser.parse_timing(beatmap, song_length=song_length)
             elif context == ContextType.MAP:
                 beatmap = Beatmap.from_path(beatmap_path)
                 data["events"], data["event_times"] = parser.parse(beatmap)
