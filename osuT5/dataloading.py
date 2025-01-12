@@ -18,7 +18,7 @@ from osuT5.utils import (
 )
 
 
-@hydra.main(config_path="../configs/osut5", config_name="train_v28", version_base="1.1")
+@hydra.main(config_path="../configs/osut5", config_name="train_v29", version_base="1.1")
 def main(args: TrainConfig):
     setup_args(args)
 

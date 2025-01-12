@@ -10,6 +10,6 @@ dataset_path: /workspace/datasets/ORS16291
 dataset_start: 16200
 dataset_end: 16291
 
-model_path: 'OliBomby/Mapperatorinator-v28'
+model_path: 'OliBomby/Mapperatorinator-v29'
 diff_ckpt: 'OliBomby/osu-diffusion-v2'
 classifier_ckpt: 'OliBomby/osu-classifier'

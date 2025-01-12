@@ -181,7 +181,7 @@ docker attach mapperatorinator_space
 All configurations are located in `./configs/osut5/train.yaml`. Begin training by calling `osuT5/train.py`.
 
 ```sh
-python osuT5/train.py -cn train_v28 train_dataset_path="/workspace/datasets/cool_dataset" test_dataset_path="/workspace/datasets/cool_dataset" train_dataset_end=90 test_dataset_start=90 test_dataset_end=100
+python osuT5/train.py -cn train_v29 train_dataset_path="/workspace/datasets/cool_dataset" test_dataset_path="/workspace/datasets/cool_dataset" train_dataset_end=90 test_dataset_start=90 test_dataset_end=100
 ```
 
 ## See also

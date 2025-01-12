@@ -6,9 +6,9 @@ from osuT5.osuT5.model import Mapperatorinator
 from osuT5.osuT5.tokenizer import Tokenizer
 
 
-@hydra.main(config_path="configs", config_name="inference_v28", version_base="1.1")
+@hydra.main(config_path="configs", config_name="inference_v29", version_base="1.1")
 def main(args: InferenceConfig):
-    model_name = "OliBomby/Mapperatorinator-v28"
+    model_name = "OliBomby/Mapperatorinator-v29"
 
     model, tokenizer = load_model(args.model_path, args.osut5, args.device)
 
