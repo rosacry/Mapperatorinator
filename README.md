@@ -1,6 +1,6 @@
 # Mapperatorinator
 
-Try the model [here](https://colab.research.google.com/github/OliBomby/Mapperatorinator/blob/main/colab/mapperatorinator_inference.ipynb). Check out a video showcase [here]().
+Try the model [here](https://colab.research.google.com/github/OliBomby/Mapperatorinator/blob/main/colab/mapperatorinator_inference.ipynb). Check out a video showcase [here](https://youtu.be/FEr7t1L2EoA).
 
 Mapperatorinator is multi-model framework that uses spectrogram inputs to generate fully featured osu! beatmaps for all gamemodes. The goal of this project is to automatically generate rankable quality osu! beatmaps from any song with a high degree of customizability.
 
