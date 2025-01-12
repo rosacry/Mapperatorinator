@@ -580,7 +580,7 @@ class Processor(object):
             partial: bool = False,
             parser: Optional[OsuParser] = None,
     ):
-        if context != ContextType.NONE and finished:
+        if context != ContextType.NONE and finished and context not in extra_in_context:
             beatmap_path = Path(beatmap_path)
             if not beatmap_path.is_file():
                 raise FileNotFoundError(f"Beatmap file {beatmap_path} not found.")
