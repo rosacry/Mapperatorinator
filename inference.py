@@ -282,7 +282,7 @@ def load_model(
         t5_args: TrainConfig,
         device,
 ):
-    if not os.path.exists(ckpt_path):
+    if not os.path.exists(ckpt_path) and ckpt_path != "":
         model = Mapperatorinator.from_pretrained(ckpt_path)
         tokenizer = Tokenizer.from_pretrained(ckpt_path)
     else:
@@ -307,7 +307,7 @@ def load_diff_model(
         diff_args: DiffusionTrainConfig,
         device,
 ):
-    if not os.path.exists(ckpt_path):
+    if not os.path.exists(ckpt_path) and ckpt_path != "":
         tokenizer_file = cached_file(ckpt_path, "tokenizer.pkl")
         model_file = cached_file(ckpt_path, "model_ema.pkl")
     else:
@@ -329,7 +329,7 @@ def load_diff_model(
     return model, tokenizer
 
 
-@hydra.main(config_path="configs", config_name="inference_v28", version_base="1.1")
+@hydra.main(config_path="configs", config_name="inference_v29", version_base="1.1")
 def main(args: InferenceConfig):
     prepare_args(args)
 

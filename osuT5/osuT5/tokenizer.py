@@ -676,13 +676,13 @@ class Tokenizer(PushToHubMixin):
         self.vocab_size_in = state_dict["vocab_size_in"]
         self.beatmap_idx = state_dict["beatmap_idx"]
         if "beatmap_mapper" in state_dict:
-            self.beatmap_mapper = state_dict["beatmap_mapper"]
+            self.beatmap_mapper = {int(k): v for k, v in state_dict["beatmap_mapper"].items()}
         if "mapper_idx" in state_dict:
-            self.mapper_idx = state_dict["mapper_idx"]
+            self.mapper_idx = {int(k): v for k, v in state_dict["mapper_idx"].items()}
         if "num_mapper_classes" in state_dict:
             self.num_mapper_classes = state_dict["num_mapper_classes"]
         if "beatmap_descriptors" in state_dict:
-            self.beatmap_descriptors = state_dict["beatmap_descriptors"]
+            self.beatmap_descriptors = {int(k): v for k, v in state_dict["beatmap_descriptors"].items()}
         if "descriptor_idx" in state_dict:
             self.descriptor_idx = state_dict["descriptor_idx"]
         if "num_descriptor_classes" in state_dict:
