@@ -420,8 +420,8 @@ class Postprocessor(object):
         beatmap = Beatmap.from_path(beatmap_path)
 
         # Replace between start and end time
-        start_time = timedelta(milliseconds=self.start_time) if self.start_time is not None else timedelta.min
-        end_time = timedelta(milliseconds=self.end_time) if self.end_time is not None else timedelta.max
+        start_time = timedelta(milliseconds=self.start_time) if self.start_time is not None else timedelta(days=-999)
+        end_time = timedelta(milliseconds=self.end_time) if self.end_time is not None else timedelta(days=999)
 
         # Remove all objects between start and end time
         beatmap._hit_objects = [ho for ho in beatmap._hit_objects if ho.time < start_time or ho.time > end_time]
