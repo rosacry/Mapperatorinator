@@ -23,6 +23,7 @@ To save on vocabulary size, time events are quantized to 10ms intervals and posi
 
 ### Model architecture
 The model is basically a wrapper around the [HF Transformers Whisper](https://huggingface.co/docs/transformers/en/model_doc/whisper#transformers.WhisperForConditionalGeneration) model, with custom input embeddings and loss function.
+Model size amounts to 219M parameters.
 This model was found to be faster and more accurate than T5 for this task.
 
 The high-level overview of the model's input-output is as follows:
