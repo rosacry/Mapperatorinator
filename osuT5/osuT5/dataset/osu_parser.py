@@ -7,6 +7,7 @@ import numpy as np
 import numpy.typing as npt
 from slider import Beatmap, Circle, Slider, Spinner, HoldNote, TimingPoint
 from slider.curve import Linear, Catmull, Perfect, MultiBezier
+from sympy import timed
 
 from ..tokenizer import Event, EventType, Tokenizer
 from .data_utils import merge_events, speed_events, get_median_mpb_beatmap
@@ -169,12 +170,15 @@ class OsuParser:
 
         return events, event_times
 
-    def parse_timing(self, beatmap: Beatmap, speed: float = 1.0) -> tuple[list[Event], list[int]]:
+    def parse_timing(self, beatmap: Beatmap, speed: float = 1.0, song_length: Optional[float] = None) -> tuple[list[Event], list[int]]:
         """Extract all timing information from a beatmap."""
         events = []
         event_times = []
-        last_ho = beatmap.hit_objects(stacking=False)[-1]
-        last_time = last_ho.end_time if hasattr(last_ho, "end_time") else last_ho.time
+        if song_length is None:
+            last_ho = beatmap.hit_objects(stacking=False)[-1]
+            last_time = last_ho.end_time if hasattr(last_ho, "end_time") else last_ho.time
+        else:
+            last_time = timedelta(milliseconds=song_length)
 
         # Get all timing points with BPM changes
         timing_points = [tp for tp in beatmap.timing_points if tp.bpm]
