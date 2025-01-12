@@ -33,8 +33,8 @@ output_type: [MAP]    # Output type (map, timing)
 cfg_scale: 1.0              # Scale of classifier-free guidance
 temperature: 1.0        # Sampling temperature
 timing_temperature: 0.1 # Sampling temperature for timing
-mania_column_temperature: 0.5 # Sampling temperature for mania columns
-taiko_hit_temperature: 0.5    # Sampling temperature for taiko hit types
+mania_column_temperature: 0.8 # Sampling temperature for mania columns
+taiko_hit_temperature: 0.8    # Sampling temperature for taiko hit types
 timeshift_bias: 0.0        # Logit bias for sampling timeshift tokens
 top_p: 0.95              # Top-p sampling threshold
 top_k: 0                # Top-k sampling threshold
