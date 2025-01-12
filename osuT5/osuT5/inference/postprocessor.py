@@ -810,6 +810,9 @@ class Postprocessor(object):
         return True
 
     def human_round_ms_per_beat(self, mpb: float, markers: list[Postprocessor.Marker], redline: TimingPoint):
+        if mpb == 0 or mpb > 60000:
+            return mpb
+
         bpm = 60000 / mpb
 
         mpb_integer = 60000 / round(bpm)
@@ -835,8 +838,14 @@ class Postprocessor(object):
         return mpb
 
     def get_ms_per_beat(self, time_from_redline: float, beats_from_redline: float, leniency: float):
+        if beats_from_redline == 0 or time_from_redline == 0:
+            return 1000
+
         mpb = time_from_redline / beats_from_redline
         bpm = 60000 / mpb
+
+        if bpm < 1:
+            return 1000
 
         mpb_integer = 60000 / round(bpm)
         if self.is_snapped(time_from_redline, mpb_integer * beats_from_redline, leniency):
