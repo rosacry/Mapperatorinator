@@ -8,6 +8,79 @@ This project is built upon [osuT5](https://github.com/gyataro/osuT5) and [osu-di
 
 #### Use this tool responsibly. Always disclose the use of AI in your beatmaps. Do not upload the generated beatmaps.
 
+
+## Inference
+
+The instruction below allows you to generate beatmaps on your local machine, or you can run it in the cloud with the [colab notebook](https://colab.research.google.com/github/OliBomby/Mapperatorinator/blob/main/colab/mapperatorinator_inference.ipynb).
+
+### 1. Clone the repository
+
+Clone the repo and create a Python virtual environment. Activate the virtual environment.
+
+```sh
+git clone https://github.com/OliBomby/Mapperatorinator.git
+cd Mapperatorinator
+python -m venv .venv
+```
+
+### 2. Install dependencies
+
+Install [ffmpeg](http://www.ffmpeg.org/), [PyTorch](https://pytorch.org/get-started/locally/), and the remaining Python dependencies.
+
+```sh
+pip install -r requirements.txt
+```
+
+### 3. Begin inference
+
+Run `inference.py` and pass in some arguments to generate beatmaps. For this use [Hydra override syntax](https://hydra.cc/docs/advanced/override_grammar/basic/). See `inference.yaml` for all available parameters. 
+```
+python inference.py \
+  audio_path           [Path to input audio] \
+  output_path          [Path to output directory] \
+  beatmap_path         [Path to .osu file to autofill metadata, audio_path, and output_path, or use as reference] \
+  
+  gamemode             [Game mode to generate 0=std, 1=taiko, 2=ctb, 3=mania] \
+  difficulty           [Difficulty star rating to generate] \
+  mapper_id            [Mapper user ID for style] \
+  year                 [Upload year to simulate] \
+  hitsounded           [Whether to add hitsounds] \
+  slider_multiplier    [Slider velocity multiplier] \
+  circle_size          [Circle size] \
+  keycount             [Key count for mania] \
+  hold_note_ratio      [Hold note ratio for mania 0-1] \
+  scroll_speed_ratio   [Scroll speed ratio for mania and ctb 0-1] \
+  descriptors          [List of OMDB descriptors for style] \
+  negative_descriptors [List of OMDB negative descriptors for classifier-free guidance] \
+  
+  add_to_beatmap       [Whether to add generated content to the reference beatmap instead of making a new beatmap] \
+  start_time           [Generation start time in milliseconds] \
+  end_time             [Generation end time in milliseconds] \
+  in_context           [List of additional context to provide to the model [NONE,TIMING,KIAI,MAP,GD,NO_HS]] \
+  output_type          [List of content types to generate] \
+  cfg_scale            [Scale of the classifier-free guidance] \
+  super_timing         [Whether to use slow accurate variable BPM timing generator] \
+  seed                 [Random seed for generation] \
+```
+
+Example:
+```
+python inference.py beatmap_path="'C:\Users\USER\AppData\Local\osu!\Songs\1 Kenji Ninuma - DISCO PRINCE\Kenji Ninuma - DISCOPRINCE (peppy) [Normal].osu'" gamemode=0 difficulty=5.5 year=2023 descriptors="['jump aim','clean']" in_context=[TIMING,KIAI]
+```
+
+### Tips
+
+- All available descriptors can be found [here](https://omdb.nyahh.net/descriptors/).
+- Always provide a year argument between 2007 and 2023. If you leave it unknown, the model might generate with an inconsistent style.
+- Always provide a difficulty argument. If you leave it unknown, the model might generate with an inconsistent difficulty.
+- Increase the `cfg_scale` parameter to increase the effectiveness of the `mapper_id` and `descriptors` arguments.
+- You can use the `negative_descriptors` argument to guide the model away from certain styles.
+- If your song style and desired beatmap style don't match well, the model might not follow your directions. For example, its hard to generate a high SR, high SV beatmap for a calm song. 
+- To remap just a part of your beatmap, use the `beatmap_path`, `start_time`, `end_time`, and `add_to_beatmap=true` arguments.
+- To generate a guest difficulty for a beatmap, use the `beatmap_path` and `in_context=[GD,TIMING,KIAI]` arguments.
+- To generate hitsounds for a beatmap, use the `beatmap_path` and `in_context=[NO_HS,TIMING,KIAI]` arguments.
+- To generate only timing for a song, use the `super_timing=true` and `output_type=[TIMING]` arguments.
+
 ## Overview
 
 ### Tokenization
@@ -77,79 +150,6 @@ Mapperatorinator does some extra post-processing to improve the quality of the g
 
 Super timing generator is an algorithm that improves the precision and accuracy of generated timing by infering timing for the whole song 20 times and averaging the results.
 This is useful for songs with variable BPM, or songs with BPM changes. The result is almost perfect with only sometimes a section that needs manual adjustment.
-
-
-## Inference
-
-The instruction below allows you to generate beatmaps on your local machine.
-
-### 1. Clone the repository
-
-Clone the repo and create a Python virtual environment. Activate the virtual environment.
-
-```sh
-git clone https://github.com/OliBomby/Mapperatorinator.git
-cd Mapperatorinator
-python -m venv .venv
-```
-
-### 2. Install dependencies
-
-Install [ffmpeg](http://www.ffmpeg.org/), [PyTorch](https://pytorch.org/get-started/locally/), and the remaining Python dependencies.
-
-```sh
-pip install -r requirements.txt
-```
-
-### 3. Begin inference
-
-Run `inference.py` and pass in some arguments to generate beatmaps. For this use [Hydra override syntax](https://hydra.cc/docs/advanced/override_grammar/basic/). See `inference.yaml` for all available parameters. 
-```
-python inference.py \
-  audio_path           [Path to input audio] \
-  output_path          [Path to output directory] \
-  beatmap_path         [Path to .osu file to autofill metadata, audio_path, and output_path, or use as reference] \
-  
-  gamemode             [Game mode to generate 0=std, 1=taiko, 2=ctb, 3=mania] \
-  difficulty           [Difficulty star rating to generate] \
-  mapper_id            [Mapper user ID for style] \
-  year                 [Upload year to simulate] \
-  hitsounded           [Whether to add hitsounds] \
-  slider_multiplier    [Slider velocity multiplier] \
-  circle_size          [Circle size] \
-  keycount             [Key count for mania] \
-  hold_note_ratio      [Hold note ratio for mania 0-1] \
-  scroll_speed_ratio   [Scroll speed ratio for mania and ctb 0-1] \
-  descriptors          [List of OMDB descriptors for style] \
-  negative_descriptors [List of OMDB negative descriptors for classifier-free guidance] \
-  
-  add_to_beatmap       [Whether to add generated content to the reference beatmap instead of making a new beatmap] \
-  start_time           [Generation start time in milliseconds] \
-  end_time             [Generation end time in milliseconds] \
-  in_context           [List of additional context to provide to the model [NONE,TIMING,KIAI,MAP,GD,NO_HS]] \
-  output_type          [List of content types to generate] \
-  cfg_scale            [Scale of the classifier-free guidance] \
-  super_timing         [Whether to use slow accurate variable BPM timing generator] \
-  seed                 [Random seed for generation] \
-```
-
-Example:
-```
-python inference.py beatmap_path="'C:\Users\USER\AppData\Local\osu!\Songs\1 Kenji Ninuma - DISCO PRINCE\Kenji Ninuma - DISCOPRINCE (peppy) [Normal].osu'" gamemode=0 difficulty=5.5 year=2023 descriptors="['jump aim','clean']" in_context=[TIMING,KIAI]
-```
-
-### Tips
-
-- All available descriptors can be found [here](https://omdb.nyahh.net/descriptors/).
-- Always provide a year argument between 2007 and 2023. If you leave it unknown, the model might generate with an inconsistent style.
-- Always provide a difficulty argument. If you leave it unknown, the model might generate with an inconsistent difficulty.
-- Increase the `cfg_scale` parameter to increase the effectiveness of the `mapper_id` and `descriptors` arguments.
-- You can use the `negative_descriptors` argument to guide the model away from certain styles.
-- If your song style and desired beatmap style don't match well, the model might not follow your directions. For example, its hard to generate a high SR, high SV beatmap for a calm song. 
-- To remap just a part of your beatmap, use the `beatmap_path`, `start_time`, `end_time`, and `add_to_beatmap=true` arguments.
-- To generate a guest difficulty for a beatmap, use the `beatmap_path` and `in_context=[GD,TIMING,KIAI]` arguments.
-- To generate hitsounds for a beatmap, use the `beatmap_path` and `in_context=[NO_HS,TIMING,KIAI]` arguments.
-- To generate only timing for a song, use the `super_timing=true` and `output_type=[TIMING]` arguments.
 
 ## Training
 
