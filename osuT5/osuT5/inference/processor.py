@@ -44,10 +44,16 @@ class GenerationConfig:
 # noinspection PyProtectedMember
 def generation_config_from_beatmap(beatmap: Beatmap, tokenizer: Tokenizer) -> GenerationConfig:
     gamemode = int(beatmap.mode)
+    difficulty = None
+    if gamemode == 0 and len(beatmap._hit_objects) > 0:  # We don't have diffcalc for other gamemodes
+        try:
+            difficulty = round(float(beatmap.stars()), 2)
+        except Exception:
+            pass
     return GenerationConfig(
         gamemode=gamemode,
         beatmap_id=beatmap.beatmap_id,
-        difficulty=round(float(beatmap.stars()), 2) if gamemode == 0 and len(beatmap._hit_objects) > 0 else None,  # We don't have diffcalc for other gamemodes
+        difficulty=difficulty,
         mapper_id=tokenizer.beatmap_mapper.get(beatmap.beatmap_id, None),
         slider_multiplier=beatmap.slider_multiplier,
         circle_size=beatmap.circle_size,
