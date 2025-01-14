@@ -245,6 +245,7 @@ class Processor(object):
         self.do_sample = args.do_sample
         self.num_beams = args.num_beams
         self.parallel = parallel
+        self.max_batch_size = args.max_batch_size
 
         self.timeshift_bias = args.timeshift_bias
         self.time_range = range(tokenizer.event_start[EventType.TIME_SHIFT], tokenizer.event_end[EventType.TIME_SHIFT])
@@ -498,18 +499,31 @@ class Processor(object):
             uncond_prompts.append(uncond_prompt)
 
         prompt, uncond_prompt, max_len = self.stack_prompts(cond_prompts, uncond_prompts)
-        cache = self.get_cache(prompt.size(0))
 
-        # Start generation
-        result = self._generate(
-            frames,
-            decoder_input_ids=prompt,
-            beatmap_idx=beatmap_idx,
-            logits_processor=logit_processor,
-            negative_prompt=uncond_prompt,
-            past_key_values=cache,
-            eos_token_id=self.get_eos_token_id(context_type=out_context[-1]["context_type"]),
-        )
+        # Split prompts and uncond_prompt into batches
+        frames_batches = self.split_into_batches(frames, self.max_batch_size)
+        prompt_batches = self.split_into_batches(prompt, self.max_batch_size)
+        uncond_prompt_batches = self.split_into_batches(uncond_prompt, self.max_batch_size, batch_size=prompt.size(0))
+        results = []
+
+        # Process each batch
+        for frames_batch, prompt_batch, uncond_prompt_batch in zip(frames_batches, prompt_batches, uncond_prompt_batches):  # type: torch.Tensor, torch.Tensor, torch.Tensor
+            cache = self.get_cache(prompt_batch.size(0))
+
+            # Start generation
+            results.append(self._generate(
+                frames_batch,
+                decoder_input_ids=prompt_batch,
+                beatmap_idx=beatmap_idx,
+                logits_processor=logit_processor,
+                negative_prompt=uncond_prompt_batch,
+                past_key_values=cache,
+                eos_token_id=self.get_eos_token_id(context_type=out_context[-1]["context_type"]),
+            ))
+
+        # Concatenate all batch results to form the final result
+        padded_results, _ = self.pad_prompts(results)
+        result = torch.cat(padded_results, dim=0)
 
         predicted_tokens = result[:len(cond_prompts), max_len:].cpu()
         for i in range(len(predicted_tokens)):
@@ -526,6 +540,11 @@ class Processor(object):
                     self.add_predicted_tokens_to_context(context, predicted_tokens[i, start:end], frame_time)
             else:
                 self.add_predicted_tokens_to_context(out_context[0], predicted_tokens[i], frame_time)
+
+    def split_into_batches(self, tensor, max_batch_size, batch_size=1):
+        if tensor is None:
+            return [None] * batch_size
+        return [tensor[i:i + max_batch_size] for i in range(0, tensor.size(0), max_batch_size)]
 
     def get_cache(self, batch_size: int):
         cache_kwargs = {
