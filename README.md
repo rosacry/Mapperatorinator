@@ -15,19 +15,17 @@ The instruction below allows you to generate beatmaps on your local machine, or 
 
 ### 1. Clone the repository
 
-Clone the repo and create a Python virtual environment. Activate the virtual environment.
-
 ```sh
 git clone https://github.com/OliBomby/Mapperatorinator.git
 cd Mapperatorinator
-python -m venv .venv
 ```
 
 ### 2. Install dependencies
 
-Install [ffmpeg](http://www.ffmpeg.org/), [PyTorch](https://pytorch.org/get-started/locally/), and the remaining Python dependencies.
+Install Python 3.10, [ffmpeg](http://www.ffmpeg.org/), [PyTorch](https://pytorch.org/get-started/locally/), and the remaining Python dependencies.
 
 ```sh
+python -m venv .venv
 pip install -r requirements.txt
 ```
 
