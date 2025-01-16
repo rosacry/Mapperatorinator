@@ -569,7 +569,7 @@ class Processor(object):
     def get_cache(self, batch_size: int):
         cache_kwargs = {
             "config": self.model.config,
-            "batch_size": batch_size * self.num_beams * 2 if self.cfg_scale > 1 else batch_size * self.num_beams,
+            "max_batch_size": batch_size * self.num_beams * 2 if self.cfg_scale > 1 else batch_size * self.num_beams,
             "max_cache_len": self.model.config.max_target_positions,
             "device": self.device,
             "dtype": self.model.dtype,
