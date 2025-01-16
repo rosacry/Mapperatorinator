@@ -1,4 +1,3 @@
-from attr.validators import max_len
 from transformers import PretrainedConfig, T5Config, WhisperConfig
 
 from .configuration_nwhisper import NWhisperConfig
