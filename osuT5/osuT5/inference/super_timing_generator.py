@@ -22,8 +22,9 @@ class SuperTimingGenerator:
         self.args = args
         self.model = model
         self.preprocessor = Preprocessor(args, parallel=True)
-        self.processor = Processor(args, model, tokenizer, parallel=True)
+        self.processor = Processor(args, model, tokenizer, cfg_scale=args.timer_cfg_scale)
         self.processor.do_sample = False
+        self.processor.parallel = True
         self.processor.num_beams = args.timer_num_beams
         self.processor.top_p = 1
         self.processor.top_k = 50
