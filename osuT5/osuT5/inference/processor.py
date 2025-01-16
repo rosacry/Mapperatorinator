@@ -10,7 +10,7 @@ import torch.nn.functional as F
 from slider import Beatmap
 from tqdm import tqdm
 from transformers import LogitsProcessorList, LogitsProcessor, EncoderDecoderCache, StaticCache, \
-    ClassifierFreeGuidanceLogitsProcessor
+    ClassifierFreeGuidanceLogitsProcessor, Cache
 
 from config import InferenceConfig
 from ..dataset import OsuParser
@@ -182,6 +182,18 @@ class LookbackBiasLogitsWarper(LogitsProcessor):
 
         self.last_scores = scores
         return scores_processed
+
+
+class MapperatorinatorCache(EncoderDecoderCache):
+    def __init__(self, self_attention_cache: Cache, cross_attention_cache: Cache, cfg_scale: float):
+        super().__init__(self_attention_cache, cross_attention_cache)
+        self.cfg_scale = cfg_scale
+
+    def reorder_cache(self, beam_idx: torch.LongTensor):
+        """Reorders the cache for beam search, given the selected beam indices."""
+        beam_idx = beam_idx.repeat(2) if self.cfg_scale > 1 else beam_idx
+        self.self_attention_cache.reorder_cache(beam_idx)
+        self.cross_attention_cache.reorder_cache(beam_idx)
 
 
 class Processor(object):
@@ -508,7 +520,7 @@ class Processor(object):
         prompt, uncond_prompt, max_len = self.stack_prompts(cond_prompts, uncond_prompts)
 
         # Split prompts and uncond_prompt into batches
-        max_batch_size = max(1, self.max_batch_size // self.num_beams)
+        max_batch_size = max(1, self.max_batch_size // self.num_beams // (2 if self.cfg_scale > 1 else 1))
         frames_batches = self.split_into_batches(frames, max_batch_size)
         prompt_batches = self.split_into_batches(prompt, max_batch_size)
         uncond_prompt_batches = self.split_into_batches(uncond_prompt, max_batch_size, batch_size=prompt.size(0))
@@ -567,7 +579,7 @@ class Processor(object):
         encoder_kwargs = cache_kwargs.copy()
         encoder_kwargs["max_cache_len"] = self.model.config.max_source_positions
         encoder_cache = StaticCache(**encoder_kwargs)
-        return EncoderDecoderCache(decoder_cache, encoder_cache)
+        return MapperatorinatorCache(decoder_cache, encoder_cache, self.cfg_scale)
 
     def prepare_frames(self, frames: torch.Tensor) -> torch.Tensor:
         frames = frames.to(self.device)
