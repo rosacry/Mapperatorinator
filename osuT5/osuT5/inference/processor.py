@@ -197,7 +197,7 @@ class MapperatorinatorCache(EncoderDecoderCache):
 
 
 class Processor(object):
-    def __init__(self, args: InferenceConfig, model: Mapperatorinator, tokenizer: Tokenizer, parallel: bool = False):
+    def __init__(self, args: InferenceConfig, model: Mapperatorinator, tokenizer: Tokenizer, cfg_scale: float = None):
         """Model inference stage that processes sequences."""
         self.device = args.device
         self.args = args
@@ -252,7 +252,7 @@ class Processor(object):
             self.y_max = y_max // self.position_precision
             self.x_count = self.x_max - self.x_min + 1
 
-        self.cfg_scale = args.cfg_scale
+        self.cfg_scale = cfg_scale or args.cfg_scale
         self.top_p = args.top_p
         self.top_k = args.top_k
         self.temperature = args.temperature
@@ -261,7 +261,7 @@ class Processor(object):
         self.taiko_hit_temperature = args.taiko_hit_temperature
         self.do_sample = args.do_sample
         self.num_beams = args.num_beams
-        self.parallel = parallel
+        self.parallel = args.parallel
         self.max_batch_size = args.max_batch_size
 
         self.timeshift_bias = args.timeshift_bias

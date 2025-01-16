@@ -189,7 +189,7 @@ def generate(
     beatmap_path = args.beatmap_path if beatmap_path is None else beatmap_path
 
     preprocessor = Preprocessor(args, parallel=args.parallel)
-    processor = Processor(args, model, tokenizer, parallel=args.parallel)
+    processor = Processor(args, model, tokenizer)
     postprocessor = Postprocessor(args)
 
     audio = preprocessor.load(audio_path)
