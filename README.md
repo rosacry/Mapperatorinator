@@ -20,16 +20,28 @@ git clone https://github.com/OliBomby/Mapperatorinator.git
 cd Mapperatorinator
 ```
 
-### 2. Install dependencies
-
-Install Python 3.10, [ffmpeg](http://www.ffmpeg.org/), [PyTorch](https://pytorch.org/get-started/locally/), and the remaining Python dependencies.
+### 2. (Optional) Create virtual environment
 
 ```sh
 python -m venv .venv
+
+# In cmd.exe
+.venv\Scripts\activate.bat
+# In PowerShell
+.venv\Scripts\Activate.ps1
+# In Linux or MacOS
+source .venv/bin/activate
+```
+
+### 3. Install dependencies
+
+Install Python 3.10, [Git](https://git-scm.com/downloads), [ffmpeg](http://www.ffmpeg.org/), [PyTorch](https://pytorch.org/get-started/locally/), and the remaining Python dependencies.
+
+```sh
 pip install -r requirements.txt
 ```
 
-### 3. Begin inference
+### 4. Begin inference
 
 Run `inference.py` and pass in some arguments to generate beatmaps. For this use [Hydra override syntax](https://hydra.cc/docs/advanced/override_grammar/basic/). See `inference.yaml` for all available parameters. 
 ```
@@ -68,6 +80,7 @@ python inference.py beatmap_path="'C:\Users\USER\AppData\Local\osu!\Songs\1 Kenj
 
 ### Tips
 
+- You can edit `configs/inference_v29.yaml` and add your arguments there instead of typing them in the terminal every time.
 - All available descriptors can be found [here](https://omdb.nyahh.net/descriptors/).
 - Always provide a year argument between 2007 and 2023. If you leave it unknown, the model might generate with an inconsistent style.
 - Always provide a difficulty argument. If you leave it unknown, the model might generate with an inconsistent difficulty.
