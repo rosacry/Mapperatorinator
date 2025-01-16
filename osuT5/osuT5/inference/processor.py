@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from functools import partial
 from pathlib import Path
 from typing import Any, Optional
 
@@ -266,13 +265,15 @@ class Processor(object):
 
         self.lookback_bias_logit_processor = LookbackBiasLogitsWarper(self.lookback_max_time, tokenizer, self.types_first, self.device)
 
-        self._generate = partial(
-            self.model.generate,
+    def model_generate(self, inputs, **kwargs: Any) -> Any:
+        return self.model.generate(
+            inputs,
             top_p=self.top_p,
             top_k=self.top_k,
             do_sample=self.do_sample,
             num_beams=self.num_beams,
             use_cache=True,
+            **kwargs,
         )
 
     def generate(
@@ -462,7 +463,7 @@ class Processor(object):
                 [prompt, uncond_prompt], max_len = self.pad_prompts([cond_prompt, uncond_prompt])
                 cache = self.get_cache(prompt.size(0))
 
-                result = self._generate(
+                result = self.model_generate(
                     frames,
                     decoder_input_ids=prompt,
                     decoder_attention_mask=prompt.ne(self.tokenizer.pad_id),
@@ -507,9 +508,10 @@ class Processor(object):
         prompt, uncond_prompt, max_len = self.stack_prompts(cond_prompts, uncond_prompts)
 
         # Split prompts and uncond_prompt into batches
-        frames_batches = self.split_into_batches(frames, self.max_batch_size)
-        prompt_batches = self.split_into_batches(prompt, self.max_batch_size)
-        uncond_prompt_batches = self.split_into_batches(uncond_prompt, self.max_batch_size, batch_size=prompt.size(0))
+        max_batch_size = max(1, self.max_batch_size // self.num_beams)
+        frames_batches = self.split_into_batches(frames, max_batch_size)
+        prompt_batches = self.split_into_batches(prompt, max_batch_size)
+        uncond_prompt_batches = self.split_into_batches(uncond_prompt, max_batch_size, batch_size=prompt.size(0))
         results = []
 
         # Process each batch
@@ -517,7 +519,7 @@ class Processor(object):
             cache = self.get_cache(prompt_batch.size(0))
 
             # Start generation
-            results.append(self._generate(
+            results.append(self.model_generate(
                 frames_batch,
                 decoder_input_ids=prompt_batch,
                 beatmap_idx=beatmap_idx,
@@ -555,7 +557,7 @@ class Processor(object):
     def get_cache(self, batch_size: int):
         cache_kwargs = {
             "config": self.model.config,
-            "batch_size": batch_size * 2 if self.cfg_scale > 1 else batch_size,
+            "batch_size": batch_size * self.num_beams * 2 if self.cfg_scale > 1 else batch_size * self.num_beams,
             "max_cache_len": self.model.config.max_target_positions,
             "device": self.device,
             "dtype": self.model.dtype,
