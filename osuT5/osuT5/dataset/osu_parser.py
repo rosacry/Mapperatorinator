@@ -89,7 +89,8 @@ class OsuParser:
                 last_pos = self._parse_hold_note(hit_object, events, event_times, beatmap)
 
         # Sort events by time
-        events, event_times = zip(*sorted(zip(events, event_times), key=lambda x: x[1]))
+        if len(events) > 0:
+            events, event_times = zip(*sorted(zip(events, event_times), key=lambda x: x[1]))
         result = list(events), list(event_times)
 
         if self.add_mania_sv and beatmap.mode == 3:
