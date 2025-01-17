@@ -85,8 +85,9 @@ python inference.py beatmap_path="'C:\Users\USER\AppData\Local\osu!\Songs\1 Kenj
 - Always provide a year argument between 2007 and 2023. If you leave it unknown, the model might generate with an inconsistent style.
 - Always provide a difficulty argument. If you leave it unknown, the model might generate with an inconsistent difficulty.
 - Increase the `cfg_scale` parameter to increase the effectiveness of the `mapper_id` and `descriptors` arguments.
-- You can use the `negative_descriptors` argument to guide the model away from certain styles.
+- You can use the `negative_descriptors` argument to guide the model away from certain styles. This only works when `cfg_scale > 1`.
 - If your song style and desired beatmap style don't match well, the model might not follow your directions. For example, its hard to generate a high SR, high SV beatmap for a calm song. 
+- If you already have timing and kiai times done for a song, then you can give this to the model to greatly increase inference speed and accuracy: Use the `beatmap_path` and `in_context=[TIMING,KIAI]` arguments.
 - To remap just a part of your beatmap, use the `beatmap_path`, `start_time`, `end_time`, and `add_to_beatmap=true` arguments.
 - To generate a guest difficulty for a beatmap, use the `beatmap_path` and `in_context=[GD,TIMING,KIAI]` arguments.
 - To generate hitsounds for a beatmap, use the `beatmap_path` and `in_context=[NO_HS,TIMING,KIAI]` arguments.
