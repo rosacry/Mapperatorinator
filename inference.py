@@ -158,7 +158,7 @@ def get_config(args: InferenceConfig):
         title_unicode=args.title,
         artist_unicode=args.artist,
         audio_filename=Path(args.audio_path).name,
-        circle_size=args.keycount if args.gamemode == 3 else args.circle_size,
+        circle_size=(args.keycount if args.gamemode == 3 else args.circle_size) or 4,
         slider_multiplier=args.slider_multiplier or 1.4,
         creator=args.creator,
         version=args.version,
