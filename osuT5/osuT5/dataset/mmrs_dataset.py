@@ -383,7 +383,7 @@ class BeatmapDatasetIterable:
                         break
 
             if self.args.add_sv_special_token:
-                for sequence_context in sequence["in_context"] + sequence["out_context"]:
+                for sequence_context in sequence["in_context"]:
                     add_last_sv(sequence_context, last_sv)
                 for sequence_context in sequence["out_context"]:  # type: dict
                     add_last_sv(sequence_context, last_sv)
