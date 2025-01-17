@@ -7,4 +7,4 @@ defaults:
 
 version: 'Mapperatorinator V23'        # Beatmap version
 super_timing: true     # Use super timing generator (slow but accurate timing)
-timing_leniency: 5     # Number of milliseconds of error to allow for timing generation
+timing_leniency: 3     # Number of milliseconds of error to allow for timing generation
