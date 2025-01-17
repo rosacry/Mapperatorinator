@@ -265,16 +265,23 @@ def generate(
         timing=timing,
     )
 
+    result_path = None
+    osz_path = None
     if args.add_to_beatmap:
-        postprocessor.add_to_beatmap(result, beatmap_path)
+        result_path = postprocessor.add_to_beatmap(result, beatmap_path)
         if verbose:
-            print(f"Added generated content to {beatmap_path}")
+            print(f"Added generated content to {result_path}")
     elif args.output_path is not None and args.output_path != "":
-        postprocessor.write_result(result, args.output_path)
+        result_path = postprocessor.write_result(result, args.output_path)
         if verbose:
-            print(f"Generated beatmap saved to {args.output_path}")
+            print(f"Generated beatmap saved to {result_path}")
 
-    return result
+    if args.export_osz:
+        osz_path = postprocessor.export_osz(result_path, audio_path, args.output_path)
+        if verbose:
+            print(f"Generated .osz saved to {osz_path}")
+
+    return result, result_path, osz_path
 
 
 def load_model(
@@ -348,7 +355,7 @@ def main(args: InferenceConfig):
     get_args_from_beatmap(args, tokenizer)
     generation_config, beatmap_config = get_config(args)
 
-    generate(
+    return generate(
         args,
         generation_config=generation_config,
         beatmap_path=args.beatmap_path,
