@@ -155,7 +155,7 @@ def worker(beatmap_paths, args: FidConfig, return_dict, idx):
             diff_tokenizer=diff_tokenizer,
             refine_model=refine_model,
             verbose=False,
-        )
+        )[0]
         generated_beatmap = Beatmap.parse(result)
 
         # Calculate feature vectors for real and generated beatmaps

@@ -3,6 +3,7 @@ from __future__ import annotations
 import dataclasses
 import os
 import uuid
+import zipfile
 from datetime import timedelta
 from string import Template
 from typing import Optional
@@ -414,7 +415,7 @@ class Postprocessor(object):
             return result
 
     # noinspection PyProtectedMember
-    def add_to_beatmap(self, result: str, beatmap_path: str):
+    def add_to_beatmap(self, result: str, beatmap_path: str) -> str:
         # Parse the result and the beatmap
         result_beatmap = Beatmap.parse(result)
         beatmap = Beatmap.from_path(beatmap_path)
@@ -465,7 +466,9 @@ class Postprocessor(object):
         # Write the beatmap to the file
         beatmap.write_path(beatmap_path)
 
-    def write_result(self, result: str, output_path: str):
+        return beatmap_path
+
+    def write_result(self, result: str, output_path: str) -> str:
         if not os.path.exists(output_path):
             os.makedirs(output_path)
 
@@ -473,6 +476,20 @@ class Postprocessor(object):
         osu_path = os.path.join(output_path, f"beatmap{str(uuid.uuid4().hex)}{OSU_FILE_EXTENSION}")
         with open(osu_path, "w", encoding='utf-8-sig') as osu_file:
             osu_file.write(result)
+
+        return osu_path
+
+    def export_osz(self, osu_path: str, audio_path: str, output_path: str) -> str:
+        if not os.path.exists(output_path):
+            os.makedirs(output_path)
+
+        osz_path = os.path.join(output_path, f"beatmap{str(uuid.uuid4().hex)}.osz")
+
+        with zipfile.ZipFile(osz_path, 'w') as zipf:
+            zipf.write(osu_path, os.path.basename(osu_path))
+            zipf.write(audio_path, os.path.basename(audio_path))
+
+        return osz_path
 
     @staticmethod
     def set_volume(time: timedelta, volume: int, timing: list[TimingPoint]) -> list[TimingPoint]:

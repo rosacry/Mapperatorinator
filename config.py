@@ -37,6 +37,7 @@ class InferenceConfig:
     seed: int = 0  # Random seed
     device: str = 'cuda'  # Inference device (cpu/cuda)
     add_to_beatmap: bool = False  # Add generated content to the reference beatmap
+    export_osz: bool = False  # Export beatmap as .osz file
     start_time: Optional[int] = None  # Start time of audio to generate beatmap for
     end_time: Optional[int] = None  # End time of audio to generate beatmap for
     lookback: float = 0.5  # Fraction of audio sequence to fill with tokens from previous inference window
