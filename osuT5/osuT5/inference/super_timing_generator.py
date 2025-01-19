@@ -138,7 +138,7 @@ class SuperTimingGenerator:
         peak_bpms_defined = ~np.isnan(peak_bpms)
 
         # Normalize BPM values to prevent parts with 2x or 0.5x the BPM
-        median_bpm = 60_000 / (np.median(np.array(tpbs)) * 10)
+        median_bpm = 60_000 / (np.median(np.array(tpbs)[:, 1]) * 10)
         # Normalize all bpm values in to the range [bpm/1.5, bpm*1.5] by integer division or multiplication
         peak_bpms = peak_bpms / np.ceil(peak_bpms / (median_bpm * 1.5))
         peak_bpms = peak_bpms * np.ceil((median_bpm / 1.5) / peak_bpms)
