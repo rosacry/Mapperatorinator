@@ -1,6 +1,6 @@
 # Mapper Classifier
 
-Try the model [here](https://colab.research.google.com/github/OliBomby/Mapperatorinator/blob/main/colab/mapperatorinator_inference.ipynb).
+Try the model [here](https://colab.research.google.com/github/OliBomby/Mapperatorinator/blob/main/colab/classifier_classify.ipynb).
 
 Mapper Classifier is a model that predicts which osu! standard ranked mapper mapped a given beatmap.
 
