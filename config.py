@@ -34,7 +34,7 @@ class InferenceConfig:
     negative_descriptors: Optional[list[str]] = None  # List of descriptors to avoid when using classifier-free guidance
 
     # Inference settings
-    seed: int = 0  # Random seed
+    seed: Optional[int] = None  # Random seed
     device: str = 'cuda'  # Inference device (cpu/cuda)
     add_to_beatmap: bool = False  # Add generated content to the reference beatmap
     export_osz: bool = False  # Export beatmap as .osz file

@@ -1,6 +1,7 @@
 import os.path
 from functools import reduce
 from pathlib import Path
+import random
 
 import hydra
 import torch
@@ -28,6 +29,9 @@ from osu_diffusion.config import DiffusionTrainConfig
 def prepare_args(args: InferenceConfig):
     torch.set_grad_enabled(False)
     torch.set_float32_matmul_precision('high')
+    if args.seed is None:
+        args.seed = random.randint(0, 2 ** 16)
+        print(f"Random seed: {args.seed}")
     set_seed(args.seed)
 
 

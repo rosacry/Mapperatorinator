@@ -20,7 +20,7 @@ descriptors: null          # List of descriptors to use for style
 negative_descriptors: null # List of descriptors to avoid when using classifier-free guidance
 
 # Inference settings
-seed: 0                 # Random seed
+seed: null                # Random seed
 device: cuda             # Inference device (cpu/cuda)
 add_to_beatmap: false     # Add generated content to the reference beatmap
 export_osz: false         # Export beatmap as .osz file
