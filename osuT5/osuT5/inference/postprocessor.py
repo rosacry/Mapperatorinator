@@ -163,7 +163,7 @@ class Postprocessor(object):
                 timedelta(milliseconds=self.offset), self.beat_length, 4, 2, 0, 100, None, False
             )]
 
-        groups = get_groups(events, types_first=self.types_first)
+        groups, _ = get_groups(events, types_first=self.types_first)
         last_x, last_y = 256, 192
 
         # Make sure the times are monotonically increasing

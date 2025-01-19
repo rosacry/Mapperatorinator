@@ -69,7 +69,7 @@ class SuperTimingGenerator:
                 out_context=[ContextType.TIMING],
                 verbose=False,
             )[0]
-            groups = get_groups(events, types_first=self.types_first)
+            groups, _ = get_groups(events, types_first=self.types_first)
             last_beat_time = None
             last_group_type = None
             last_measure_time = None

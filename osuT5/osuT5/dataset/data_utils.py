@@ -296,10 +296,13 @@ def get_groups(
         *,
         event_times: Optional[list[int]] = None,
         types_first: bool = False
-) -> list[Group]:
+) -> tuple[list[Group], list[list[int]]]:
     groups = []
     group = Group()
+    group_indices = []
+    indices = []
     for i, event in enumerate(events):
+        indices.append(i)
         if event.type == EventType.TIME_SHIFT:
             group.time = event.value
         elif event.type == EventType.DISTANCE:
@@ -323,6 +326,8 @@ def get_groups(
                 if group.event_type is not None:
                     groups.append(group)
                     group = Group()
+                    group_indices.append(indices[:-1])
+                    indices = [indices[-1]]
                 group.event_type = event.type
                 group.value = event.value
                 if event_times is not None:
@@ -334,34 +339,16 @@ def get_groups(
                     group.time = event_times[i]
                 groups.append(group)
                 group = Group()
+                group_indices.append(indices)
+                indices = []
 
     if group.event_type is not None:
         groups.append(group)
+        group_indices.append(indices)
+    else:
+        group_indices[-1].extend(indices)
 
-    return groups
-
-
-def get_group_indices(events: list[Event], types_first: bool = False) -> list[list[int]]:
-    groups = []
-    indices = []
-    for i, event in enumerate(events):
-        indices.append(i)
-        if event.type in TYPE_EVENTS:
-            if types_first:
-                if len(indices) > 1:
-                    groups.append(indices[:-1])
-                    indices = [indices[-1]]
-            else:
-                groups.append(indices)
-                indices = []
-
-    if len(indices) > 0:
-        if types_first:
-            groups.append(indices)
-        else:
-            groups[-1].extend(indices)
-
-    return groups
+    return groups, group_indices
 
 
 def get_hold_note_ratio(beatmap: Beatmap) -> float:
