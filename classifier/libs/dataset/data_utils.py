@@ -25,6 +25,7 @@ def load_audio_file(file: Path, sample_rate: int, speed: float = 1.0) -> npt.NDA
     Returns:
         samples: Audio time series.
     """
+    file = Path(file)
     audio = AudioSegment.from_file(file, format=file.suffix[1:])
     audio.frame_rate = int(audio.frame_rate * speed)
     audio = audio.set_frame_rate(sample_rate)
