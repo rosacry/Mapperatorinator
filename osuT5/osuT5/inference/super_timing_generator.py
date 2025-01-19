@@ -30,6 +30,7 @@ class SuperTimingGenerator:
         self.processor.top_k = 50
         self.bpm_change_threshold = args.timer_bpm_threshold
         self.types_first = args.osut5.data.types_first
+        self.iterations = args.timer_iterations
 
         self.frame_seq_len = args.osut5.data.src_seq_len - 1
         self.frame_size = args.osut5.model.spectrogram.hop_length
@@ -41,7 +42,6 @@ class SuperTimingGenerator:
             self,
             audio: npt.ArrayLike,
             generation_config: GenerationConfig,
-            iterations: int = 20,
             verbose: bool = False,
     ):
         # Prepare beat histograms
@@ -55,6 +55,7 @@ class SuperTimingGenerator:
         if verbose:
             print("Generating timing")
 
+        iterations = self.iterations
         iterator = tqdm(list(range(iterations))) if verbose else range(iterations)
         for _ in iterator:
             audio_offset = np.random.randint(-(self.miliseconds_per_sequence // 2), self.miliseconds_per_sequence // 2)
@@ -137,7 +138,7 @@ class SuperTimingGenerator:
         peak_bpms_defined = ~np.isnan(peak_bpms)
 
         # Normalize BPM values to prevent parts with 2x or 0.5x the BPM
-        median_bpm = np.nanmedian(peak_bpms)
+        median_bpm = 60_000 / (np.median(np.array(tpbs)) * 10)
         # Normalize all bpm values in to the range [bpm/1.5, bpm*1.5] by integer division or multiplication
         peak_bpms = peak_bpms / np.ceil(peak_bpms / (median_bpm * 1.5))
         peak_bpms = peak_bpms * np.ceil((median_bpm / 1.5) / peak_bpms)
@@ -157,7 +158,21 @@ class SuperTimingGenerator:
             elif right < len(peak_bpms) and (left < 0 or i - left > right - i):
                 peak_bpms[i] = peak_bpms[right]
             else:
-                peak_bpms[i] = 150  # Default BPM
+                peak_bpms[i] = median_bpm
+
+        # def test_bpm(bpm, w=1):
+        #     # Generate periodic pulse train
+        #     period_ms = 60_000 / bpm
+        #     pulse_train = np.zeros_like(signal)
+        #     for i in range(w):
+        #         pulse_train[np.arange(i, len(pulse_train), period_ms).astype(int)] = 1  # Period in samples
+        #     # Cross-correlation
+        #     correlation = correlate(signal, pulse_train, mode="full")
+        #     offset = np.argmax(correlation) - len(signal) + w // 2
+        #     offset += period_ms * np.ceil(-offset / period_ms)
+        #     return bpm, offset, correlation.max() / np.sqrt(bpm)
+        #
+        # bpm, offset, _ = max([test_bpm(bpm, 5) for bpm in np.arange(bpm - 1, bpm + 1, 0.01)], key=lambda x: x[2])
 
         # Go from one peak to the next. Use the BPM to estimate where the next beat should be and find the nearest.
         # Depending on how clear the beats are, stick closer to the current BPM.
@@ -228,27 +243,6 @@ class SuperTimingGenerator:
             walk(time, period_ms, -1)
 
         beat_times = sorted(beat_times)
-
-        # intervals = np.diff(peakind)
-        # bpm_values = 60_000 / intervals  # 60,000 ms per minute
-        # bpm = round(np.median(bpm_values), 2)
-        # # Normalize all bpm values in to the range [bpm/1.5, bpm*1.5] by integer division or multiplication
-        # bpm_values = bpm_values / np.ceil(bpm_values / (bpm * 1.5))
-        # bpm_values = bpm_values * np.ceil((bpm / 1.5) / bpm_values)
-        #
-        # def test_bpm(bpm, w=1):
-        #     # Generate periodic pulse train
-        #     period_ms = 60_000 / bpm
-        #     pulse_train = np.zeros_like(signal)
-        #     for i in range(w):
-        #         pulse_train[np.arange(i, len(pulse_train), period_ms).astype(int)] = 1  # Period in samples
-        #     # Cross-correlation
-        #     correlation = correlate(signal, pulse_train, mode="full")
-        #     offset = np.argmax(correlation) - len(signal) + w // 2
-        #     offset += period_ms * np.ceil(-offset / period_ms)
-        #     return bpm, offset, correlation.max() / np.sqrt(bpm)
-        #
-        # bpm, offset, _ = max([test_bpm(bpm, 5) for bpm in np.arange(bpm - 1, bpm + 1, 0.01)], key=lambda x: x[2])
 
         beat_types = []
         w = 10
