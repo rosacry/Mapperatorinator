@@ -17,7 +17,7 @@ from osu_diffusion import DiT
 from osuT5.osuT5.inference import GenerationConfig, SliderPath
 from osuT5.osuT5.dataset import update_event_times
 from osuT5.osuT5.tokenizer import Event, EventType
-from osuT5.osuT5.dataset.data_utils import get_groups, get_group_indices
+from osuT5.osuT5.dataset.data_utils import get_groups
 
 
 def get_beatmap_idx(path) -> dict[int, int]:
@@ -312,9 +312,7 @@ class DiffisionPipeline(object):
             EventType.SLIDER_END: 11,
         }
 
-        groups = get_groups(events, event_times=event_times, types_first=self.types_first)
-        group_indices = get_group_indices(events, self.types_first)
-        assert len(groups) == len(group_indices)
+        groups, group_indices = get_groups(events, event_times=event_times, types_first=self.types_first)
 
         seq_indices = {}
         indices = []
