@@ -5,6 +5,7 @@ checkpoint_path: 'OliBomby/osu-classifier'     # Project checkpoint directory (t
 beatmap_path: ''        # Path to beatmap to classify
 audio_path: ''          # Path to audio to classify
 time: 0                 # Time to classify
+mappers_path: './/datasets/beatmap_users.json'  # Path to mappers dataset
 
 hydra:
   job:
