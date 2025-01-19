@@ -96,7 +96,7 @@ def create_example_from_path(
     return create_example(beatmap, audio, time, model_args, tokenizer, device)
 
 
-def get_mapper_names():
+def get_mapper_names(path: str):
     path = Path(r".\\datasets\beatmap_users.json")
 
     # Load JSON data from file
@@ -133,7 +133,7 @@ def main(args: DictConfig):
     top_k_confidences = logits[0].topk(top_k).values
 
     mapper_idx_id = {idx: ids for ids, idx in tokenizer.mapper_idx.items()}
-    mapper_names = get_mapper_names()
+    mapper_names = get_mapper_names(args.mappers_path)
 
     for idx, confidence in zip(top_k_indices, top_k_confidences):
         mapper_id = mapper_idx_id[idx.item()]
