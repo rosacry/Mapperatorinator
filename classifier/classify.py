@@ -97,7 +97,7 @@ def create_example_from_path(
 
 
 def get_mapper_names(path: str):
-    path = Path(r".\\datasets\beatmap_users.json")
+    path = Path(path)
 
     # Load JSON data from file
     with open(path, 'r') as file:
