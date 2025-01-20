@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Optional
+from typing import Optional, Dict, Tuple
 
 import torch
 import torch.nn as nn
@@ -169,6 +169,43 @@ class Mapperatorinator(PreTrainedModel):
 
         inputs["beatmap_idx"] = beatmap_idx
         return inputs
+
+    def _prepare_decoder_input_ids_for_generation(
+        self,
+        batch_size: int,
+        model_input_name: str,
+        model_kwargs: Dict[str, torch.Tensor],
+        decoder_start_token_id: torch.Tensor,
+        device: torch.device = None,
+    ):
+        """Prepares `decoder_input_ids` for generation with encoder-decoder models"""
+        # 1. Check whether the user has defined `decoder_input_ids` manually. To facilitate in terms of input naming,
+        # we also allow the user to pass it under `input_ids`, if the encoder does not use it as the main input.
+        if model_kwargs is not None and "decoder_input_ids" in model_kwargs:
+            decoder_input_ids = model_kwargs.pop("decoder_input_ids")
+        elif "input_ids" in model_kwargs and model_input_name != "input_ids":
+            decoder_input_ids = model_kwargs.pop("input_ids")
+        else:
+            decoder_input_ids = None
+
+        if device is None:
+            device = self.device
+        if decoder_start_token_id.ndim == 1:
+            if decoder_start_token_id.shape[0] != batch_size:
+                raise ValueError(
+                    f"`decoder_start_token_id` expected to have length {batch_size} but got {decoder_start_token_id.shape[0]}"
+                )
+            decoder_start_token_id = decoder_start_token_id.view(-1, 1)
+        else:
+            decoder_start_token_id = (
+                torch.ones((batch_size, 1), dtype=torch.long, device=device) * decoder_start_token_id
+            )
+
+        # Mapperatorinator handles the task-specific decoder input externally
+        if decoder_input_ids is None:
+            decoder_input_ids = decoder_start_token_id
+
+        return decoder_input_ids, model_kwargs
 
     def can_generate(self) -> bool:
         return True
