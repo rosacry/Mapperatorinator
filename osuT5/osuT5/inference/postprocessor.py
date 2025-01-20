@@ -72,7 +72,7 @@ def beatmap_config_from_beatmap(beatmap: Beatmap) -> BeatmapConfig:
         background_line=background_line(beatmap.background),
         preview_time=int(beatmap.preview_time.total_seconds() * 1000),
         bpm=beatmap.bpm_max(),
-        offset=intround((min(tp.offset.total_seconds() * 1000 for tp in beatmap.timing_points))),
+        offset=int(round((min(tp.offset.total_seconds() * 1000 for tp in beatmap.timing_points)))),
     )
 
 
