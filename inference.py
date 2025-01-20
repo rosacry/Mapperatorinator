@@ -206,8 +206,8 @@ def generate(
     if args.super_timing and ContextType.NONE in args.in_context:
         super_timing_generator = SuperTimingGenerator(args, model, tokenizer)
         timing_events, timing_times = super_timing_generator.generate(audio, generation_config, verbose=verbose)
-        extra_in_context[ContextType.TIMING] = (timing_events, timing_times)
         timing = postprocessor.generate_timing(timing_events)
+        extra_in_context[ContextType.TIMING] = timing
         if ContextType.TIMING in output_type:
             output_type.remove(ContextType.TIMING)
     elif (ContextType.NONE in args.in_context and ContextType.MAP in output_type and
@@ -221,8 +221,8 @@ def generate(
             verbose=verbose,
         )[0]
         timing_events, timing_times = events_of_type(timing_events, timing_times, TIMING_TYPES)
-        extra_in_context[ContextType.TIMING] = (timing_events, timing_times)
         timing = postprocessor.generate_timing(timing_events)
+        extra_in_context[ContextType.TIMING] = timing
         if ContextType.TIMING in output_type:
             output_type.remove(ContextType.TIMING)
     elif ContextType.TIMING in args.in_context or (
