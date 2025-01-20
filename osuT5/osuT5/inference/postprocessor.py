@@ -166,11 +166,8 @@ class Postprocessor(object):
         groups, _ = get_groups(events, types_first=self.types_first)
         last_x, last_y = 256, 192
 
-        # Make sure the times are monotonically increasing
-        time = 0
-        for group in groups:
-            time = max(time, group.time)
-            group.time = time
+        # Sort groups by time
+        groups = sorted(groups, key=lambda x: x.time)
 
         self.snap_near_perfect_overlaps(groups)
 
