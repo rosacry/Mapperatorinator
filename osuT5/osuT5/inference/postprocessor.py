@@ -72,7 +72,7 @@ def beatmap_config_from_beatmap(beatmap: Beatmap) -> BeatmapConfig:
         background_line=background_line(beatmap.background),
         preview_time=int(beatmap.preview_time.total_seconds() * 1000),
         bpm=beatmap.bpm_max(),
-        offset=int(min(tp.offset.total_seconds() * 1000 for tp in beatmap.timing_points)),
+        offset=intround((min(tp.offset.total_seconds() * 1000 for tp in beatmap.timing_points))),
     )
 
 
@@ -581,9 +581,9 @@ class Postprocessor(object):
 
         before_tp = self.timing_point_at(timedelta(milliseconds=time), timing)
         before_tp = before_tp if before_tp.parent is None else before_tp.parent
-        before_time = before_tp.offset.total_seconds() * 1000
+        before_time = round(before_tp.offset.total_seconds() * 1000)
         after_tp = self.uninherited_timing_point_after(timedelta(milliseconds=time), timing)
-        after_time = after_tp.offset.total_seconds() * 1000 if after_tp is not None else None
+        after_time = round(after_tp.offset.total_seconds() * 1000) if after_tp is not None else None
 
         # If the new time is too close to the next timing point, snap to the next timing point
         if after_time is not None and time > before_time + 10 and time >= after_time - 10:
@@ -684,7 +684,7 @@ class Postprocessor(object):
 
             redline = self.timing_point_at(timedelta(milliseconds=time - 1), timing)
             redline = redline if redline.parent is None else redline.parent
-            redline_offset = redline.offset.total_seconds() * 1000
+            redline_offset = round(redline.offset.total_seconds() * 1000)
 
             if redline_offset == time:
                 continue
@@ -715,14 +715,15 @@ class Postprocessor(object):
             time = marker.time
             redline = self.timing_point_at(timedelta(milliseconds=time - 1), timing)
             redline = redline if redline.parent is None else redline.parent
-            redline_offset = redline.offset.total_seconds() * 1000
+            redline_offset = round(redline.offset.total_seconds() * 1000)
             beats_from_last_marker = marker.beats_from_last_marker
 
             if redline_offset == time:
                 counter = 0
                 continue
 
-            markers_before = [o for o in markers if time > o.time > redline_offset] + [marker]
+            # It is super-duper important that it does not include the marker on top of the redline
+            markers_before = [o for o in markers if redline_offset + 1 <= o.time < time] + [marker]
 
             if beats_from_last_marker == 0:
                 if len(markers_before) != 1:
@@ -798,7 +799,7 @@ class Postprocessor(object):
             # If there is a redline on top of the marker, reset the counter
             redline = self.timing_point_at(timedelta(milliseconds=time), timing)
             redline = redline if redline.parent is None else redline.parent
-            redline_offset = redline.offset.total_seconds() * 1000
+            redline_offset = round(redline.offset.total_seconds() * 1000)
 
             if redline_offset == time:
                 counter = 0
@@ -814,7 +815,7 @@ class Postprocessor(object):
         return timing
 
     def check_ms_per_beat(self, mpb_new: float, markers: list[Postprocessor.Marker], redline: TimingPoint):
-        redline_offset = redline.offset.total_seconds() * 1000
+        redline_offset = round(redline.offset.total_seconds() * 1000)
         beats_from_redline = 0
         for marker_b in markers:
             beats_from_redline += marker_b.beats_from_last_marker
