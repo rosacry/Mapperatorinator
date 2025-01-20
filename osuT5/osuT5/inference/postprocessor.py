@@ -166,9 +166,6 @@ class Postprocessor(object):
         groups, _ = get_groups(events, types_first=self.types_first)
         last_x, last_y = 256, 192
 
-        # Sort groups by time
-        groups = sorted(groups, key=lambda x: x.time)
-
         self.snap_near_perfect_overlaps(groups)
 
         # Prepare unnormalizing scroll speed changes in mania
