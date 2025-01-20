@@ -7,7 +7,7 @@ from typing import Any, Optional
 import numpy as np
 import torch
 import torch.nn.functional as F
-from slider import Beatmap
+from slider import Beatmap, TimingPoint
 from tqdm import tqdm
 from transformers import LogitsProcessorList, LogitsProcessor, EncoderDecoderCache, StaticCache, \
     ClassifierFreeGuidanceLogitsProcessor, Cache
@@ -296,7 +296,7 @@ class Processor(object):
             in_context: list[ContextType] = None,
             out_context: list[ContextType] = None,
             beatmap_path: Optional[str] = None,
-            extra_in_context: Optional[dict[ContextType, tuple[list[Event], list[int]]]] = None,
+            extra_in_context: Optional[dict[ContextType, tuple[list[Event], list[int]] | tuple[list[Event], list[int], torch.Tensor] | list[TimingPoint]]] = None,
             verbose: bool = True,
     ) -> list[tuple[list[Event], list[int]]]:
         """Generate a list of Event object lists and their timestamps given source sequences.
@@ -611,7 +611,7 @@ class Processor(object):
             context: ContextType,
             *,
             beatmap_path: Optional[str] = None,
-            extra_in_context: Optional[dict[ContextType, tuple[list[Event], list[int]]]] = None,
+            extra_in_context: Optional[dict[ContextType, tuple[list[Event], list[int]] | tuple[list[Event], list[int], torch.Tensor] | list[TimingPoint]]] = None,
             song_length: Optional[float] = None,
             add_type: bool = False,
             add_class: bool = False,
@@ -639,9 +639,15 @@ class Processor(object):
             parser = parser or self.parser
 
             if extra_in_context is not None and context in extra_in_context:
-                data["events"], data["event_times"] = extra_in_context[context]
-                if len(extra_in_context[context]) > 2:
-                    data["class"] = extra_in_context[context][2]
+                if context == ContextType.TIMING and isinstance(extra_in_context[context], list):
+                    # This is a list of timingpoints
+                    timing = extra_in_context[context]
+                    data["events"], data["event_times"] = parser.parse_timing(timing, song_length=song_length)
+                else:
+                    if len(extra_in_context[context]) == 2:
+                        data["events"], data["event_times"] = extra_in_context[context]
+                    elif len(extra_in_context[context]) == 3:
+                        data["events"], data["event_times"], data["class"] = extra_in_context[context]
             elif context == ContextType.NONE:
                 pass
             elif context == ContextType.TIMING:
@@ -680,7 +686,7 @@ class Processor(object):
             *,
             in_context: list[ContextType],
             beatmap_path: Optional[str],
-            extra_in_context: Optional[dict[ContextType, tuple[list[Event], list[int]]]],
+            extra_in_context: Optional[dict[ContextType, tuple[list[Event], list[int]] | tuple[list[Event], list[int], torch.Tensor] | list[TimingPoint]]] = None,
             song_length: float,
     ) -> list[dict[str, Any]]:
         in_context = [self.get_context(
@@ -711,7 +717,7 @@ class Processor(object):
             generation_config: GenerationConfig,
             given_context: list[ContextType],
             beatmap_path: Optional[str],
-            extra_in_context: Optional[dict[ContextType, tuple[list[Event], list[int]]]],
+            extra_in_context: Optional[dict[ContextType, tuple[list[Event], list[int]] | tuple[list[Event], list[int], torch.Tensor] | list[TimingPoint]]] = None,
             song_length: float,
             verbose: bool = True
     ):

@@ -171,18 +171,23 @@ class OsuParser:
 
         return events, event_times
 
-    def parse_timing(self, beatmap: Beatmap, speed: float = 1.0, song_length: Optional[float] = None) -> tuple[list[Event], list[int]]:
+    def parse_timing(self, beatmap: Beatmap | list[TimingPoint], speed: float = 1.0, song_length: Optional[float] = None) -> tuple[list[Event], list[int]]:
         """Extract all timing information from a beatmap."""
+        timing = beatmap.timing_points if isinstance(beatmap, Beatmap) else beatmap
+        assert len(timing) > 0, "No timing points found in beatmap."
+
         events = []
         event_times = []
-        if song_length is None:
+        if song_length is None and isinstance(beatmap, Beatmap):
             last_ho = beatmap.hit_objects(stacking=False)[-1]
             last_time = last_ho.end_time if hasattr(last_ho, "end_time") else last_ho.time
-        else:
+        elif song_length is not None:
             last_time = timedelta(milliseconds=song_length)
+        else:
+            last_time = timing[-1].offset + timedelta(minutes=10)
 
         # Get all timing points with BPM changes
-        timing_points = [tp for tp in beatmap.timing_points if tp.bpm]
+        timing_points = [tp for tp in timing if tp.bpm]
 
         for i, tp in enumerate(timing_points):
             # Generate beat and measure events until the next timing point
