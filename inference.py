@@ -6,7 +6,7 @@ import random
 import hydra
 import torch
 from accelerate.utils import set_seed
-from omegaconf import OmegaConf
+from omegaconf import OmegaConf, DictConfig
 from slider import Beatmap
 from transformers.utils import cached_file
 
@@ -98,9 +98,8 @@ def get_args_from_beatmap(args: InferenceConfig, tokenizer: Tokenizer):
     args.preview_time = beatmap_config.preview_time
 
 
-def get_config(args: InferenceConfig):
-    # Create tags that describes args
-    tags = dict(
+def get_tags_dict(args: DictConfig | InferenceConfig):
+    return dict(
         lookback=args.lookback,
         lookahead=args.lookahead,
         beatmap_id=args.beatmap_id,
@@ -117,6 +116,7 @@ def get_config(args: InferenceConfig):
         add_to_beatmap=args.add_to_beatmap,
         start_time=args.start_time,
         end_time=args.end_time,
+        in_context=f"[{','.join(ctx.value.upper() if isinstance(ctx, ContextType) else ctx for ctx in args.in_context)}]",
         cfg_scale=args.cfg_scale,
         temperature=args.temperature,
         timing_temperature=args.timing_temperature,
@@ -130,13 +130,20 @@ def get_config(args: InferenceConfig):
         super_timing=args.super_timing,
         timer_num_beams=args.timer_num_beams,
         timer_bpm_threshold=args.timer_bpm_threshold,
+        timer_cfg_scale=args.timer_cfg_scale,
+        timer_iterations=args.timer_iterations,
         generate_positions=args.generate_positions,
         diff_cfg_scale=args.diff_cfg_scale,
         max_seq_len=args.max_seq_len,
         overlap_buffer=args.overlap_buffer,
     )
+
+
+def get_config(args: InferenceConfig):
+    # Create tags that describes args
+    tags = get_tags_dict(args)
     # Filter to all non-default values
-    defaults = OmegaConf.load("configs/inference.yaml")
+    defaults = get_tags_dict(OmegaConf.load("configs/inference.yaml"))
     tags = {k: v for k, v in tags.items() if v != defaults[k]}
     # To string separated by spaces
     tags = " ".join(f"{k}={v}" for k, v in tags.items())
