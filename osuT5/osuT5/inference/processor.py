@@ -740,6 +740,7 @@ class Processor(object):
                 context_data["negative_class"] = self.get_class_vector(GenerationConfig(
                     gamemode=generation_config.gamemode,
                     difficulty=generation_config.difficulty,
+                    mapper_id=generation_config.mapper_id if (generation_config.descriptors and len(generation_config.descriptors) > 0) or (generation_config.negative_descriptors and len(generation_config.negative_descriptors) > 0) else None,
                     year=generation_config.year,
                     circle_size=generation_config.circle_size,
                     hitsounded=generation_config.hitsounded,
