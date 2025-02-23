@@ -99,6 +99,7 @@ class MapperatorinatorConfig(PretrainedConfig):
         self.rhythm_token_start = rhythm_token_start
         self.rhythm_token_end = rhythm_token_end
         self.init_std = init_std
+        self.disable_compile = True
 
         super().__init__(
             pad_token_id=pad_token_id,

@@ -199,7 +199,6 @@ class MapperatorinatorCache(EncoderDecoderCache):
 class Processor(object):
     def __init__(self, args: InferenceConfig, model: Mapperatorinator, tokenizer: Tokenizer, cfg_scale: float = None):
         """Model inference stage that processes sequences."""
-        self.compile = args.compile
         self.device = args.device
         self.args = args
         self.model = model
@@ -568,21 +567,18 @@ class Processor(object):
         return [tensor[i:i + max_batch_size] for i in range(0, tensor.size(0), max_batch_size)]
 
     def get_cache(self, batch_size: int):
-        if self.compile:
-            cache_kwargs = {
-                "config": self.model.config,
-                "max_batch_size": batch_size * self.num_beams * 2 if self.cfg_scale > 1 else batch_size * self.num_beams,
-                "max_cache_len": self.model.config.max_target_positions,
-                "device": self.device,
-                "dtype": self.model.dtype,
-            }
-            decoder_cache = StaticCache(**cache_kwargs)
-            encoder_kwargs = cache_kwargs.copy()
-            encoder_kwargs["max_cache_len"] = self.model.config.max_source_positions
-            encoder_cache = StaticCache(**encoder_kwargs)
-            return MapperatorinatorCache(decoder_cache, encoder_cache, self.cfg_scale)
-        else:
-            return MapperatorinatorCache(DynamicCache(), DynamicCache(), self.cfg_scale)
+        cache_kwargs = {
+            "config": self.model.config,
+            "max_batch_size": batch_size * self.num_beams * 2 if self.cfg_scale > 1 else batch_size * self.num_beams,
+            "max_cache_len": self.model.config.max_target_positions,
+            "device": self.device,
+            "dtype": self.model.dtype,
+        }
+        decoder_cache = StaticCache(**cache_kwargs)
+        encoder_kwargs = cache_kwargs.copy()
+        encoder_kwargs["max_cache_len"] = self.model.config.max_source_positions
+        encoder_cache = StaticCache(**encoder_kwargs)
+        return MapperatorinatorCache(decoder_cache, encoder_cache, self.cfg_scale)
 
     def prepare_frames(self, frames: torch.Tensor) -> torch.Tensor:
         frames = frames.to(self.device)
