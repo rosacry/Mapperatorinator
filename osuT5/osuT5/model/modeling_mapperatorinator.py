@@ -158,6 +158,7 @@ class Mapperatorinator(PreTrainedModel):
             encoder_outputs = BaseModelOutput(last_hidden_state=encoder_outputs.last_hidden_state.repeat((2, 1, 1)))
 
         inputs = self.transformer.prepare_inputs_for_generation(
+            input_ids=decoder_input_ids,
             decoder_input_ids=decoder_input_ids,
             past_key_values=past_key_values,
             use_cache=use_cache,
