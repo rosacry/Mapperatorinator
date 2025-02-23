@@ -302,6 +302,7 @@ def load_model(
 ):
     if not os.path.exists(ckpt_path) and ckpt_path != "":
         model = Mapperatorinator.from_pretrained(ckpt_path)
+        model.generation_config.disable_compile = True
         tokenizer = Tokenizer.from_pretrained(ckpt_path)
     else:
         ckpt_path = Path(ckpt_path)
