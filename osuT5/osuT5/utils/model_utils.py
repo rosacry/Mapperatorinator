@@ -28,8 +28,8 @@ def get_shared_training_state() -> Namespace:
     shared.current_train_step = 1
     shared.current_epoch = 1
     shared.last_log = time.time()
-    shared.current_loss = np.Infinity
-    shared.best_loss = np.Infinity
+    shared.current_loss = np.inf
+    shared.best_loss = np.inf
     return shared
 
 
