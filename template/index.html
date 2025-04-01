@@ -15,6 +15,9 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
   </head>
   <body>
+    <!-- Container for Flash Messages/Popups -->
+    <div id="flash-container"></div> 
+
     <div class="container">
       <main>
         <form id="inferenceForm" method="POST" class="card form-card"> <fieldset>
@@ -77,22 +80,22 @@
             <input type="number" id="year" name="year" min="2007" max="2023" required />
             <label for="difficulty">Difficulty (star rating):<span style="color:var(--accent-color); margin-left: 3px;">*</span></label>
             <input type="number" step="0.1" id="difficulty" name="difficulty" min="0" required />
+            <div class="form-group" id="group-circle_size" style="display: none;">
+              <label for="circle_size">Circle Size:<span class="required-indicator cs-required" style="color:var(--accent-color); margin-left: 3px; display: none;">*</span></label>
+              <input type="number" step="0.1" id="circle_size" name="circle_size" min="0" />
+            </div>
+            <div class="form-group" id="group-keycount" style="display: none;">
+              <label for="keycount">Key Count:<span class="required-indicator kc-required" style="color:var(--accent-color); margin-left: 3px; display: none;">*</span></label>
+              <input type="number" id="keycount" name="keycount" min="0" />
+            </div>
           </fieldset>
 
           <fieldset>
             <legend>Optional Settings</legend>
             <label for="slider_multiplier">Slider Multiplier:<span class="tooltip-icon" title="Slider velocity multiplier"><img src="{{ url_for('static', filename='icon.png') }}" alt="Help"></span></label>
             <input type="number" step="0.1" id="slider_multiplier" name="slider_multiplier" min="0" />
-            <div class="form-group" id="group-circle_size">
-              <label for="circle_size">Circle Size:</label>
-              <input type="number" step="0.1" id="circle_size" name="circle_size" min="0" />
-            </div>
             <label for="mapper_id">Mapper ID:<span class="tooltip-icon" title="Mapper user ID for style"><img src="{{ url_for('static', filename='icon.png') }}" alt="Help"></span></label>
             <input type="text" id="mapper_id" name="mapper_id" />
-            <div class="form-group" id="group-keycount">
-              <label for="keycount">Key Count:</label>
-              <input type="number" id="keycount" name="keycount" min="0" />
-            </div>
             <div class="form-group" id="group-hold_note_ratio">
               <label for="hold_note_ratio">Hold Note Ratio:<span class="tooltip-icon" title="Hold note ratio for mania 0-1"><img src="{{ url_for('static', filename='icon.png') }}" alt="Help"></span></label>
               <input type="number" step="0.01" id="hold_note_ratio" name="hold_note_ratio" min="0" max="1" />
@@ -256,6 +259,10 @@
            <div id="progressTitle" style="font-weight:bold; padding-bottom:5px;"></div>
           <div id="progressBarContainer">
             <div id="progressBar"></div>
+          </div>
+          <!-- Add Cancel Button (initially hidden) -->
+          <div style="margin-top: 10px; text-align: center;"> 
+            <button type="button" id="cancel-button" class="cancel-button" style="display:none;">Cancel</button>
           </div>
           <div id="beatmapLink" style="display:none; margin-top:10px;">
             <a id="beatmapLinkAnchor" href="#" target="_blank">Click Here to go to the created beatmap...</a>
@@ -459,6 +466,10 @@
         function updateOptionalSettingsVisibility() {
           var selectedGamemode = $("#gamemode").val(); // Get the string value ('0', '1', '2', '3')
           var animationSpeed = 200; // Speed in milliseconds (e.g., 200 for a quick slide)
+          var $circleSizeInput = $("#circle_size");
+          var $circleSizeAsterisk = $(".cs-required");
+          var $keyCountInput = $("#keycount");
+          var $keyCountAsterisk = $(".kc-required");
 
           // Determine which groups should be visible
           var showCircleSize = (selectedGamemode === '0');
@@ -466,18 +477,36 @@
           var showHoldNoteRatio = (selectedGamemode === '3');
           var showScrollSpeed = (selectedGamemode === '2' || selectedGamemode === '3');
 
-          // Animate Circle Size
-          if (showCircleSize && !$("#group-circle_size").is(':visible')) {
-            $("#group-circle_size").slideDown(animationSpeed);
-          } else if (!showCircleSize && $("#group-circle_size").is(':visible')) {
-            $("#group-circle_size").slideUp(animationSpeed);
+          // Animate Circle Size and manage required attribute
+          if (showCircleSize) {
+              if (!$("#group-circle_size").is(':visible')) {
+                 $("#group-circle_size").slideDown(animationSpeed);
+              }
+              $circleSizeInput.prop('required', true); // Set as required
+              $circleSizeAsterisk.show();           // Show asterisk
+          } else {
+              if ($("#group-circle_size").is(':visible')) {
+                  $("#group-circle_size").slideUp(animationSpeed);
+              }
+              $circleSizeInput.prop('required', false); // Remove required
+              $circleSizeInput.val(''); // Clear value when hidden
+              $circleSizeAsterisk.hide();            // Hide asterisk
           }
 
-          // Animate Key Count
-          if (showKeyCount && !$("#group-keycount").is(':visible')) {
-            $("#group-keycount").slideDown(animationSpeed);
-          } else if (!showKeyCount && $("#group-keycount").is(':visible')) {
-            $("#group-keycount").slideUp(animationSpeed);
+          // Animate Key Count and manage required attribute
+          if (showKeyCount) {
+              if (!$("#group-keycount").is(':visible')) {
+                  $("#group-keycount").slideDown(animationSpeed);
+              }
+              $keyCountInput.prop('required', true); // Set as required
+              $keyCountAsterisk.show();          // Show asterisk
+          } else {
+              if ($("#group-keycount").is(':visible')) {
+                  $("#group-keycount").slideUp(animationSpeed);
+              }
+              $keyCountInput.prop('required', false); // Remove required
+              $keyCountInput.val(''); // Clear value when hidden
+              $keyCountAsterisk.hide();           // Hide asterisk
           }
 
           // Animate Hold Note Ratio
@@ -528,15 +557,67 @@
         });
         // --- End Descriptor Checkbox Logic ---
 
+        // --- Form Submission & Progress Handling ---
+        var evtSource = null; // Keep track of the EventSource
+        var isCancelled = false; // Flag to track cancellation
+        let inferenceErrorOccurred = false; // New flag for error state
+        let accumulatedErrorMessages = []; // New buffer for error messages
+
+        // Function to display flash messages
+        function showFlashMessage(message, type = 'success') {
+            const flashContainer = $('#flash-container');
+            // Determine class based on type
+            let alertClass = 'alert ';
+            if (type === 'success') {
+                alertClass += 'success';
+            } else if (type === 'error') {
+                alertClass += 'error';
+            } else if (type === 'cancel-success') {
+                alertClass += 'alert-cancel-success'; // Use the new custom class
+            } else { 
+                alertClass += 'success'; // Default to success style
+            }
+
+            const messageDiv = $('<div class="' + alertClass + '">' + message + '</div>');
+            flashContainer.append(messageDiv);
+            
+            // Set timeout for automatic removal based on CSS animation
+            setTimeout(() => {
+                messageDiv.remove();
+            }, 5000); // Match total animation time (slide in + visible + fade out)
+        }
+
         $("#inferenceForm").submit(function(e) {
           e.preventDefault(); // Prevent default form submission
 
+          // Clear previous flash messages
+          $('#flash-container').empty();
+          // Clear previous cancellation messages within progress box (belt and suspenders)
+          $("#progress_output .cancellation-message").remove();
+
           // Reset UI
-          $("#progress_output").show();
-          $("#progressBar").css("width", "0%");
+          $("#progress_output").show(); // Make sure progress box is shown initially
+          // Scroll down to the progress box
+          $('html, body').animate({ scrollTop: $('#progress_output').offset().top }, 500); 
+
+          $("#progressBarContainer").show(); // Ensure these are visible on start
+          $("#progressTitle").show();
+          $("#progressBar").css("width", "0%").removeClass('cancelled'); // Reset progress bar
           $("#beatmapLink").hide();
           $("#init_message").text("Initializing process... This may take a moment.").show(); // Show init message
           $("#progressTitle").text("");
+          $("#cancel-button").hide().prop('disabled', false).text('Cancel'); // Reset cancel button
+
+          // Disable Run button, enable/show Cancel button after short delay
+          var $submitButton = $("button[type='submit']");
+          var $cancelButton = $("#cancel-button");
+          $submitButton.prop("disabled", true);
+          
+          // Reset error state and buffer
+          inferenceErrorOccurred = false;
+          accumulatedErrorMessages = [];
+          $("#progressBar").removeClass('error'); // Ensure error class is removed initially
+          $("#progressTitle").css('color', ''); // Reset title color
 
           // State variables for progress tracking
           var progressTitles = ["Generating Timing", "Generating Kiai", "Generating Map", "Sequence Length"];
@@ -544,7 +625,12 @@
           var additionalCounter = 2;
           var previousPercent = 0;
 
-          $("button[type='submit']").prop("disabled", true); // Disable submit button
+          // Clear previous EventSource if it exists
+          if (evtSource) {
+            evtSource.close();
+            evtSource = null;
+            console.log("Closed previous SSE stream.");
+          }
 
           // Use AJAX to POST form data to the Flask backend
           $.ajax({
@@ -604,85 +690,194 @@
             processData: false, // Important: Prevent jQuery from processing the FormData
             contentType: false, // Important: Let the browser set the correct content type
             success: function() {
-              // If POST is successful, start listening for Server-Sent Events
-              var audioPath = $("#audio_path").val() || "audio file"; // Store for later use in link text
+              // If POST is successful, show Cancel button and start listening for SSE
+              $cancelButton.show(); 
+              var audioPath = $("#audio_path").val() || "audio file"; 
               console.log("Inference started. Connecting to SSE stream...");
-              var evtSource = new EventSource("/stream_output"); // Flask SSE endpoint
+              evtSource = new EventSource("/stream_output"); // Flask SSE endpoint
 
               evtSource.onmessage = function(e) {
                  // Hide init message once data arrives
                 if ($("#init_message").is(":visible")) { $("#init_message").hide(); }
+                if (isCancelled) return; // Ignore messages after cancellation is confirmed
 
-                console.log("SSE Data:", e.data); // Log received data
+                console.log("SSE Data:", e.data);
+                const messageData = e.data; // Store for easier access
 
-                var progressMatch = e.data.match(/^\s*(\d+)%\|/);
-                if (progressMatch) {
-                  var currentPercent = parseInt(progressMatch[1].trim(), 10);
+                // Check for error indicators FIRST
+                const errorIndicators = [
+                    "Traceback (most recent call last):",
+                    "Error executing job with overrides:",
+                    "FileNotFoundError:",
+                    "Exception:", // General Python exception marker
+                    "Set the environment variable HYDRA_FULL_ERROR=1" // Hydra specific
+                ];
 
-                  // Logic to update phase title based on percentage reset
-                  if (currentPercent > 0 && previousPercent === 0 && phaseIndex === 0) {
-                      $("#progressTitle").text(progressTitles[phaseIndex]);
-                  } else if (currentPercent < previousPercent && !isNaN(currentPercent)) {
-                      phaseIndex++;
-                      if (phaseIndex < progressTitles.length) {
+                // Check if the current message indicates an error
+                let isErrorMessage = errorIndicators.some(indicator => messageData.includes(indicator));
+
+                if (isErrorMessage && !inferenceErrorOccurred) {
+                    // First time encountering an error message in this stream
+                    console.warn("Error detected in SSE stream.");
+                    inferenceErrorOccurred = true;
+                    accumulatedErrorMessages.push(messageData); // Add the first error message
+                    // Update UI immediately to indicate error
+                    $("#progressTitle").text("Error Detected").css('color', 'var(--accent-color)'); // Use accent color for error text
+                    $("#progressBar").addClass('error'); // Add class for styling (e.g., red color)
+                    // Hide normal progress elements if needed, or let them continue but styled differently
+
+                } else if (inferenceErrorOccurred) {
+                    // Already in error state, accumulate all subsequent messages
+                    accumulatedErrorMessages.push(messageData);
+
+                } else {
+                    // --- Normal Progress Processing (Only if no error has occurred) ---
+                    var progressMatch = messageData.match(/^\s*(\d+)%\|/);
+                    if (progressMatch) {
+                      var currentPercent = parseInt(progressMatch[1].trim(), 10);
+
+                      // Logic to update phase title (unchanged from original)
+                      if (currentPercent > 0 && previousPercent === 0 && phaseIndex === 0) {
                           $("#progressTitle").text(progressTitles[phaseIndex]);
-                      } else {
-                          $("#progressTitle").text("Sequence Length " + additionalCounter);
-                          additionalCounter++;
+                      } else if (currentPercent < previousPercent && !isNaN(currentPercent)) {
+                          phaseIndex++;
+                          if (phaseIndex < progressTitles.length) {
+                              $("#progressTitle").text(progressTitles[phaseIndex]);
+                          } else {
+                              $("#progressTitle").text("Sequence Length " + additionalCounter);
+                              additionalCounter++;
+                          }
                       }
-                  }
-                  if (!isNaN(currentPercent)) {
-                     previousPercent = currentPercent;
-                     $("#progressBar").css("width", currentPercent + "%");
-                  }
+                      if (!isNaN(currentPercent)) {
+                         previousPercent = currentPercent;
+                         // Update progress bar width only if no error occurred
+                         // Note: progressBar styling might be handled by the .error class instead
+                         $("#progressBar").css("width", currentPercent + "%");
+                      }
 
-                } else if (e.data.indexOf("Generated beatmap saved to") !== -1) {
-                  // Handle beatmap generation message
-                  var beatmapLine = e.data.trim();
-                  var parts = beatmapLine.split("Generated beatmap saved to");
-                  if (parts.length > 1) {
-                    var fullPath = parts[1].trim();
-                    fullPath = fullPath.replace(/\\/g, "/"); // Normalize path
-                    var folderPath = fullPath.substring(0, fullPath.lastIndexOf("/"));
+                    } else if (messageData.includes("Generated beatmap saved to")) {
+                      // Handle beatmap generation message (unchanged from original)
+                      var beatmapLine = messageData.trim();
+                      var parts = beatmapLine.split("Generated beatmap saved to");
+                      if (parts.length > 1) {
+                        var fullPath = parts[1].trim();
+                        fullPath = fullPath.replace(/\\/g, "/"); // Normalize path
+                        var folderPath = fullPath.substring(0, fullPath.lastIndexOf("/"));
 
-                    // Update the link to use the folder path and trigger Flask endpoint
-                    $("#beatmapLinkAnchor")
-                      .attr("href", "#") // Keep as non-navigating link
-                      .text("Click here to open the folder containing your map.")
-                      .off("click") // Remove previous handlers
-                      .on("click", function(clickEvent) {
-                        clickEvent.preventDefault();
-                        console.log("Requesting folder open via Flask:", folderPath);
-                        // Use GET request to Flask endpoint to open folder
-                        $.get("/open_folder", { folder: folderPath })
-                          .done(function(response) {
-                            console.log("Open folder response:", response);
-                          })
-                          .fail(function() {
-                            alert("Failed to open folder via backend.");
+                        // Update the link to use the folder path and trigger Flask endpoint
+                        $("#beatmapLinkAnchor")
+                          .attr("href", "#") // Keep as non-navigating link
+                          .text("Click here to open the folder containing your map.")
+                          .off("click") // Remove previous handlers
+                          .on("click", function(clickEvent) {
+                            clickEvent.preventDefault();
+                            console.log("Requesting folder open via Flask:", folderPath);
+                            // Use GET request to Flask endpoint to open folder
+                            $.get("/open_folder", { folder: folderPath })
+                              .done(function(response) {
+                                console.log("Open folder response:", response);
+                              })
+                              .fail(function() {
+                                alert("Failed to open folder via backend.");
+                              });
                           });
-                      });
-                    $("#beatmapLink").show(); // Show the link div
-                  }
+                        $("#beatmapLink").show(); // Show the link div
+                      }
+                    }
                 }
               }; // End of evtSource.onmessage
 
               evtSource.onerror = function(err) {
                 console.error("EventSource failed:", err);
-                evtSource.close();
-                $("button[type='submit']").prop("disabled", false); // Re-enable button on error
+                if (evtSource) evtSource.close();
+                evtSource = null;
+                // Also indicate an error if the stream itself fails unexpectedly
+                if (!isCancelled && !inferenceErrorOccurred) {
+                   inferenceErrorOccurred = true; // Mark as error
+                   accumulatedErrorMessages.push("Error: Connection to process stream lost.");
+                   // Update UI to reflect connection error
+                   $("#progressTitle").text("Connection Error").css('color', 'var(--accent-color)');
+                   $("#progressBar").addClass('error');
+                   showFlashMessage("Error: Connection to process stream lost.", "error");
+                }
+                if (!isCancelled) { // Only re-enable if not cancelled
+                   $submitButton.prop("disabled", false);
+                }
+                $cancelButton.hide(); // Hide cancel on error too
               };
 
               // Listen for the custom 'end' event from Flask
               evtSource.addEventListener("end", function(e) {
-                console.log("Received end event from server.");
-                $("#progressBar").css("width", "100%");
-                 // Optionally update title on completion
-                if ($("#progressTitle").text() === "" || $("#progressTitle").text().startsWith("Sequence Length")) {
-                    $("#progressTitle").text("Processing Complete");
+                console.log("Received end event from server.", e.data);
+                if (evtSource) evtSource.close();
+                evtSource = null;
+
+                if (isCancelled) {
+                    // Cancellation Path: UI is handled by cancel AJAX success (flash message).
+                    // Ensure progress elements are hidden or reset.
+                    console.log("SSE End event received after cancellation.");
+                     $("#progressTitle").hide();
+                     $("#progressBarContainer").hide();
+                     $("#beatmapLink").hide();
+
+                } else if (inferenceErrorOccurred) {
+                    // Error Occurred Path
+                    console.error("Process finished with errors.");
+                    // --- Simple Error Parsing ---
+                    let specificError = "An error occurred during processing. Check console/logs."; // Default
+                    const fullErrorText = accumulatedErrorMessages.join("\\n"); // Use newline for searching
+
+                    if (fullErrorText.includes("FileNotFoundError:")) {
+                         // Try to extract the filename if possible
+                         const fileNotFoundMatch = fullErrorText.match(/FileNotFoundError:.*? file (.*?) not found/);
+                         if (fileNotFoundMatch && fileNotFoundMatch[1]) {
+                             specificError = `Error: File not found - ${fileNotFoundMatch[1].replace(/\\\\/g, '\\\\')}`; // Basic path unescaping for display
+                         } else {
+                              specificError = "Error: A required file was not found.";
+                         }
+                    } else if (fullErrorText.includes("HYDRA_FULL_ERROR=1")) {
+                        // Use the user-suggested message
+                        specificError = "There was an error while creating the beatmap. Check console/logs for details.";
+                    } else if (fullErrorText.includes("Error executing job")) {
+                         specificError = "There was an error starting or executing the generation task.";
+                    } else if (fullErrorText.includes("Connection to process stream lost")) {
+                        // Handle the connection error case specifically if needed, though caught by onerror too
+                        specificError = "Error: Connection to the generation process was lost.";
+                    }
+                    // --- End Simple Error Parsing ---
+
+                    // Display error message prominently using flash message
+                     showFlashMessage(specificError, "error");
+
+                    // Update progress area to show final failure state
+                    $("#progressTitle").text("Processing Failed").css('color', 'var(--accent-color)').show();
+                    $("#progressBar").css("width", "100%").addClass('error'); // Show full bar in error color
+                    $("#progressBarContainer").show(); // Ensure container is visible
+                    $("#beatmapLink").hide(); // Hide success link
+
+                } else {
+                    // Normal Completion Path
+                     $("#progressTitle").show().text("Processing Complete").css('color', ''); // Reset color
+                     $("#progressBarContainer").show();
+                     $("#progressBar").css("width", "100%").removeClass('error'); // Ensure error class removed
+                    // Beatmap link visibility is handled by the onmessage handler if successful
                 }
-                evtSource.close(); // Close the connection
-                $("button[type='submit']").prop("disabled", false); // Re-enable button
+
+                $submitButton.prop("disabled", false); // Re-enable Run button
+                $cancelButton.hide(); // Hide Cancel button
+
+                // Reset flags for the next run AFTER handling the end event
+                isCancelled = false;
+                inferenceErrorOccurred = false;
+                accumulatedErrorMessages = []; // Clear buffer
+
+                // Reset progress state variables for next run
+                phaseIndex = 0;
+                additionalCounter = 2;
+                previousPercent = 0;
+                // Ensure title color is reset *after* potential error display
+                // $("#progressTitle").css('color', ''); // Reset in normal completion path is enough
+
               });
 
             }, // End of AJAX success
@@ -690,10 +885,42 @@
               // Handle AJAX error (failed to start inference)
               console.error("Failed to start inference:", textStatus, errorThrown);
               alert("Failed to start inference process. Check backend console.");
-              $("button[type='submit']").prop("disabled", false); // Re-enable button
+              $submitButton.prop("disabled", false); // Re-enable Run button
+              $cancelButton.hide(); // Ensure cancel button is hidden
+              $("#progress_output").hide(); // Hide progress section on startup error
             }
           }); // End of AJAX call
         }); // End of form submit handler
+
+        // --- Cancel Button Click Handler ---
+        $("#cancel-button").click(function() {
+            var $cancelBtn = $(this);
+            $cancelBtn.prop('disabled', true).text('Cancelling...');
+            console.log("Sending cancel request...");
+
+            $.ajax({
+                url: "/cancel_inference",
+                method: "POST",
+                success: function(response) {
+                    console.log("Cancel request successful:", response.message);
+                    isCancelled = true; // Set flag early
+                    // Hide the main progress box
+                    $("#progress_output").hide(); 
+                    // Show the flash message popup using the custom style type
+                    showFlashMessage("Inference cancelled successfully.", "cancel-success");
+                    // The SSE 'end' event will still fire to re-enable Run button & reset state.
+                },
+                error: function(jqXHR, textStatus, errorThrown) {
+                    console.error("Cancel request failed:", textStatus, errorThrown);
+                    const errorMsg = jqXHR.responseJSON ? jqXHR.responseJSON.message : "Failed to send cancel request. Unknown error.";
+                    showFlashMessage(errorMsg, "error"); // Use standard error style
+                    // Re-enable cancel button ONLY if the request failed, allowing retry
+                    $cancelBtn.prop('disabled', false).text('Cancel'); 
+                }
+            });
+        });
+        // --- End Cancel Button Click Handler ---
+
       }); // End of document ready
     </script>
   </body>
