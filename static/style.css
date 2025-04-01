@@ -388,7 +388,12 @@ button[type="submit"]:hover {
   height: 20px;
   background: linear-gradient(90deg, var(--accent-color), #e03234);
   border-radius: 5px;
-  transition: width 0.35s ease;
+  transition: width 0.35s ease, background 0.35s ease;
+}
+
+/* Style for the progress bar when an error occurs */
+#progressBar.error {
+  background: #c62828; /* Solid, darker red for error state */
 }
 
 /* Initial process message */
@@ -680,4 +685,101 @@ input[type="number"]:hover::-webkit-outer-spin-button {
   position: relative;
   top: 3px;  /* Move down 2 pixels */
   left: -5px; /* Move left 3 pixels */
+}
+
+/* --- Cancel Button Style --- */
+.cancel-button {
+  background-color: var(--input-bg); /* Dark background */
+  color: var(--text-color);          /* Light text */
+  border: 1px solid var(--border-color); /* Subtle border */
+  padding: 8px 20px;
+  border-radius: 4px;
+  font-size: 0.9em;
+  cursor: pointer;
+  transition: background-color var(--transition-speed), color var(--transition-speed), border-color var(--transition-speed), transform 0.2s;
+}
+
+.cancel-button:hover:not(:disabled) {
+  background-color: var(--accent-color); /* Red background on hover */
+  color: var(--bg-color);              /* Dark text on hover */
+  border-color: var(--accent-color);
+  transform: scale(1.03);
+}
+
+.cancel-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* --- Flash Message Popup Container --- */
+#flash-container {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  width: 300px; /* Adjust width as needed */
+  z-index: 1000; /* Ensure it's above other content */
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* Add animation to flash messages within the container */
+#flash-container .alert {
+  animation: slideInRight 0.5s ease-out, fadeOut 0.5s ease-in 4.5s forwards;
+  /* Slides in, fades out after 4.5s (total 5s visibility) */
+  opacity: 1;
+  /* Base styles applied to all alerts in the container */
+  padding: 10px;
+  margin-bottom: 10px; /* Keep consistent spacing */
+  border-radius: 4px;
+}
+
+/* Style for Success alerts (keep distinct if desired, or unify later) */
+#flash-container .alert.success {
+  background-color: #2e7d32; /* Green background */
+  color: #fff;
+  border: 1px solid #4caf50;
+}
+
+/* Style for Error alerts - Apply Cancelation Style */
+#flash-container .alert.error {
+  background-color: var(--card-bg); /* Use card background gray */
+  color: var(--text-color);       /* Standard text color */
+  border: 1px solid var(--border-color); /* Subtle border */
+  box-shadow: 0 0 8px var(--accent-color); /* Red glow effect */
+}
+
+@keyframes slideInRight {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+@keyframes fadeOut {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+    /* Optional: add height: 0; padding: 0; margin: 0; for smoother removal */
+  }
+}
+
+/* Custom style for Cancellation Success Popup */
+.alert-cancel-success {
+  /* Inherit basic alert padding/margin/radius from .alert if needed, 
+     but define specific appearance here */
+  padding: 10px;
+  margin-bottom: 10px; /* Kept for consistency if multiple messages appear */
+  border-radius: 4px;
+  background-color: var(--card-bg); /* Use card background gray */
+  color: var(--text-color);       /* Standard text color */
+  border: 1px solid var(--border-color); /* Optional: subtle border */
+  /* Red glow effect */
+  box-shadow: 0 0 8px var(--accent-color); 
 }
