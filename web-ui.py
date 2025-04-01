@@ -147,11 +147,12 @@ def start_inference():
                     # Other values usually don't need explicit Hydra quoting when passed via list
                     cmd.append(f"{key}={value}")
         
-        # Helper for list arguments (Hydra format: key=[item1,item2,...])
+        # Helper for list arguments (Hydra format: key=['item1','item2',...])
         def add_list_arg(key, items):
             if items:
-                # Format for Hydra: key=[item1,item2,...] (no internal quotes needed usually)
-                items_str = ",".join(map(str, items))
+                # Wrap each item in single quotes and join with comma
+                quoted_items = [f"'{str(item)}'" for item in items]
+                items_str = ",".join(quoted_items)
                 cmd.append(f"{key}=[{items_str}]")
 
         # Required Paths
