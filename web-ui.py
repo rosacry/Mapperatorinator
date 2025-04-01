@@ -7,8 +7,11 @@ import json
 import sys
 import time
 import socket
+import functools
+from typing import Callable, Any, Tuple, Dict
 
 from flask import Flask, render_template, request, Response, url_for, jsonify
+import werkzeug.serving
 
 
 script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -17,6 +20,24 @@ static_folder = os.path.join(script_dir, 'static')
 
 if not os.path.isdir(static_folder):
      print(f"Warning: Static folder not found at {static_folder}. Ensure it exists and contains your CSS/images.")
+
+# Set Flask environment to production before initializing Flask app to silence warning
+# os.environ['FLASK_ENV'] = 'production' # Removed, using cli patch instead
+
+# --- Werkzeug Warning Suppressor Patch ---
+def _ansi_style_supressor(func: Callable[..., Any]) -> Callable[..., Any]:
+    @functools.wraps(func)
+    def wrapper(*args: Tuple[Any, ...], **kwargs: Dict[str, Any]) -> Any:
+        # Check if the first argument is the specific warning string
+        if args and isinstance(args[0], str) and args[0].startswith('WARNING: This is a development server.'):
+            return '' # Return empty string to suppress
+        # Otherwise, call the original function
+        return func(*args, **kwargs)
+    return wrapper
+
+# Apply the patch before Flask initialization
+werkzeug.serving._ansi_style = _ansi_style_supressor(werkzeug.serving._ansi_style)
+# --- End Patch ---
 
 app = Flask(__name__, template_folder=template_folder, static_folder=static_folder)
 app.secret_key = os.urandom(24) # Set a secret key for Flask
@@ -101,40 +122,60 @@ def start_inference():
         if current_process and current_process.poll() is None:
             return jsonify({"status": "error", "message": "Process already running"}), 409 # Conflict
 
-        # --- Construct Command --- (Adapted from previous pywebview version)
-        cmd = ["python", "inference.py"]
+        # --- Construct Command List (shell=False) ---
+        python_executable = sys.executable # Get path to current Python interpreter
+        cmd = [python_executable, "inference.py"]
+
+        # Helper to quote values for Hydra's command-line parser
+        def hydra_quote(value):
+            """Quotes a value for Hydra (single quotes, escapes internal)."""
+            value_str = str(value)
+            # Escape internal single quotes: ' -> '\''
+            escaped_value = value_str.replace("'", "'\\''") 
+            return f"'{escaped_value}'"
+
+        # Set of keys known to be paths needing quoting for Hydra
+        path_keys = {"audio_path", "output_path", "beatmap_path"}
+
+        # Helper to add argument if value exists
+        def add_arg(key, value):
+            if value is not None and value != '': # Ensure value is not empty
+                if key in path_keys:
+                    # Quote path values for Hydra
+                    cmd.append(f"{key}={hydra_quote(value)}")
+                else:
+                    # Other values usually don't need explicit Hydra quoting when passed via list
+                    cmd.append(f"{key}={value}")
+        
+        # Helper for list arguments (Hydra format: key=[item1,item2,...])
+        def add_list_arg(key, items):
+            if items:
+                # Format for Hydra: key=[item1,item2,...] (no internal quotes needed usually)
+                items_str = ",".join(map(str, items))
+                cmd.append(f"{key}=[{items_str}]")
 
         # Required Paths
-        if request.form.get('audio_path'):
-            cmd.append("audio_path=" + dsq_quote(request.form.get('audio_path')))
-        if request.form.get('output_path'):
-            cmd.append("output_path=" + dsq_quote(request.form.get('output_path')))
+        add_arg("audio_path", request.form.get('audio_path'))
+        add_arg("output_path", request.form.get('output_path'))
         # Beatmap path
-        if request.form.get('beatmap_path'):
-            cmd.append("beatmap_path=" + dsq_quote(request.form.get('beatmap_path')))
+        add_arg("beatmap_path", request.form.get('beatmap_path'))
 
         # Basic settings
-        if request.form.get('gamemode'):
-             cmd.append("gamemode=" + dq_quote(request.form.get('gamemode')))
-        if request.form.get('difficulty'):
-            cmd.append("difficulty=" + dq_quote(request.form.get('difficulty')))
-        if request.form.get('year'):
-            cmd.append("year=" + dq_quote(request.form.get('year')))
+        add_arg("gamemode", request.form.get('gamemode'))
+        add_arg("difficulty", request.form.get('difficulty'))
+        add_arg("year", request.form.get('year'))
 
         # Numeric settings
         for param in ['slider_multiplier', 'circle_size', 'keycount', 'hold_note_ratio', 'scroll_speed_ratio', 'cfg_scale', 'seed']:
-            if request.form.get(param):
-                 cmd.append(f"{param}=" + dq_quote(request.form.get(param)))
+            add_arg(param, request.form.get(param))
         # mapper_id
-        if request.form.get('mapper_id'):
-            cmd.append("mapper_id=" + dq_quote(request.form.get('mapper_id')))
+        add_arg("mapper_id", request.form.get('mapper_id'))
 
         # Timing and segmentation
         for param in ['start_time', 'end_time']:
-            if request.form.get(param):
-                cmd.append(f"{param}=" + dq_quote(request.form.get(param)))
+            add_arg(param, request.form.get(param))
 
-        # Checkboxes (Flask sends 'on' or nothing, check existence)
+        # Checkboxes
         if 'hitsounded' in request.form:
             cmd.append("hitsounded=true")
         if 'add_to_beatmap' in request.form:
@@ -142,34 +183,27 @@ def start_inference():
         if 'super_timing' in request.form:
             cmd.append("super_timing=true")
 
-        # Descriptors (getlist handles multiple values for the same name)
+        # Descriptors
         descriptors = request.form.getlist('descriptors')
-        if descriptors:
-            desc_str = format_list_arg(descriptors)
-            cmd.append("descriptors=" + dq_quote(desc_str))
+        add_list_arg("descriptors", descriptors)
 
-        # Negative Descriptors (newly added)
+        # Negative Descriptors
         negative_descriptors = request.form.getlist('negative_descriptors')
-        if negative_descriptors:
-            neg_desc_str = format_list_arg(negative_descriptors)
-            cmd.append("negative_descriptors=" + dq_quote(neg_desc_str))
+        add_list_arg("negative_descriptors", negative_descriptors)
 
-        # In-Context Options (newly added)
+        # In-Context Options
         in_context_options = request.form.getlist('in_context_options')
-        # Only add if the list is not empty (meaning 'None' wasn't checked and/or others were)
-        if in_context_options:
-            # Values are already uppercase (e.g., TIMING, KIAI)
-            context_str = format_list_arg(in_context_options) # Formats like ['TIMING','KIAI']
-            cmd.append("in_context=" + dq_quote(context_str))
+        if in_context_options: # Only add if not empty
+            add_list_arg("in_context", in_context_options)
+        # --- End Command List Construction ---
 
-        command_str = " ".join(cmd)
-        print("Executing Command via Flask:", command_str)
+        print("Executing Command List (shell=False):", cmd)
 
         try:
-            # Start the inference process
+            # Start the inference process without shell=True
             current_process = subprocess.Popen(
-                command_str,
-                shell=True,
+                cmd, # Pass the list directly
+                shell=False, # Explicitly False (default)
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT, # Combine stdout and stderr
                 bufsize=1,
@@ -230,6 +264,48 @@ def stream_output():
 
     return Response(generate(), mimetype='text/event-stream')
 
+@app.route('/cancel_inference', methods=['POST']) # Use POST for actions
+def cancel_inference():
+    """Attempts to terminate the currently running inference process."""
+    global current_process
+    success = False
+    message = ""
+
+    with process_lock:
+        if current_process and current_process.poll() is None:
+            try:
+                pid = current_process.pid
+                print(f"Attempting to terminate process PID: {pid}...")
+                current_process.terminate() # Send SIGTERM
+                # Optional: Add a short wait to see if it terminates quickly
+                try:
+                    current_process.wait(timeout=1)
+                    print(f"Process PID: {pid} terminated successfully after request.")
+                    message = "Cancel request sent, process terminated."
+                except subprocess.TimeoutExpired:
+                    print(f"Process PID: {pid} did not terminate immediately after SIGTERM.")
+                    message = "Cancel request sent. Process termination might take a moment."
+                    # You could consider current_process.kill() here if terminate isn't enough
+                
+                success = True
+                # DO NOT set current_process = None here. Let the stream generator handle it.
+            except Exception as e:
+                print(f"Error terminating process: {e}")
+                message = f"Error occurred during cancellation: {e}"
+                success = False
+        elif current_process:
+            message = "Process already finished."
+            success = False # Or True if you consider it 'cancelled' as it's done
+        else:
+            message = "No process is currently running."
+            success = False
+
+    if success:
+        return jsonify({"status": "success", "message": message}), 200
+    else:
+        # Use 409 Conflict if already finished, 404 if never started, 500 for error
+        status_code = 500 if "Error occurred" in message else (409 if "already finished" in message else 404)
+        return jsonify({"status": "error", "message": message}), status_code
 
 @app.route('/open_folder', methods=['GET'])
 def open_folder():
@@ -258,11 +334,13 @@ def open_folder():
 # --- Function to Run Flask in a Thread ---
 def run_flask(port):
     """Runs the Flask app."""
+    
     # Use threaded=True for better concurrency within Flask
     # Avoid debug=True as it interferes with threading and pywebview
     print(f"Starting Flask server on http://127.0.0.1:{port}")
     try:
-        app.run(host='127.0.0.1', port=port, threaded=True)
+        # Explicitly set debug=False, in addition to FLASK_ENV=production
+        app.run(host='127.0.0.1', port=port, threaded=True, debug=False)
     except OSError as e:
         print(f"Flask server could not start on port {port}: {e}")
         # Optionally: try another port or exit
@@ -328,7 +406,7 @@ if __name__ == '__main__':
     )
 
     # Start the pywebview event loop (no args needed here now)
-    webview.start(debug=True)
+    webview.start()
 
 
     print("Pywebview window closed. Exiting application.")
