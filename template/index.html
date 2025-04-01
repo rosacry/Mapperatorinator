@@ -663,21 +663,7 @@
                 });
 
                 // --- Add In-Context Options ---
-                var inContextOptions = [];
-                var isNoneChecked = $('#context-none').is(':checked');
-
-                if (!isNoneChecked) {
-                    $('input[name="in_context_options"]:checked').not('#context-none').each(function() {
-                        inContextOptions.push($(this).val()); // Already uppercase (TIMING, KIAI, etc.)
-                    });
-                }
-                // Append only if there are selected options (and None isn't checked)
-                if (inContextOptions.length > 0) {
-                   inContextOptions.forEach(function(val) {
-                       formData.append('in_context_options', val);
-                   });
-                }
-                 // If 'None' is checked or no options are selected, 'in_context_options' won't be added
+                // REMOVED redundant block that manually appended in_context_options
                 // --- End Add In-Context Options ---
 
                 // Debug: Log FormData contents before sending
