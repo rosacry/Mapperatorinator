@@ -351,6 +351,8 @@
               if (filePath) { // Check raw path
                 $("#beatmap_path").val(filePath); // Use raw path
                 console.log("Selected beatmap file:", filePath); // Log raw path
+                // Trigger the input event manually to update the UI
+                $("#beatmap_path").trigger('input'); 
               } else {
                 console.log("Beatmap file selection cancelled.");
               }
