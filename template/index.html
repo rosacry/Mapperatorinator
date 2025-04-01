@@ -1,0 +1,446 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Mapperatorinator Interface (Flask+pywebview)</title>
+    <link
+      href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap"
+      rel="stylesheet"
+    />
+    <link
+      href="https://cdnjs.cloudflare.com/ajax/libs/select2/4.0.13/css/select2.min.css"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
+  </head>
+  <body>
+    <div class="container">
+      <header class="card animated-header">
+        <h1>Mapperatorinator Interface</h1>
+      </header>
+      <main>
+        <form id="inferenceForm" method="POST" class="card form-card"> <fieldset>
+            <legend>Paths</legend>
+            <div class="path-input-group"> <label for="audio_path">Audio Path:<span style="color:var(--accent-color); margin-left: 3px;">*</span></label>
+              <input type="text" id="audio_path" name="audio_path" required />
+              <button type="button" id="browse-audio" class="browse-button">Browse...</button>
+            </div>
+            <div class="path-input-group"> <label for="output_path">Output Path:<span style="color:var(--accent-color); margin-left: 3px;">*</span></label>
+              <input type="text" id="output_path" name="output_path" required />
+              <button type="button" id="browse-output" class="browse-button">Browse...</button>
+            </div>
+            <div class="path-input-group"> <label for="beatmap_path">Beatmap Path:</label>
+              <input type="text" id="beatmap_path" name="beatmap_path" />
+              <button type="button" id="browse-beatmap" class="browse-button">Browse...</button>
+            </div>
+          </fieldset>
+
+          <fieldset>
+            <legend>Basic Settings</legend>
+            <label for="gamemode">Gamemode:</label>
+            <select id="gamemode" name="gamemode" class="styled-select">
+              <option value="0">Standard</option>
+              <option value="1">Taiko</option>
+              <option value="2">Catch the Beat</option>
+              <option value="3">Mania</option>
+            </select>
+            <label for="year">Year (2007-2023):<span style="color:var(--accent-color); margin-left: 3px;">*</span></label>
+            <input type="number" id="year" name="year" min="2007" max="2023" required />
+            <label for="difficulty">Difficulty (star rating):<span style="color:var(--accent-color); margin-left: 3px;">*</span></label>
+            <input type="number" step="0.1" id="difficulty" name="difficulty" min="0" required />
+          </fieldset>
+
+          <fieldset>
+            <legend>Optional Settings</legend>
+            <label for="slider_multiplier">Slider Multiplier:</label>
+            <input type="number" step="0.1" id="slider_multiplier" name="slider_multiplier" min="0" />
+            <label for="circle_size">Circle Size:</label>
+            <input type="number" step="0.1" id="circle_size" name="circle_size" min="0" />
+            <label for="mapper_id">Mapper ID:</label>
+            <input type="text" id="mapper_id" name="mapper_id" />
+            <label for="keycount">Key Count (Mania):</label>
+            <input type="number" id="keycount" name="keycount" min="0" />
+            <label for="hold_note_ratio">Hold Note Ratio:</label>
+            <input type="number" step="0.01" id="hold_note_ratio" name="hold_note_ratio" min="0" max="1" />
+            <label for="scroll_speed_ratio">Scroll Speed Ratio:</label>
+            <input type="number" step="0.01" id="scroll_speed_ratio" name="scroll_speed_ratio" min="0" max="1" />
+            <label for="cfg_scale">CFG Scale:</label>
+            <input type="number" step="0.1" id="cfg_scale" name="cfg_scale" min="0" />
+            <label for="seed">Random Seed:</label>
+            <input type="text" id="seed" name="seed" />
+          </fieldset>
+
+          <fieldset>
+            <legend>Timing & Segments</legend>
+            <label for="start_time">Start Time (ms):</label>
+            <input type="number" id="start_time" name="start_time" min="0" />
+            <label for="end_time">End Time (ms):</label>
+            <input type="number" id="end_time" name="end_time" min="0" />
+          </fieldset>
+
+          <fieldset>
+            <legend>Options</legend>
+            <div class="option-item">
+              <input type="checkbox" id="hitsounded" name="hitsounded" value="true" />
+              <label for="hitsounded">Add Hitsounds</label>
+            </div>
+            <div class="option-item">
+              <input type="checkbox" id="add_to_beatmap" name="add_to_beatmap" value="true" />
+              <label for="add_to_beatmap">Add to Beatmap</label>
+            </div>
+            <div class="option-item">
+              <input type="checkbox" id="super_timing" name="super_timing" value="true" />
+              <label for="super_timing">Super Timing</label>
+            </div>
+          </fieldset>
+
+          <div class="custom-dropdown-descriptors">
+            <div class="dropdown-header">
+              <span class="dropdown-title">Descriptors</span>
+              <span class="dropdown-arrow">&#9660;</span>
+            </div>
+            <div class="dropdown-content">
+              <div class="descriptors-container">
+                {% set descriptor_groups = [
+                    { "title": "General", "items": [
+                        { "value": "gimmick", "title": "Focused on a single unique design or gameplay idea." },
+                        { "value": "2B", "title": "Includes gameplay elements with two or more objects placed simultaneously." },
+                        { "value": "slider only", "title": "Restricts object choice to sliders only." },
+                        { "value": "circle only", "title": "Restricts object choice to circles only." },
+                        { "value": "swing", "title": "Uses 1/3, 1/6, and 1/12 snap divisors for most/all objects." }
+                    ]},
+                    { "title": "Meta Information", "items": [
+                        { "value": "collab", "title": "A map with two or more associated mappers." },
+                        { "value": "megacollab", "title": "A map with 8 or more associated mappers." },
+                        { "value": "marathon", "title": "A map with a drain time of over 5 minutes." },
+                        { "value": "gungathon", "title": "A map with a drain time of over 10 minutes." },
+                        { "value": "multi-song", "title": "Contains multiple songs within the audio." },
+                        { "value": "variable timing", "title": "Contains multiple timing points, usually for non-metronome songs." },
+                        { "value": "accelerating bpm", "title": "Features progressively increasing tempo." },
+                        { "value": "time signatures", "title": "Many changes or uncommon time signatures." },
+                        { "value": "storyboard", "title": "Contains a storyboard that enhances gameplay experience." },
+                        { "value": "storyboard gimmick", "title": "Uses storyboard elements that change how the map is played." },
+                        { "value": "keysounds", "title": "Uses various pitched hitsounds to create a melody." },
+                        { "value": "download unavailable", "title": "Cannot be downloaded from the osu! website." },
+                        { "value": "custom skin", "title": "Utilizes custom skin elements and graphics." },
+                        { "value": "featured artist", "title": "Features song(s) from osu!’s Featured Artist listing." },
+                        { "value": "custom song", "title": "Maps a song made specifically for the map." }
+                    ]},
+                    { "title": "Style", "items": [
+                        { "value": "messy", "title": "Visually chaotic and disorganised patterns." },
+                        { "value": "geometric", "title": "Incorporates geometric shapes within the design." },
+                        { "value": "grid snap", "title": "Objects are placed along a square grid." },
+                        { "value": "hexgrid", "title": "Objects are placed along a hexagonal grid." },
+                        { "value": "freeform", "title": "A loose approach to visual structure." },
+                        { "value": "symmetrical", "title": "Employs symmetry within the design." },
+                        { "value": "old-style revival", "title": "Emulates a style from early mapping." },
+                        { "value": "clean", "title": "Visually uncluttered and organised patterns." },
+                        { "value": "slidershapes", "title": "Uses a variety of slider designs." },
+                        { "value": "distance snapped", "title": "Uses osu's built-in distance snap feature." },
+                        { "value": "iNiS-style", "title": "Originates from the original DS games." },
+                        { "value": "avant-garde", "title": "Experimental design philosophies." },
+                        { "value": "perfect stacks", "title": "Features perfectly overlapped stacked notes." },
+                        { "value": "ninja spinners", "title": "Features very short spinners." }
+                    ]},
+                    { "title": "Song Representation", "items": [
+                        { "value": "simple", "title": "Accessible and straightforward design." },
+                        { "value": "chaotic", "title": "Unpredictable map design." },
+                        { "value": "repetition", "title": "Features recognizable identical patterns." },
+                        { "value": "progression", "title": "Gradual advancement in difficulty." },
+                        { "value": "high contrast", "title": "Uses flashy ideas to follow music changes." },
+                        { "value": "improvisation", "title": "Uses patterns that do not directly match the music." },
+                        { "value": "playfield usage", "title": "Deliberate use of the playfield." },
+                        { "value": "playfield constraint", "title": "Restricts object placement to a part of the playfield." },
+                        { "value": "video gimmick", "title": "References the background video in its patterning." },
+                        { "value": "difficulty spike", "title": "A sudden, significant challenge increase." },
+                        { "value": "low sv", "title": "Prominent low slider velocity usage." },
+                        { "value": "high sv", "title": "Prominent high slider velocity usage." },
+                        { "value": "colorhax", "title": "Intentional use of combo colors for immersion." }
+                    ]},
+                    { "title": "Skillsets", "items": [
+                        { "value": "tech", "title": "Tests uncommon skills." },
+                        { "value": "slider tech", "title": "Tests skills involving complex sliders." },
+                        { "value": "complex sv", "title": "Large changes in slider velocity to test reading." },
+                        { "value": "reading", "title": "Tests a player's reading skill." },
+                        { "value": "visually dense", "title": "Patterns with many visible notes that make reading hard." },
+                        { "value": "overlap reading", "title": "Overlapped objects obscure note order." }
+                    ]},
+                    { "title": "Aim", "items": [
+                        { "value": "jump aim", "title": "Focuses heavily on jumps." },
+                        { "value": "sharp aim", "title": "Heavy use of sharp angle movement." },
+                        { "value": "wide aim", "title": "Uses wide angle movement patterns." },
+                        { "value": "linear aim", "title": "Requires continuous straight movement." },
+                        { "value": "aim control", "title": "Features abrupt velocity or direction changes." },
+                        { "value": "flow aim", "title": "Encourages fully continuous cursor movement." },
+                        { "value": "precision", "title": "Requires fine, precise cursor movement." }
+                    ]},
+                    { "title": "Tap", "items": [
+                        { "value": "finger control", "title": "Tests complex tapping ability." },
+                        { "value": "complex snap divisors", "title": "Uses unusual snap divisors." },
+                        { "value": "bursts", "title": "Continuous alternating patterns, typically 9 notes or less." },
+                        { "value": "streams", "title": "Continuous alternating patterns, typically more than 9 notes." },
+                        { "value": "spaced streams", "title": "Streams with large spacing between notes." },
+                        { "value": "cutstreams", "title": "Streams with very uneven spacing." },
+                        { "value": "stamina", "title": "Tests endurance over long periods." }
+                    ]},
+                    { "title": "Scene", "items": [
+                        { "value": "aspire", "title": "Uses glitches for unique effects." },
+                        { "value": "mapping contest", "title": "An entry for a mapping contest." },
+                        { "value": "tournament custom", "title": "A custom map for a tournament." },
+                        { "value": "tag", "title": "Designed for multiplayer tag mode." },
+                        { "value": "port", "title": "Originally created for other media then imported." }
+                    ]}
+                ] %}
+          
+                {% for group in descriptor_groups %}
+                  <div class="descriptor-group">
+                    <h3>{{ group.title }}</h3>
+                    {% for item in group["items"] %}
+                      <div class="descriptor-item">
+                        {% set item_id = "desc-" ~ item.value|replace(" ", "-") %}
+                        <input type="checkbox" id="{{ item_id }}" name="descriptors" value="{{ item.value }}" />
+                        <label for="{{ item_id }}" title="{{ item.title }}">{{ item.value }}</label>
+                      </div>
+                    {% endfor %}
+                  </div>
+                {% endfor %}
+              </div>
+            </div>
+          </div>
+
+          <button type="submit">Run Inference</button>
+        </form>
+
+        <div id="progress_output" class="card" style="margin-top:20px; display:none;">
+          <h3>Progress</h3>
+          <div id="init_message">Initializing process... This may take a moment.</div>
+           <div id="progressTitle" style="font-weight:bold; padding-bottom:5px;"></div>
+          <div id="progressBarContainer">
+            <div id="progressBar"></div>
+          </div>
+          <div id="beatmapLink" style="display:none; margin-top:10px;">
+            <a id="beatmapLinkAnchor" href="#" target="_blank">Click Here to go to the created beatmap...</a>
+          </div>
+        </div>
+      </main>
+    </div>
+
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.6.0/jquery.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/select2/4.0.13/js/select2.min.js"></script>
+
+    <script>
+      $(document).ready(function() {
+        // Toggle custom dropdown for descriptors on header click
+        $('.custom-dropdown-descriptors .dropdown-header').on('click', function() {
+          $(this).parent().toggleClass('open');
+        });
+        
+        $('.select2').select2({
+          placeholder: "Select options",
+          allowClear: true,
+          dropdownCssClass: "select2-dropdown-dark",
+          containerCssClass: "select2-container-dark"
+        });
+
+        // Ensure progress title div exists (idempotent)
+        if (!$("#progressTitle").length) {
+          $("#progress_output h3").after("<div id='progressTitle' style='font-weight:bold; padding-bottom:5px;'></div>");
+        }
+
+        // --- Browse Button Logic ---
+        // REMOVED sanitizePath function
+
+        // Wait for pywebview API to be ready before attaching handlers
+        window.addEventListener('pywebviewready', function() {
+          console.log("pywebview API is ready.");
+
+          $("#browse-audio").click(async function() {
+            try {
+              // Call using window.pywebview.api
+              const filePath = await window.pywebview.api.browse_file();
+              // REMOVED sanitizePath call
+              if (filePath) { // Check raw path
+                $("#audio_path").val(filePath); // Use raw path
+                console.log("Selected audio file:", filePath); // Log raw path
+              } else {
+                console.log("Audio file selection cancelled.");
+              }
+            } catch (error) {
+              console.error("Error browsing for audio file:", error);
+              alert("Could not browse for file. Ensure the backend API is running.");
+            }
+          });
+
+          $("#browse-output").click(async function() {
+            try {
+              // Call using window.pywebview.api
+              const folderPath = await window.pywebview.api.browse_folder();
+              // REMOVED sanitizePath call
+              if (folderPath) { // Check raw path
+                $("#output_path").val(folderPath); // Use raw path
+                 console.log("Selected output folder:", folderPath); // Log raw path
+              } else {
+                console.log("Output folder selection cancelled.");
+              }
+            } catch (error) {
+               console.error("Error browsing for output folder:", error);
+              alert("Could not browse for folder. Ensure the backend API is running.");
+            }
+          });
+
+          $("#browse-beatmap").click(async function() {
+            try {
+              // Call using window.pywebview.api
+              const filePath = await window.pywebview.api.browse_file(); // Use browse_file for beatmap
+              // REMOVED sanitizePath call
+              if (filePath) { // Check raw path
+                $("#beatmap_path").val(filePath); // Use raw path
+                console.log("Selected beatmap file:", filePath); // Log raw path
+              } else {
+                console.log("Beatmap file selection cancelled.");
+              }
+            } catch (error) {
+              console.error("Error browsing for beatmap file:", error);
+              alert("Could not browse for file. Ensure the backend API is running.");
+            }
+          });
+
+        }); // End of pywebviewready listener
+        // --- End Browse Button Logic ---
+
+        // --- Prevent Number Input Scroll/Arrows (except Year) ---
+        $('input[type="number"]').not('#year').each(function() {
+          // Disable mouse wheel
+          $(this).on('wheel', function(e) {
+            e.preventDefault();
+          });
+
+          // Disable arrow keys (up/down)
+          $(this).on('keydown', function(e) {
+            if (e.key === "ArrowUp" || e.key === "ArrowDown") {
+              e.preventDefault();
+            }
+          });
+        });
+        // --- End Number Input Scroll/Arrows Prevention ---
+
+        $("#inferenceForm").submit(function(e) {
+          e.preventDefault(); // Prevent default form submission
+
+          // Reset UI
+          $("#progress_output").show();
+          $("#progressBar").css("width", "0%");
+          $("#beatmapLink").hide();
+          $("#init_message").text("Initializing process... This may take a moment.").show(); // Show init message
+          $("#progressTitle").text("");
+
+          // State variables for progress tracking
+          var progressTitles = ["Generating Timing", "Generating Kiai", "Generating Map", "Sequence Length"];
+          var phaseIndex = 0;
+          var additionalCounter = 2;
+          var previousPercent = 0;
+
+          $("button[type='submit']").prop("disabled", true); // Disable submit button
+
+          // Use AJAX to POST form data to the Flask backend
+          $.ajax({
+            url: "/start_inference", // Flask endpoint
+            method: "POST",
+            data: $(this).serialize(), // Serialize form data
+            success: function() {
+              // If POST is successful, start listening for Server-Sent Events
+              var audioPath = $("#audio_path").val() || "audio file"; // Store for later use in link text
+              console.log("Inference started. Connecting to SSE stream...");
+              var evtSource = new EventSource("/stream_output"); // Flask SSE endpoint
+
+              evtSource.onmessage = function(e) {
+                 // Hide init message once data arrives
+                if ($("#init_message").is(":visible")) { $("#init_message").hide(); }
+
+                console.log("SSE Data:", e.data); // Log received data
+
+                var progressMatch = e.data.match(/^\s*(\d+)%\|/);
+                if (progressMatch) {
+                  var currentPercent = parseInt(progressMatch[1].trim(), 10);
+
+                  // Logic to update phase title based on percentage reset
+                  if (currentPercent > 0 && previousPercent === 0 && phaseIndex === 0) {
+                      $("#progressTitle").text(progressTitles[phaseIndex]);
+                  } else if (currentPercent < previousPercent && !isNaN(currentPercent)) {
+                      phaseIndex++;
+                      if (phaseIndex < progressTitles.length) {
+                          $("#progressTitle").text(progressTitles[phaseIndex]);
+                      } else {
+                          $("#progressTitle").text("Sequence Length " + additionalCounter);
+                          additionalCounter++;
+                      }
+                  }
+                  if (!isNaN(currentPercent)) {
+                     previousPercent = currentPercent;
+                     $("#progressBar").css("width", currentPercent + "%");
+                  }
+
+                } else if (e.data.indexOf("Generated beatmap saved to") !== -1) {
+                  // Handle beatmap generation message
+                  var beatmapLine = e.data.trim();
+                  var parts = beatmapLine.split("Generated beatmap saved to");
+                  if (parts.length > 1) {
+                    var fullPath = parts[1].trim();
+                    fullPath = fullPath.replace(/\\/g, "/"); // Normalize path
+                    var folderPath = fullPath.substring(0, fullPath.lastIndexOf("/"));
+
+                    // Update the link to use the folder path and trigger Flask endpoint
+                    $("#beatmapLinkAnchor")
+                      .attr("href", "#") // Keep as non-navigating link
+                      .text("Click here to open the folder containing your map.")
+                      .off("click") // Remove previous handlers
+                      .on("click", function(clickEvent) {
+                        clickEvent.preventDefault();
+                        console.log("Requesting folder open via Flask:", folderPath);
+                        // Use GET request to Flask endpoint to open folder
+                        $.get("/open_folder", { folder: folderPath })
+                          .done(function(response) {
+                            console.log("Open folder response:", response);
+                          })
+                          .fail(function() {
+                            alert("Failed to open folder via backend.");
+                          });
+                      });
+                    $("#beatmapLink").show(); // Show the link div
+                  }
+                }
+              }; // End of evtSource.onmessage
+
+              evtSource.onerror = function(err) {
+                console.error("EventSource failed:", err);
+                evtSource.close();
+                $("button[type='submit']").prop("disabled", false); // Re-enable button on error
+              };
+
+              // Listen for the custom 'end' event from Flask
+              evtSource.addEventListener("end", function(e) {
+                console.log("Received end event from server.");
+                $("#progressBar").css("width", "100%");
+                 // Optionally update title on completion
+                if ($("#progressTitle").text() === "" || $("#progressTitle").text().startsWith("Sequence Length")) {
+                    $("#progressTitle").text("Processing Complete");
+                }
+                evtSource.close(); // Close the connection
+                $("button[type='submit']").prop("disabled", false); // Re-enable button
+              });
+
+            }, // End of AJAX success
+            error: function(jqXHR, textStatus, errorThrown) {
+              // Handle AJAX error (failed to start inference)
+              console.error("Failed to start inference:", textStatus, errorThrown);
+              alert("Failed to start inference process. Check backend console.");
+              $("button[type='submit']").prop("disabled", false); // Re-enable button
+            }
+          }); // End of AJAX call
+        }); // End of form submit handler
+      }); // End of document ready
+    </script>
+  </body>
+</html>
