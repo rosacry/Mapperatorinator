@@ -4,27 +4,19 @@ import threading
 import platform
 import os
 import json
-import sys # For flushing output in SSE
-import time # For SSE keep-alive
-import socket # To find available port
+import sys
+import time
+import socket
 
-# --- Flask Imports ---
 from flask import Flask, render_template, request, Response, url_for, jsonify
 
-# --- Flask App Setup ---
 
-# Use absolute paths for templates and static files relative to this script
 script_dir = os.path.dirname(os.path.abspath(__file__))
 template_folder = os.path.join(script_dir, 'template')
-static_folder = template_folder
+static_folder = os.path.join(script_dir, 'static')
 
-# Ensure 'static' folder exists if you moved style.css back there
-# If style.css is in 'template', change static_folder=template_folder
-# For this example, assuming style.css is back in 'static/'
 if not os.path.isdir(static_folder):
-     print(f"Warning: Static folder not found at {static_folder}. CSS might not load.")
-     # If style.css is in template folder use:
-     # static_folder = template_folder
+     print(f"Warning: Static folder not found at {static_folder}. Ensure it exists and contains your CSS/images.")
 
 app = Flask(__name__, template_folder=template_folder, static_folder=static_folder)
 app.secret_key = os.urandom(24) # Set a secret key for Flask
@@ -69,7 +61,7 @@ def dq_quote(s):
         return s
     return '"' + str(s).replace('"', '\\"') + '"'
 
-# NEW helper function for double-single quotes
+# Helper function for double-single quotes
 def dsq_quote(s):
     """
     Prepares a path string for Hydra command-line override.
@@ -110,14 +102,14 @@ def start_inference():
             return jsonify({"status": "error", "message": "Process already running"}), 409 # Conflict
 
         # --- Construct Command --- (Adapted from previous pywebview version)
-        cmd = ["python", "inference.py"] # Ensure inference.py is accessible
+        cmd = ["python", "inference.py"]
 
         # Required Paths
         if request.form.get('audio_path'):
             cmd.append("audio_path=" + dsq_quote(request.form.get('audio_path')))
         if request.form.get('output_path'):
             cmd.append("output_path=" + dsq_quote(request.form.get('output_path')))
-        # Optional beatmap path
+        # Beatmap path
         if request.form.get('beatmap_path'):
             cmd.append("beatmap_path=" + dsq_quote(request.form.get('beatmap_path')))
 
@@ -129,11 +121,11 @@ def start_inference():
         if request.form.get('year'):
             cmd.append("year=" + dq_quote(request.form.get('year')))
 
-        # Optional numeric settings
+        # Numeric settings
         for param in ['slider_multiplier', 'circle_size', 'keycount', 'hold_note_ratio', 'scroll_speed_ratio', 'cfg_scale', 'seed']:
             if request.form.get(param):
                  cmd.append(f"{param}=" + dq_quote(request.form.get(param)))
-        # Optional mapper_id
+        # mapper_id
         if request.form.get('mapper_id'):
             cmd.append("mapper_id=" + dq_quote(request.form.get('mapper_id')))
 
@@ -156,6 +148,20 @@ def start_inference():
             desc_str = format_list_arg(descriptors)
             cmd.append("descriptors=" + dq_quote(desc_str))
 
+        # Negative Descriptors (newly added)
+        negative_descriptors = request.form.getlist('negative_descriptors')
+        if negative_descriptors:
+            neg_desc_str = format_list_arg(negative_descriptors)
+            cmd.append("negative_descriptors=" + dq_quote(neg_desc_str))
+
+        # In-Context Options (newly added)
+        in_context_options = request.form.getlist('in_context_options')
+        # Only add if the list is not empty (meaning 'None' wasn't checked and/or others were)
+        if in_context_options:
+            # Values are already uppercase (e.g., TIMING, KIAI)
+            context_str = format_list_arg(in_context_options) # Formats like ['TIMING','KIAI']
+            cmd.append("in_context=" + dq_quote(context_str))
+
         command_str = " ".join(cmd)
         print("Executing Command via Flask:", command_str)
 
@@ -177,7 +183,7 @@ def start_inference():
 
         except Exception as e:
             print(f"Error starting subprocess: {e}")
-            current_process = None # Ensure it's reset on error
+            current_process = None
             return jsonify({"status": "error", "message": f"Failed to start process: {e}"}), 500
 
 @app.route('/stream_output')
@@ -195,7 +201,7 @@ def stream_output():
                  # Handle case where process is already finished or never started
                  print("Stream requested but no active process found.")
                  yield "event: end\ndata: No active process or process already finished\n\n"
-                 return # Exit generator
+                 return
 
         if process_to_stream:
             print(f"Streaming output for PID: {process_to_stream.pid}")
@@ -212,18 +218,16 @@ def stream_output():
 
             except Exception as e:
                  print(f"Error during streaming for PID {process_to_stream.pid}: {e}")
-                 yield f"event: error\ndata: Streaming error: {e}\n\n" # Send error event to client
+                 yield f"event: error\ndata: Streaming error: {e}\n\n"
             finally:
                 # Send custom 'end' event
                 yield "event: end\ndata: Process completed or stream terminated\n\n"
                 print(f"Finished streaming for PID: {process_to_stream.pid}")
-                # Clear the global process only if it's the one we streamed
                 with process_lock:
                     if current_process == process_to_stream:
                          current_process = None
                          print("Cleared global current_process reference.")
 
-    # Return the generator function wrapped in a Flask Response
     return Response(generate(), mimetype='text/event-stream')
 
 
@@ -288,8 +292,24 @@ if __name__ == '__main__':
     # Give Flask a moment to start up
     time.sleep(1)
 
+    # --- Calculate Responsive Window Size ---
+    try:
+        primary_screen = webview.screens[0]
+        screen_width = primary_screen.width
+        screen_height = primary_screen.height
+        # Calculate window size (e.g., 45% width, 95% height of primary screen)
+        window_width = int(screen_width * 0.45) 
+        window_height = int(screen_height * 0.95)
+        print(f"Screen: {screen_width}x{screen_height}, Window: {window_width}x{window_height}")
+    except Exception as e:
+        print(f"Could not get screen dimensions, using default: {e}")
+        # Fallback to default size if screen info is unavailable
+        window_width = 900
+        window_height = 1000
+    # --- End Calculate Responsive Window Size ---
+
     # Create the pywebview window pointing to the Flask server
-    window_title = 'Mapperatorinator Interface (Flask+pywebview)'
+    window_title = 'Mapperatorinator'
     flask_url = f'http://127.0.0.1:{flask_port}/'
 
     print(f"Creating pywebview window loading URL: {flask_url}")
@@ -301,13 +321,11 @@ if __name__ == '__main__':
     window = webview.create_window(
         window_title,
         url=flask_url,
-        width=900,
-        height=750,
+        width=window_width,   # Use calculated width
+        height=window_height, # Use calculated height
         resizable=True,
         js_api=api # Expose Python API class here
     )
-
-    # --- No need to inject the window into the api instance anymore --- #
 
     # Start the pywebview event loop (no args needed here now)
     webview.start(debug=True)
