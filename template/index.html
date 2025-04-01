@@ -16,9 +16,6 @@
   </head>
   <body>
     <div class="container">
-      <header class="card animated-header">
-        <h1>Mapperatorinator Interface</h1>
-      </header>
       <main>
         <form id="inferenceForm" method="POST" class="card form-card"> <fieldset>
             <legend>Paths</legend>
@@ -30,10 +27,41 @@
               <input type="text" id="output_path" name="output_path" required />
               <button type="button" id="browse-output" class="browse-button">Browse...</button>
             </div>
-            <div class="path-input-group"> <label for="beatmap_path">Beatmap Path:</label>
+            <div class="path-input-group"> <label for="beatmap_path">Beatmap Path:<span class="tooltip-icon" title="Path to .osu file to autofill metadata, audio path, and output path, or use as reference"><img src="{{ url_for('static', filename='icon.png') }}" alt="Help"></span></label>
               <input type="text" id="beatmap_path" name="beatmap_path" />
               <button type="button" id="browse-beatmap" class="browse-button">Browse...</button>
             </div>
+            <!-- Start: In-Context Options Box -->
+            <div id="in-context-options-box" class="context-options-box" style="display: none;">
+                <h4>In-Context Options<span class="tooltip-icon" title="List of additional context to provide to the model"><img src="{{ url_for('static', filename='icon.png') }}" alt="Help"></span></h4> <!-- Title inside the box -->
+                <div class="context-options-container">
+                  <div class="context-option-item" data-value="NONE">
+                    <input type="checkbox" id="context-none" name="in_context_options" value="NONE" />
+                    <label for="context-none">None</label>
+                  </div>
+                  <div class="context-option-item" data-value="TIMING">
+                    <input type="checkbox" id="context-timing" name="in_context_options" value="TIMING" />
+                    <label for="context-timing">Timing</label>
+                  </div>
+                  <div class="context-option-item" data-value="KIAI">
+                    <input type="checkbox" id="context-kiai" name="in_context_options" value="KIAI" />
+                    <label for="context-kiai">Kiai</label>
+                  </div>
+                  <div class="context-option-item" data-value="MAP">
+                    <input type="checkbox" id="context-map" name="in_context_options" value="MAP" />
+                    <label for="context-map">Map</label>
+                  </div>
+                  <div class="context-option-item" data-value="GD">
+                    <input type="checkbox" id="context-gd" name="in_context_options" value="GD" />
+                    <label for="context-gd">Guest Difficulty</label>
+                  </div>
+                  <div class="context-option-item" data-value="NO_HS">
+                    <input type="checkbox" id="context-no_hs" name="in_context_options" value="NO_HS" />
+                    <label for="context-no_hs">No Hitsound</label>
+                  </div>
+                </div>
+            </div>
+            <!-- End: In-Context Options Box -->
           </fieldset>
 
           <fieldset>
@@ -53,29 +81,37 @@
 
           <fieldset>
             <legend>Optional Settings</legend>
-            <label for="slider_multiplier">Slider Multiplier:</label>
+            <label for="slider_multiplier">Slider Multiplier:<span class="tooltip-icon" title="Slider velocity multiplier"><img src="{{ url_for('static', filename='icon.png') }}" alt="Help"></span></label>
             <input type="number" step="0.1" id="slider_multiplier" name="slider_multiplier" min="0" />
-            <label for="circle_size">Circle Size:</label>
-            <input type="number" step="0.1" id="circle_size" name="circle_size" min="0" />
-            <label for="mapper_id">Mapper ID:</label>
+            <div class="form-group" id="group-circle_size">
+              <label for="circle_size">Circle Size:</label>
+              <input type="number" step="0.1" id="circle_size" name="circle_size" min="0" />
+            </div>
+            <label for="mapper_id">Mapper ID:<span class="tooltip-icon" title="Mapper user ID for style"><img src="{{ url_for('static', filename='icon.png') }}" alt="Help"></span></label>
             <input type="text" id="mapper_id" name="mapper_id" />
-            <label for="keycount">Key Count (Mania):</label>
-            <input type="number" id="keycount" name="keycount" min="0" />
-            <label for="hold_note_ratio">Hold Note Ratio:</label>
-            <input type="number" step="0.01" id="hold_note_ratio" name="hold_note_ratio" min="0" max="1" />
-            <label for="scroll_speed_ratio">Scroll Speed Ratio:</label>
-            <input type="number" step="0.01" id="scroll_speed_ratio" name="scroll_speed_ratio" min="0" max="1" />
-            <label for="cfg_scale">CFG Scale:</label>
+            <div class="form-group" id="group-keycount">
+              <label for="keycount">Key Count:</label>
+              <input type="number" id="keycount" name="keycount" min="0" />
+            </div>
+            <div class="form-group" id="group-hold_note_ratio">
+              <label for="hold_note_ratio">Hold Note Ratio:<span class="tooltip-icon" title="Hold note ratio for mania 0-1"><img src="{{ url_for('static', filename='icon.png') }}" alt="Help"></span></label>
+              <input type="number" step="0.01" id="hold_note_ratio" name="hold_note_ratio" min="0" max="1" />
+            </div>
+            <div class="form-group" id="group-scroll_speed_ratio">
+              <label for="scroll_speed_ratio">Scroll Speed Ratio:<span class="tooltip-icon" title="Scroll speed ratio for mania and ctb 0-1"><img src="{{ url_for('static', filename='icon.png') }}" alt="Help"></span></label>
+              <input type="number" step="0.01" id="scroll_speed_ratio" name="scroll_speed_ratio" min="0" max="1" />
+            </div>
+            <label for="cfg_scale">CFG Scale:<span class="tooltip-icon" title="Scale of the classifier-free guidance"><img src="{{ url_for('static', filename='icon.png') }}" alt="Help"></span></label>
             <input type="number" step="0.1" id="cfg_scale" name="cfg_scale" min="0" />
-            <label for="seed">Random Seed:</label>
+            <label for="seed">Random Seed:<span class="tooltip-icon" title="Random seed for generation"><img src="{{ url_for('static', filename='icon.png') }}" alt="Help"></span></label>
             <input type="text" id="seed" name="seed" />
           </fieldset>
 
           <fieldset>
             <legend>Timing & Segments</legend>
-            <label for="start_time">Start Time (ms):</label>
+            <label for="start_time">Start Time (ms):<span class="tooltip-icon" title="Generation start time in milliseconds"><img src="{{ url_for('static', filename='icon.png') }}" alt="Help"></span></label>
             <input type="number" id="start_time" name="start_time" min="0" />
-            <label for="end_time">End Time (ms):</label>
+            <label for="end_time">End Time (ms):<span class="tooltip-icon" title="Generation end time in milliseconds"><img src="{{ url_for('static', filename='icon.png') }}" alt="Help"></span></label>
             <input type="number" id="end_time" name="end_time" min="0" />
           </fieldset>
 
@@ -87,17 +123,19 @@
             </div>
             <div class="option-item">
               <input type="checkbox" id="add_to_beatmap" name="add_to_beatmap" value="true" />
-              <label for="add_to_beatmap">Add to Beatmap</label>
+              <label for="add_to_beatmap">Add to Beatmap<span class="tooltip-icon" title="Whether to add generated content to the reference beatmap instead of making a new beatmap"><img src="{{ url_for('static', filename='icon.png') }}" alt="Help"></span></label>
             </div>
             <div class="option-item">
               <input type="checkbox" id="super_timing" name="super_timing" value="true" />
-              <label for="super_timing">Super Timing</label>
+              <label for="super_timing">Super Timing<span class="tooltip-icon" title="Whether to use slow accurate variable BPM timing generator"><img src="{{ url_for('static', filename='icon.png') }}" alt="Help"></span></label>
             </div>
           </fieldset>
 
           <div class="custom-dropdown-descriptors">
             <div class="dropdown-header">
-              <span class="dropdown-title">Descriptors</span>
+              <div>
+                <span class="dropdown-title">Descriptors</span><span class="tooltip-icon" title="List of descriptors for style (1 click = include, 2 clicks = exclude)"><img src="{{ url_for('static', filename='icon.png') }}" alt="Help"></span>
+              </div>
               <span class="dropdown-arrow">&#9660;</span>
             </div>
             <div class="dropdown-content">
@@ -234,7 +272,15 @@
       $(document).ready(function() {
         // Toggle custom dropdown for descriptors on header click
         $('.custom-dropdown-descriptors .dropdown-header').on('click', function() {
-          $(this).parent().toggleClass('open');
+          var $dropdown = $(this).parent();
+          $dropdown.toggleClass('open');
+
+          // If the dropdown was just opened, scroll its header to the top
+          if ($dropdown.hasClass('open')) {
+            $('html, body').animate({
+              scrollTop: $(this).offset().top
+            }, 500); // 500ms smooth scroll duration
+          }
         });
         
         $('.select2').select2({
@@ -310,6 +356,89 @@
         }); // End of pywebviewready listener
         // --- End Browse Button Logic ---
 
+        // --- In-Context Dropdown Logic ---
+        const $beatmapPathInput = $('#beatmap_path');
+        const $inContextOptionsBox = $('#in-context-options-box'); // Renamed variable
+        const $contextCheckboxes = $inContextOptionsBox.find('input[name="in_context_options"]');
+        const $noneCheckbox = $('#context-none');
+        const animationSpeed = 300; // ms
+
+        // Show/Hide options box based on input content
+        $beatmapPathInput.on('input', function() {
+          if ($(this).val().trim() !== '') {
+            if (!$inContextOptionsBox.is(':visible')) {
+              $inContextOptionsBox.fadeIn(animationSpeed);
+            }
+          } else {
+            if ($inContextOptionsBox.is(':visible')) {
+              $inContextOptionsBox.fadeOut(animationSpeed);
+            }
+          }
+        });
+
+        // Handle checkbox interactions
+        $contextCheckboxes.on('change', function() {
+            const $changedCheckbox = $(this);
+            const isNoneChecked = $noneCheckbox.is(':checked');
+            const $otherCheckboxes = $contextCheckboxes.not($noneCheckbox);
+            const $otherChecked = $otherCheckboxes.filter(':checked');
+
+            // Disable all checkboxes temporarily during processing to prevent race conditions
+            $contextCheckboxes.prop('disabled', true);
+
+            if ($changedCheckbox.is($noneCheckbox)) {
+                // If 'None' was just checked
+                if (isNoneChecked) {
+                    $otherCheckboxes.prop('checked', false); // Uncheck others
+                    // Disable other checkboxes *before* animation
+                    $otherCheckboxes.prop('disabled', true);
+                    $otherCheckboxes.closest('.context-option-item').slideUp(animationSpeed, function() {
+                        // Re-enable only the 'None' checkbox after animation
+                        $noneCheckbox.prop('disabled', false);
+                    });
+                } else {
+                    // If 'None' was just unchecked, show and enable others
+                    $otherCheckboxes.closest('.context-option-item').slideDown(animationSpeed, function() {
+                        // Enable others and 'None' after animation
+                         $contextCheckboxes.prop('disabled', false);
+                    });
+                }
+            } else {
+                // If another checkbox was just changed
+                if ($changedCheckbox.is(':checked')) {
+                    // If another was checked, ensure 'None' is unchecked and disabled, then hide
+                    $noneCheckbox.prop('checked', false);
+                    $noneCheckbox.prop('disabled', true); // Disable None immediately
+                    $noneCheckbox.closest('.context-option-item').fadeOut(animationSpeed, function() {
+                         // Re-enable the other checkboxes after fade out
+                         $otherCheckboxes.prop('disabled', false);
+                         // $changedCheckbox is already enabled as it triggered the event
+                    });
+                } else {
+                    // If another was unchecked, check if any others are still checked
+                    if ($otherChecked.length === 0) {
+                       // If no others are checked, show and enable 'None' again
+                       $noneCheckbox.closest('.context-option-item').fadeIn(animationSpeed, function() {
+                           $noneCheckbox.prop('disabled', false); // Enable None after fade in
+                           // Ensure other checkboxes are also enabled
+                           $otherCheckboxes.prop('disabled', false);
+                       });
+                    } else {
+                        // If others are still checked, just re-enable the checkboxes
+                         $contextCheckboxes.prop('disabled', false);
+                    }
+                }
+            }
+        });
+        // Ensure initial state is correct (e.g., if loaded with pre-filled data)
+        // This might need adjustment based on how form state is persisted
+        if ($contextCheckboxes.not($noneCheckbox).is(':checked')) {
+            $noneCheckbox.prop('checked', false).closest('.context-option-item').hide();
+        } else if ($noneCheckbox.is(':checked')) {
+            $contextCheckboxes.not($noneCheckbox).prop('checked', false).closest('.context-option-item').hide();
+        }
+        // --- End In-Context Dropdown Logic ---
+
         // --- Prevent Number Input Scroll/Arrows (except Year) ---
         $('input[type="number"]').not('#year').each(function() {
           // Disable mouse wheel
@@ -325,6 +454,79 @@
           });
         });
         // --- End Number Input Scroll/Arrows Prevention ---
+
+        // --- Gamemode Conditional Visibility ---
+        function updateOptionalSettingsVisibility() {
+          var selectedGamemode = $("#gamemode").val(); // Get the string value ('0', '1', '2', '3')
+          var animationSpeed = 200; // Speed in milliseconds (e.g., 200 for a quick slide)
+
+          // Determine which groups should be visible
+          var showCircleSize = (selectedGamemode === '0');
+          var showKeyCount = (selectedGamemode === '3');
+          var showHoldNoteRatio = (selectedGamemode === '3');
+          var showScrollSpeed = (selectedGamemode === '2' || selectedGamemode === '3');
+
+          // Animate Circle Size
+          if (showCircleSize && !$("#group-circle_size").is(':visible')) {
+            $("#group-circle_size").slideDown(animationSpeed);
+          } else if (!showCircleSize && $("#group-circle_size").is(':visible')) {
+            $("#group-circle_size").slideUp(animationSpeed);
+          }
+
+          // Animate Key Count
+          if (showKeyCount && !$("#group-keycount").is(':visible')) {
+            $("#group-keycount").slideDown(animationSpeed);
+          } else if (!showKeyCount && $("#group-keycount").is(':visible')) {
+            $("#group-keycount").slideUp(animationSpeed);
+          }
+
+          // Animate Hold Note Ratio
+          if (showHoldNoteRatio && !$("#group-hold_note_ratio").is(':visible')) {
+            $("#group-hold_note_ratio").slideDown(animationSpeed);
+          } else if (!showHoldNoteRatio && $("#group-hold_note_ratio").is(':visible')) {
+            $("#group-hold_note_ratio").slideUp(animationSpeed);
+          }
+
+          // Animate Scroll Speed Ratio
+          if (showScrollSpeed && !$("#group-scroll_speed_ratio").is(':visible')) {
+            $("#group-scroll_speed_ratio").slideDown(animationSpeed);
+          } else if (!showScrollSpeed && $("#group-scroll_speed_ratio").is(':visible')) {
+            $("#group-scroll_speed_ratio").slideUp(animationSpeed);
+          }
+        }
+
+        // Initial call on page load (run without animation initially)
+        updateOptionalSettingsVisibility();
+
+        // Attach change listener to gamemode select
+        $("#gamemode").on('change', updateOptionalSettingsVisibility);
+        // --- End Gamemode Conditional Visibility ---
+
+        // --- Descriptor Checkbox 3-State Logic ---
+        $('.descriptors-container').on('click', 'input[name="descriptors"]', function(e) {
+            var $checkbox = $(this);
+
+            // Prevent default checkbox behavior as we manage state manually
+            e.preventDefault();
+
+            if ($checkbox.hasClass('positive-check')) {
+                // State: Positive -> Negative
+                $checkbox.removeClass('positive-check').addClass('negative-check');
+                $checkbox.prop('checked', true); // Keep it technically 'checked' for form data
+                console.log($checkbox.val() + ' set to negative');
+            } else if ($checkbox.hasClass('negative-check')) {
+                // State: Negative -> Off
+                $checkbox.removeClass('negative-check');
+                $checkbox.prop('checked', false);
+                console.log($checkbox.val() + ' set to off');
+            } else {
+                // State: Off -> Positive
+                $checkbox.addClass('positive-check');
+                $checkbox.prop('checked', true);
+                console.log($checkbox.val() + ' set to positive');
+            }
+        });
+        // --- End Descriptor Checkbox Logic ---
 
         $("#inferenceForm").submit(function(e) {
           e.preventDefault(); // Prevent default form submission
@@ -348,7 +550,59 @@
           $.ajax({
             url: "/start_inference", // Flask endpoint
             method: "POST",
-            data: $(this).serialize(), // Serialize form data
+            data: function() {
+                var formData = new FormData($("#inferenceForm")[0]); // Use FormData for easier handling
+
+                // Clear existing descriptors and prepare lists
+                formData.delete('descriptors');
+                var positiveDescriptors = [];
+                var negativeDescriptors = [];
+
+                // Iterate over descriptor checkboxes
+                $('input[name="descriptors"]').each(function() {
+                    var $cb = $(this);
+                    if ($cb.hasClass('positive-check')) {
+                        positiveDescriptors.push($cb.val());
+                    } else if ($cb.hasClass('negative-check')) {
+                        negativeDescriptors.push($cb.val());
+                    }
+                });
+
+                // Add collected descriptors to FormData using traditional submission format
+                positiveDescriptors.forEach(function(val) {
+                  formData.append('descriptors', val);
+                });
+                negativeDescriptors.forEach(function(val) {
+                  formData.append('negative_descriptors', val);
+                });
+
+                // --- Add In-Context Options ---
+                var inContextOptions = [];
+                var isNoneChecked = $('#context-none').is(':checked');
+
+                if (!isNoneChecked) {
+                    $('input[name="in_context_options"]:checked').not('#context-none').each(function() {
+                        inContextOptions.push($(this).val()); // Already uppercase (TIMING, KIAI, etc.)
+                    });
+                }
+                // Append only if there are selected options (and None isn't checked)
+                if (inContextOptions.length > 0) {
+                   inContextOptions.forEach(function(val) {
+                       formData.append('in_context_options', val);
+                   });
+                }
+                 // If 'None' is checked or no options are selected, 'in_context_options' won't be added
+                // --- End Add In-Context Options ---
+
+                // Debug: Log FormData contents before sending
+                // for (var pair of formData.entries()) {
+                //    console.log(pair[0]+ ', ' + pair[1]);
+                // }
+
+                return formData;
+            }(),
+            processData: false, // Important: Prevent jQuery from processing the FormData
+            contentType: false, // Important: Let the browser set the correct content type
             success: function() {
               // If POST is successful, start listening for Server-Sent Events
               var audioPath = $("#audio_path").val() || "audio file"; // Store for later use in link text
