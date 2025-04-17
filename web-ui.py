@@ -1,25 +1,24 @@
-import webview
-import subprocess
-import threading
-import platform
-import os
-import json
-import sys
-import time
-import socket
 import functools
+import os
+import platform
+import socket
+import subprocess
+import sys
+import threading
+import time
 from typing import Callable, Any, Tuple, Dict
 
-from flask import Flask, render_template, request, Response, url_for, jsonify
+import webview
 import werkzeug.serving
-
+from flask import Flask, render_template, request, Response, jsonify
 
 script_dir = os.path.dirname(os.path.abspath(__file__))
 template_folder = os.path.join(script_dir, 'template')
 static_folder = os.path.join(script_dir, 'static')
 
 if not os.path.isdir(static_folder):
-     print(f"Warning: Static folder not found at {static_folder}. Ensure it exists and contains your CSS/images.")
+    print(f"Warning: Static folder not found at {static_folder}. Ensure it exists and contains your CSS/images.")
+
 
 # Set Flask environment to production before initializing Flask app to silence warning
 # os.environ['FLASK_ENV'] = 'production' # Removed, using cli patch instead
@@ -29,18 +28,24 @@ def _ansi_style_supressor(func: Callable[..., Any]) -> Callable[..., Any]:
     @functools.wraps(func)
     def wrapper(*args: Tuple[Any, ...], **kwargs: Dict[str, Any]) -> Any:
         # Check if the first argument is the specific warning string
-        if args and isinstance(args[0], str) and args[0].startswith('WARNING: This is a development server.'):
-            return '' # Return empty string to suppress
+        if args:
+            first_arg = args[0]
+            if isinstance(first_arg, str) and first_arg.startswith('WARNING: This is a development server.'):
+                return ''  # Return empty string to suppress
         # Otherwise, call the original function
         return func(*args, **kwargs)
+
     return wrapper
 
+
 # Apply the patch before Flask initialization
+# noinspection PyProtectedMember
 werkzeug.serving._ansi_style = _ansi_style_supressor(werkzeug.serving._ansi_style)
 # --- End Patch ---
 
 app = Flask(__name__, template_folder=template_folder, static_folder=static_folder)
-app.secret_key = os.urandom(24) # Set a secret key for Flask
+app.secret_key = os.urandom(24)  # Set a secret key for Flask
+
 
 # --- pywebview API Class ---
 class Api:
@@ -54,7 +59,7 @@ class Api:
             return None
         current_window = webview.windows[0]
         result = current_window.create_file_dialog(webview.OPEN_DIALOG)
-        print(f"File dialog result: {result}") # Debugging
+        print(f"File dialog result: {result}")  # Debugging
         # pywebview returns a tuple, even for single file selection
         return result[0] if result else None
 
@@ -66,13 +71,15 @@ class Api:
             return None
         current_window = webview.windows[0]
         result = current_window.create_file_dialog(webview.FOLDER_DIALOG)
-        print(f"Folder dialog result: {result}") # Debugging
+        print(f"Folder dialog result: {result}")  # Debugging
         # FOLDER_DIALOG also returns a tuple containing the path
         return result[0] if result else None
 
+
 # --- Shared State for Inference Process ---
-current_process = None
-process_lock = threading.Lock() # Lock for accessing current_process safely
+current_process: subprocess.Popen | None = None
+process_lock = threading.Lock()  # Lock for accessing current_process safely
+
 
 # --- Helper Function (same as original Flask) ---
 def dq_quote(s):
@@ -81,6 +88,7 @@ def dq_quote(s):
     if isinstance(s, str) and s.startswith('"') and s.endswith('"'):
         return s
     return '"' + str(s).replace('"', '\\"') + '"'
+
 
 # Helper function for double-single quotes
 def dsq_quote(s):
@@ -93,13 +101,14 @@ def dsq_quote(s):
     path_str = str(s)
 
     # 1. Escape internal single quotes within the path string itself
-    escaped_path = path_str.replace("'", "\\'") # Replace ' with \'
+    escaped_path = path_str.replace("'", "\\'")  # Replace ' with \'
 
     # 2. Wrap the escaped path string in single quotes
     inner_quoted = "'" + escaped_path + "'"
 
     # 3. Wrap the single-quoted string in double quotes for the shell command line
     return '"' + inner_quoted + '"'
+
 
 def format_list_arg(items):
     """Formats a list of strings for the command line argument."""
@@ -114,16 +123,17 @@ def index():
     # Jinja rendering is now handled by Flask's render_template
     return render_template('index.html')
 
+
 @app.route('/start_inference', methods=['POST'])
 def start_inference():
     """Starts the inference process based on form data."""
     global current_process
     with process_lock:
         if current_process and current_process.poll() is None:
-            return jsonify({"status": "error", "message": "Process already running"}), 409 # Conflict
+            return jsonify({"status": "error", "message": "Process already running"}), 409  # Conflict
 
         # --- Construct Command List (shell=False) ---
-        python_executable = sys.executable # Get path to current Python interpreter
+        python_executable = sys.executable  # Get path to current Python interpreter
         cmd = [python_executable, "inference.py"]
 
         # Helper to quote values for Hydra's command-line parser
@@ -131,7 +141,7 @@ def start_inference():
             """Quotes a value for Hydra (single quotes, escapes internal)."""
             value_str = str(value)
             # Escape internal single quotes: ' -> '\''
-            escaped_value = value_str.replace("'", "'\\''") 
+            escaped_value = value_str.replace("'", "'\\''")
             return f"'{escaped_value}'"
 
         # Set of keys known to be paths needing quoting for Hydra
@@ -139,14 +149,14 @@ def start_inference():
 
         # Helper to add argument if value exists
         def add_arg(key, value):
-            if value is not None and value != '': # Ensure value is not empty
+            if value is not None and value != '':  # Ensure value is not empty
                 if key in path_keys:
                     # Quote path values for Hydra
                     cmd.append(f"{key}={hydra_quote(value)}")
                 else:
                     # Other values usually don't need explicit Hydra quoting when passed via list
                     cmd.append(f"{key}={value}")
-        
+
         # Helper for list arguments (Hydra format: key=['item1','item2',...])
         def add_list_arg(key, items):
             if items:
@@ -167,7 +177,8 @@ def start_inference():
         add_arg("year", request.form.get('year'))
 
         # Numeric settings
-        for param in ['slider_multiplier', 'circle_size', 'keycount', 'hold_note_ratio', 'scroll_speed_ratio', 'cfg_scale', 'seed']:
+        for param in ['slider_multiplier', 'circle_size', 'keycount', 'hold_note_ratio', 'scroll_speed_ratio',
+                      'cfg_scale', 'seed']:
             add_arg(param, request.form.get(param))
         # mapper_id
         add_arg("mapper_id", request.form.get('mapper_id'))
@@ -194,7 +205,7 @@ def start_inference():
 
         # In-Context Options
         in_context_options = request.form.getlist('in_context_options')
-        if in_context_options: # Only add if not empty
+        if in_context_options:  # Only add if not empty
             add_list_arg("in_context", in_context_options)
         # --- End Command List Construction ---
 
@@ -203,10 +214,10 @@ def start_inference():
         try:
             # Start the inference process without shell=True
             current_process = subprocess.Popen(
-                cmd, # Pass the list directly
-                shell=False, # Explicitly False (default)
+                cmd,  # Pass the list directly
+                shell=False,  # Explicitly False (default)
                 stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT, # Combine stdout and stderr
+                stderr=subprocess.STDOUT,  # Combine stdout and stderr
                 bufsize=1,
                 universal_newlines=True,
                 encoding='utf-8',
@@ -214,29 +225,30 @@ def start_inference():
             )
             print(f"Started process with PID: {current_process.pid}")
             # Return success to the AJAX call
-            return jsonify({"status": "success", "message": "Inference started"}), 202 # Accepted
+            return jsonify({"status": "success", "message": "Inference started"}), 202  # Accepted
 
         except Exception as e:
             print(f"Error starting subprocess: {e}")
             current_process = None
             return jsonify({"status": "error", "message": f"Failed to start process: {e}"}), 500
 
+
 @app.route('/stream_output')
 def stream_output():
     """Streams the output of the running inference process using SSE."""
+
     def generate():
         global current_process
-        process_to_stream = None # Local reference
 
         # Short lock to safely get the process object
         with process_lock:
-             if current_process and current_process.poll() is None:
-                 process_to_stream = current_process
-             else:
-                 # Handle case where process is already finished or never started
-                 print("Stream requested but no active process found.")
-                 yield "event: end\ndata: No active process or process already finished\n\n"
-                 return
+            if current_process and current_process.poll() is None:
+                process_to_stream = current_process
+            else:
+                # Handle case where process is already finished or never started
+                print("Stream requested but no active process found.")
+                yield "event: end\ndata: No active process or process already finished\n\n"
+                return
 
         if process_to_stream:
             print(f"Streaming output for PID: {process_to_stream.pid}")
@@ -244,40 +256,39 @@ def stream_output():
                 # Stream lines from stdout
                 for line in iter(process_to_stream.stdout.readline, ""):
                     yield f"data: {line.rstrip()}\n\n"
-                    sys.stdout.flush() # Ensure data is sent
+                    sys.stdout.flush()  # Ensure data is sent
 
                 # Check process completion status after stream ends
-                process_to_stream.stdout.close() # Close the pipe
-                return_code = process_to_stream.wait() # Wait for process to terminate fully
+                process_to_stream.stdout.close()  # Close the pipe
+                return_code = process_to_stream.wait()  # Wait for process to terminate fully
                 print(f"Process {process_to_stream.pid} finished streaming with code: {return_code}")
 
             except Exception as e:
-                 print(f"Error during streaming for PID {process_to_stream.pid}: {e}")
-                 yield f"event: error\ndata: Streaming error: {e}\n\n"
+                print(f"Error during streaming for PID {process_to_stream.pid}: {e}")
+                yield f"event: error\ndata: Streaming error: {e}\n\n"
             finally:
                 # Send custom 'end' event
                 yield "event: end\ndata: Process completed or stream terminated\n\n"
                 print(f"Finished streaming for PID: {process_to_stream.pid}")
                 with process_lock:
                     if current_process == process_to_stream:
-                         current_process = None
-                         print("Cleared global current_process reference.")
+                        current_process = None
+                        print("Cleared global current_process reference.")
 
     return Response(generate(), mimetype='text/event-stream')
 
-@app.route('/cancel_inference', methods=['POST']) # Use POST for actions
+
+@app.route('/cancel_inference', methods=['POST'])  # Use POST for actions
 def cancel_inference():
     """Attempts to terminate the currently running inference process."""
     global current_process
-    success = False
-    message = ""
 
     with process_lock:
         if current_process and current_process.poll() is None:
             try:
                 pid = current_process.pid
                 print(f"Attempting to terminate process PID: {pid}...")
-                current_process.terminate() # Send SIGTERM
+                current_process.terminate()  # Send SIGTERM
                 # Optional: Add a short wait to see if it terminates quickly
                 try:
                     current_process.wait(timeout=1)
@@ -287,7 +298,7 @@ def cancel_inference():
                     print(f"Process PID: {pid} did not terminate immediately after SIGTERM.")
                     message = "Cancel request sent. Process termination might take a moment."
                     # You could consider current_process.kill() here if terminate isn't enough
-                
+
                 success = True
                 # DO NOT set current_process = None here. Let the stream generator handle it.
             except Exception as e:
@@ -296,7 +307,7 @@ def cancel_inference():
                 success = False
         elif current_process:
             message = "Process already finished."
-            success = False # Or True if you consider it 'cancelled' as it's done
+            success = False  # Or True if you consider it 'cancelled' as it's done
         else:
             message = "No process is currently running."
             success = False
@@ -308,11 +319,12 @@ def cancel_inference():
         status_code = 500 if "Error occurred" in message else (409 if "already finished" in message else 404)
         return jsonify({"status": "error", "message": message}), status_code
 
+
 @app.route('/open_folder', methods=['GET'])
 def open_folder():
     """Opens a folder in the file explorer."""
     folder_path = request.args.get('folder')
-    print(f"Request received to open folder: {folder_path}") # Debug print
+    print(f"Request received to open folder: {folder_path}")  # Debug print
     if not folder_path or not os.path.isdir(folder_path):
         print(f"Invalid folder path provided: {folder_path}")
         return "Error: Invalid or non-existent folder path specified", 400
@@ -320,7 +332,7 @@ def open_folder():
     try:
         system = platform.system()
         if system == 'Windows':
-            os.startfile(os.path.normpath(folder_path)) # More reliable on Windows
+            os.startfile(os.path.normpath(folder_path))  # More reliable on Windows
         elif system == 'Darwin':  # macOS
             subprocess.Popen(['open', folder_path])
         else:  # Linux and others
@@ -335,7 +347,7 @@ def open_folder():
 # --- Function to Run Flask in a Thread ---
 def run_flask(port):
     """Runs the Flask app."""
-    
+
     # Use threaded=True for better concurrency within Flask
     # Avoid debug=True as it interferes with threading and pywebview
     print(f"Starting Flask server on http://127.0.0.1:{port}")
@@ -345,6 +357,7 @@ def run_flask(port):
     except OSError as e:
         print(f"Flask server could not start on port {port}: {e}")
         # Optionally: try another port or exit
+
 
 # --- Function to Find Available Port ---
 def find_available_port(start_port=5000, max_tries=100):
@@ -356,8 +369,9 @@ def find_available_port(start_port=5000, max_tries=100):
                 print(f"Found available port: {port}")
                 return port
             except OSError:
-                continue # Port already in use
+                continue  # Port already in use
     raise IOError("Could not find an available port.")
+
 
 # --- Main Execution ---
 if __name__ == '__main__':
@@ -377,7 +391,7 @@ if __name__ == '__main__':
         screen_width = primary_screen.width
         screen_height = primary_screen.height
         # Calculate window size (e.g., 45% width, 95% height of primary screen)
-        window_width = int(screen_width * 0.45) 
+        window_width = int(screen_width * 0.45)
         window_height = int(screen_height * 0.95)
         print(f"Screen: {screen_width}x{screen_height}, Window: {window_width}x{window_height}")
     except Exception as e:
@@ -400,15 +414,14 @@ if __name__ == '__main__':
     window = webview.create_window(
         window_title,
         url=flask_url,
-        width=window_width,   # Use calculated width
-        height=window_height, # Use calculated height
+        width=window_width,  # Use calculated width
+        height=window_height,  # Use calculated height
         resizable=True,
-        js_api=api # Expose Python API class here
+        js_api=api  # Expose Python API class here
     )
 
     # Start the pywebview event loop (no args needed here now)
     webview.start()
-
 
     print("Pywebview window closed. Exiting application.")
     # Flask thread will exit automatically as it's a daemon
