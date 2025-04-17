@@ -14,3 +14,4 @@ pyarrow
 einops
 lightning
 pywebview
+flask
