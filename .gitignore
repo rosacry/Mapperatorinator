@@ -5,13 +5,3 @@ tensorboard_logs
 .idea
 test
 test_inference.py
-venv2
-.devcontainer
-classifier
-colab
-datasets
-osu_diffusion
-osuT5
-rcomplexion
-.cursorignore
-.gitignore
