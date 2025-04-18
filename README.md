@@ -9,7 +9,39 @@ This project is built upon [osuT5](https://github.com/gyataro/osuT5) and [osu-di
 #### Use this tool responsibly. Always disclose the use of AI in your beatmaps.
 
 
-## Inference
+## Web UI (Recommended)
+
+For a more user-friendly experience, we recommend using the Web UI. It provides a graphical interface to configure generation parameters, start the process, and monitor the output.
+
+### 1. Prerequisites
+
+Ensure you have completed steps 1-3 from the [Command-Line Inference](#command-line-inference) section below (Clone Repository, Optional Virtual Environment, Install Dependencies).
+
+### 2. Launch the UI
+
+Navigate to the cloned `Mapperatorinator` directory in your terminal and run:
+
+```sh
+python web-ui.py
+```
+
+This will start a local web server and automatically open the UI in a new window.
+
+### 3. Using the UI
+
+- **Configure:** Set input/output paths using the form fields and "Browse" buttons. Adjust generation parameters like gamemode, difficulty, style (year, mapper ID, descriptors), timing, specific features (hitsounds, super timing), and more, mirroring the command-line options.
+- **Start:** Click the "Start Inference" button to begin the beatmap generation.
+- **Cancel:** You can stop the ongoing process using the "Cancel Inference" button.
+- **Open Output:** Once finished, use the "Open Output Folder" button for quick access to the generated files.
+
+*(Consider adding a screenshot of the UI here)*
+
+The Web UI acts as a convenient wrapper around the `inference.py` script. For advanced options or troubleshooting, refer to the command-line instructions.
+
+
+## Command-Line Inference
+
+For users who prefer the command line or need access to advanced configurations, follow the steps below. **Note:** For a simpler graphical interface, please see the [Web UI (Recommended)](#web-ui-recommended) section above.
 
 The instruction below allows you to generate beatmaps on your local machine, or you can run it in the cloud with the [colab notebook](https://colab.research.google.com/github/OliBomby/Mapperatorinator/blob/main/colab/mapperatorinator_inference.ipynb).
 
@@ -43,12 +75,12 @@ pip install -r requirements.txt
 
 ### 4. Begin inference
 
-Run `inference.py` and pass in some arguments to generate beatmaps. For this use [Hydra override syntax](https://hydra.cc/docs/advanced/override_grammar/basic/). See `inference.yaml` for all available parameters. 
+Run `inference.py` and pass in some arguments to generate beatmaps. For this use [Hydra override syntax](https://hydra.cc/docs/advanced/override_grammar/basic/). See `configs/inference_v29.yaml` for all available parameters.
 ```
 python inference.py \
   audio_path           [Path to input audio] \
   output_path          [Path to output directory] \
-  beatmap_path         [Path to .osu file to autofill metadata, audio_path, and output_path, or use as reference] \
+  beatmap_path         [Path to .osu file to autofill metadata, and output_path, or use as reference] \
   
   gamemode             [Game mode to generate 0=std, 1=taiko, 2=ctb, 3=mania] \
   difficulty           [Difficulty star rating to generate] \
