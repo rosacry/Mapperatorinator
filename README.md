@@ -8,10 +8,9 @@ This project is built upon [osuT5](https://github.com/gyataro/osuT5) and [osu-di
 
 #### Use this tool responsibly. Always disclose the use of AI in your beatmaps.
 
+## Installation
 
-## Inference
-
-The instruction below allows you to generate beatmaps on your local machine, or you can run it in the cloud with the [colab notebook](https://colab.research.google.com/github/OliBomby/Mapperatorinator/blob/main/colab/mapperatorinator_inference.ipynb).
+The instruction below allows you to generate beatmaps on your local machine, alternatively you can run it in the cloud with the [colab notebook](https://colab.research.google.com/github/OliBomby/Mapperatorinator/blob/main/colab/mapperatorinator_inference.ipynb).
 
 ### 1. Clone the repository
 
@@ -41,14 +40,41 @@ Install Python 3.10, [Git](https://git-scm.com/downloads), [ffmpeg](http://www.f
 pip install -r requirements.txt
 ```
 
-### 4. Begin inference
+## Web GUI (Recommended)
 
-Run `inference.py` and pass in some arguments to generate beatmaps. For this use [Hydra override syntax](https://hydra.cc/docs/advanced/override_grammar/basic/). See `inference.yaml` for all available parameters. 
+For a more user-friendly experience, consider using the Web UI. It provides a graphical interface to configure generation parameters, start the process, and monitor the output.
+
+### Launch the GUI
+
+Navigate to the cloned `Mapperatorinator` directory in your terminal and run:
+
+```sh
+python web-ui.py
+```
+
+This will start a local web server and automatically open the UI in a new window.
+
+### Using the GUI
+
+- **Configure:** Set input/output paths using the form fields and "Browse" buttons. Adjust generation parameters like gamemode, difficulty, style (year, mapper ID, descriptors), timing, specific features (hitsounds, super timing), and more, mirroring the command-line options. (Note: If you provide a `beatmap_path`, the UI will automatically determine the `audio_path` and `output_path` from it, so you can leave those fields blank)
+- **Start:** Click the "Start Inference" button to begin the beatmap generation.
+- **Cancel:** You can stop the ongoing process using the "Cancel Inference" button.
+- **Open Output:** Once finished, use the "Open Output Folder" button for quick access to the generated files.
+
+The Web UI acts as a convenient wrapper around the `inference.py` script. For advanced options or troubleshooting, refer to the command-line instructions.
+
+![python_u3zyW0S3Vs](https://github.com/user-attachments/assets/5312a45f-d51c-4b37-9389-da3258ddd0a1)
+
+## Command-Line Inference
+
+For users who prefer the command line or need access to advanced configurations, follow the steps below. **Note:** For a simpler graphical interface, please see the [Web UI (Recommended)](#web-ui-recommended) section above.
+
+Run `inference.py` and pass in some arguments to generate beatmaps. For this use [Hydra override syntax](https://hydra.cc/docs/advanced/override_grammar/basic/). See `configs/inference_v29.yaml` for all available parameters.
 ```
 python inference.py \
   audio_path           [Path to input audio] \
   output_path          [Path to output directory] \
-  beatmap_path         [Path to .osu file to autofill metadata, audio_path, and output_path, or use as reference] \
+  beatmap_path         [Path to .osu file to autofill metadata, and output_path, or use as reference] \
   
   gamemode             [Game mode to generate 0=std, 1=taiko, 2=ctb, 3=mania] \
   difficulty           [Difficulty star rating to generate] \
@@ -78,7 +104,7 @@ Example:
 python inference.py beatmap_path="'C:\Users\USER\AppData\Local\osu!\Songs\1 Kenji Ninuma - DISCO PRINCE\Kenji Ninuma - DISCOPRINCE (peppy) [Normal].osu'" gamemode=0 difficulty=5.5 year=2023 descriptors="['jump aim','clean']" in_context=[TIMING,KIAI]
 ```
 
-### Tips
+## Generation Tips
 
 - You can edit `configs/inference_v29.yaml` and add your arguments there instead of typing them in the terminal every time.
 - All available descriptors can be found [here](https://omdb.nyahh.net/descriptors/).
