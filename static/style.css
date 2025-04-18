@@ -393,7 +393,7 @@ button[type="submit"]:hover {
 
 /* Style for the progress bar when an error occurs */
 #progressBar.error {
-  background: #c62828; /* Solid, darker red for error state */
+  background-color: var(--accent-color); /* Red progress bar on error */
 }
 
 /* Initial process message */
@@ -782,4 +782,43 @@ input[type="number"]:hover::-webkit-outer-spin-button {
   border: 1px solid var(--border-color); /* Optional: subtle border */
   /* Red glow effect */
   box-shadow: 0 0 8px var(--accent-color); 
+}
+
+/* style.css additions */
+.error-link {
+  color: var(--accent-color); /* Make link stand out */
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.error-link:hover {
+  color: #ff8080; /* Lighter red on hover */
+}
+
+/* Flash message for cancellation success */
+.alert.alert-cancel-success {
+    color: #ffffff; /* White text */
+    background-color: #5cb85c; /* Green background (adjust color as needed) */
+    border-color: #4cae4c;
+    /* Add existing padding, margin, border-radius etc. from .alert */
+    padding: 15px;
+    margin-bottom: 20px;
+    border: 1px solid transparent;
+    border-radius: 4px;
+    /* Add animation properties like other alerts */
+    opacity: 1;
+    transition: opacity 0.5s ease-out 4s; /* Start fade out after 4s */
+    animation: slideDownFadeIn 0.5s ease forwards; /* Use existing slide in */
+}
+
+/* Ensure this keyframe animation exists or adapt as needed */
+@keyframes slideDownFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }

@@ -13,30 +13,41 @@
       rel="stylesheet"
     />
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
+    <style>
+      /* Style for disabled option */
+      .option-item.disabled label {
+        opacity: 0.6;
+        color: grey;
+        cursor: not-allowed;
+      }
+      .option-item.disabled input {
+        cursor: not-allowed;
+      }
+    </style>
   </head>
   <body>
     <!-- Container for Flash Messages/Popups -->
-    <div id="flash-container"></div> 
+    <div id="flash-container"></div>
 
     <div class="container">
       <main>
         <form id="inferenceForm" method="POST" class="card form-card"> <fieldset>
             <legend>Paths</legend>
-            <div class="path-input-group"> <label for="audio_path">Audio Path:<span style="color:var(--accent-color); margin-left: 3px;">*</span></label>
-              <input type="text" id="audio_path" name="audio_path" required />
+            <div class="path-input-group"> <label for="audio_path" title="Path to audio file">Audio Path:</label>
+              <input type="text" id="audio_path" name="audio_path" />
               <button type="button" id="browse-audio" class="browse-button">Browse...</button>
             </div>
-            <div class="path-input-group"> <label for="output_path">Output Path:<span style="color:var(--accent-color); margin-left: 3px;">*</span></label>
-              <input type="text" id="output_path" name="output_path" required />
+            <div class="path-input-group"> <label for="output_path" title="Path to output folder">Output Path:</label>
+              <input type="text" id="output_path" name="output_path" />
               <button type="button" id="browse-output" class="browse-button">Browse...</button>
             </div>
-            <div class="path-input-group"> <label for="beatmap_path">Beatmap Path:<span class="tooltip-icon" title="Path to .osu file to autofill metadata, audio path, and output path, or use as reference"><img src="{{ url_for('static', filename='icon.png') }}" alt="Help"></span></label>
+            <div class="path-input-group"> <label for="beatmap_path" title="Path to .osu file to autofill metadata, audio path, and output path, or use as reference">Beatmap Path:</label>
               <input type="text" id="beatmap_path" name="beatmap_path" />
               <button type="button" id="browse-beatmap" class="browse-button">Browse...</button>
             </div>
             <!-- Start: In-Context Options Box -->
             <div id="in-context-options-box" class="context-options-box" style="display: none;">
-                <h4>In-Context Options<span class="tooltip-icon" title="List of additional context to provide to the model"><img src="{{ url_for('static', filename='icon.png') }}" alt="Help"></span></h4> <!-- Title inside the box -->
+                <h4 title="List of additional context to provide to the model">In-Context Options</h4> <!-- Title inside the box -->
                 <div class="context-options-container">
                   <div class="context-option-item" data-value="NONE">
                     <input type="checkbox" id="context-none" name="in_context_options" value="NONE" />
@@ -76,68 +87,68 @@
               <option value="2">Catch the Beat</option>
               <option value="3">Mania</option>
             </select>
-            <label for="year">Year (2007-2023):<span style="color:var(--accent-color); margin-left: 3px;">*</span></label>
-            <input type="number" id="year" name="year" min="2007" max="2023" required />
-            <label for="difficulty">Difficulty (star rating):<span style="color:var(--accent-color); margin-left: 3px;">*</span></label>
-            <input type="number" step="0.1" id="difficulty" name="difficulty" min="0" required />
+            <label for="year" title="Year of the song (2007-2023)">Year (2007-2023):</label>
+            <input type="number" id="year" name="year" min="2007" max="2023" value="2023" />
+            <label for="difficulty" title="Difficulty rating (star rating)">Difficulty (star rating):</label>
+            <input type="number" step="0.1" id="difficulty" name="difficulty" min="0" value="5" />
+            <label for="slider_multiplier" title="Slider velocity multiplier">Slider Multiplier:<span style="color:var(--accent-color); margin-left: 3px;">*</span></label>
+            <input type="number" step="0.1" id="slider_multiplier" name="slider_multiplier" min="0" value="1.4" required />
             <div class="form-group" id="group-circle_size" style="display: none;">
-              <label for="circle_size">Circle Size:<span class="required-indicator cs-required" style="color:var(--accent-color); margin-left: 3px; display: none;">*</span></label>
-              <input type="number" step="0.1" id="circle_size" name="circle_size" min="0" />
+              <label for="circle_size" title="Circle size for standard">Circle Size:<span class="required-indicator cs-required" style="color:var(--accent-color); margin-left: 3px; display: none;">*</span></label>
+              <input type="number" step="0.1" id="circle_size" name="circle_size" min="0" value="4" />
             </div>
             <div class="form-group" id="group-keycount" style="display: none;">
-              <label for="keycount">Key Count:<span class="required-indicator kc-required" style="color:var(--accent-color); margin-left: 3px; display: none;">*</span></label>
-              <input type="number" id="keycount" name="keycount" min="0" />
+              <label for="keycount" title="Number of keys for mania">Key Count:<span class="required-indicator kc-required" style="color:var(--accent-color); margin-left: 3px; display: none;">*</span></label>
+              <input type="number" id="keycount" name="keycount" min="0" value="4" />
             </div>
           </fieldset>
 
           <fieldset>
             <legend>Optional Settings</legend>
-            <label for="slider_multiplier">Slider Multiplier:<span class="tooltip-icon" title="Slider velocity multiplier"><img src="{{ url_for('static', filename='icon.png') }}" alt="Help"></span></label>
-            <input type="number" step="0.1" id="slider_multiplier" name="slider_multiplier" min="0" />
-            <label for="mapper_id">Mapper ID:<span class="tooltip-icon" title="Mapper user ID for style"><img src="{{ url_for('static', filename='icon.png') }}" alt="Help"></span></label>
+            <label for="mapper_id" title="Mapper user ID for style">Mapper ID:</label>
             <input type="text" id="mapper_id" name="mapper_id" />
             <div class="form-group" id="group-hold_note_ratio">
-              <label for="hold_note_ratio">Hold Note Ratio:<span class="tooltip-icon" title="Hold note ratio for mania 0-1"><img src="{{ url_for('static', filename='icon.png') }}" alt="Help"></span></label>
+              <label for="hold_note_ratio" title="Hold note ratio for mania 0-1">Hold Note Ratio:</label>
               <input type="number" step="0.01" id="hold_note_ratio" name="hold_note_ratio" min="0" max="1" />
             </div>
             <div class="form-group" id="group-scroll_speed_ratio">
-              <label for="scroll_speed_ratio">Scroll Speed Ratio:<span class="tooltip-icon" title="Scroll speed ratio for mania and ctb 0-1"><img src="{{ url_for('static', filename='icon.png') }}" alt="Help"></span></label>
+              <label for="scroll_speed_ratio" title="Scroll speed ratio for mania and ctb 0-1">Scroll Speed Ratio:</label>
               <input type="number" step="0.01" id="scroll_speed_ratio" name="scroll_speed_ratio" min="0" max="1" />
             </div>
-            <label for="cfg_scale">CFG Scale:<span class="tooltip-icon" title="Scale of the classifier-free guidance"><img src="{{ url_for('static', filename='icon.png') }}" alt="Help"></span></label>
+            <label for="cfg_scale" title="Scale of the classifier-free guidance">CFG Scale:</label>
             <input type="number" step="0.1" id="cfg_scale" name="cfg_scale" min="0" />
-            <label for="seed">Random Seed:<span class="tooltip-icon" title="Random seed for generation"><img src="{{ url_for('static', filename='icon.png') }}" alt="Help"></span></label>
+            <label for="seed" title="Random seed for generation">Random Seed:</label>
             <input type="text" id="seed" name="seed" />
           </fieldset>
 
           <fieldset>
             <legend>Timing & Segments</legend>
-            <label for="start_time">Start Time (ms):<span class="tooltip-icon" title="Generation start time in milliseconds"><img src="{{ url_for('static', filename='icon.png') }}" alt="Help"></span></label>
+            <label for="start_time" title="Generation start time in milliseconds">Start Time (ms):</label>
             <input type="number" id="start_time" name="start_time" min="0" />
-            <label for="end_time">End Time (ms):<span class="tooltip-icon" title="Generation end time in milliseconds"><img src="{{ url_for('static', filename='icon.png') }}" alt="Help"></span></label>
+            <label for="end_time" title="Generation end time in milliseconds">End Time (ms):</label>
             <input type="number" id="end_time" name="end_time" min="0" />
           </fieldset>
 
           <fieldset>
             <legend>Options</legend>
             <div class="option-item">
-              <input type="checkbox" id="hitsounded" name="hitsounded" value="true" />
+              <input type="checkbox" id="hitsounded" name="hitsounded" value="true" checked />
               <label for="hitsounded">Add Hitsounds</label>
             </div>
-            <div class="option-item">
+            <div class="option-item" id="add-to-beatmap-option">
               <input type="checkbox" id="add_to_beatmap" name="add_to_beatmap" value="true" />
-              <label for="add_to_beatmap">Add to Beatmap<span class="tooltip-icon" title="Whether to add generated content to the reference beatmap instead of making a new beatmap"><img src="{{ url_for('static', filename='icon.png') }}" alt="Help"></span></label>
+              <label for="add_to_beatmap" title="Whether to add generated content to the reference beatmap instead of making a new beatmap">Add to Beatmap</label>
             </div>
             <div class="option-item">
-              <input type="checkbox" id="super_timing" name="super_timing" value="true" />
-              <label for="super_timing">Super Timing<span class="tooltip-icon" title="Whether to use slow accurate variable BPM timing generator"><img src="{{ url_for('static', filename='icon.png') }}" alt="Help"></span></label>
+              <input type="checkbox" id="super_timing" name="super_timing" value="true" checked />
+              <label for="super_timing" title="Whether to use slow accurate variable BPM timing generator">Super Timing</label>
             </div>
           </fieldset>
 
           <div class="custom-dropdown-descriptors">
             <div class="dropdown-header">
               <div>
-                <span class="dropdown-title">Descriptors</span><span class="tooltip-icon" title="List of descriptors for style (1 click = include, 2 clicks = exclude)"><img src="{{ url_for('static', filename='icon.png') }}" alt="Help"></span>
+                <span class="dropdown-title" title="List of descriptors for style (1 click = include, 2 clicks = exclude)">Descriptors</span>
               </div>
               <span class="dropdown-arrow">&#9660;</span>
             </div>
@@ -165,7 +176,7 @@
                         { "value": "keysounds", "title": "Uses various pitched hitsounds to create a melody." },
                         { "value": "download unavailable", "title": "Cannot be downloaded from the osu! website." },
                         { "value": "custom skin", "title": "Utilizes custom skin elements and graphics." },
-                        { "value": "featured artist", "title": "Features song(s) from osu!’s Featured Artist listing." },
+                        { "value": "featured artist", "title": "Features song(s) from osu!'s Featured Artist listing." },
                         { "value": "custom song", "title": "Maps a song made specifically for the map." }
                     ]},
                     { "title": "Style", "items": [
@@ -267,6 +278,9 @@
           <div id="beatmapLink" style="display:none; margin-top:10px;">
             <a id="beatmapLinkAnchor" href="#" target="_blank">Click Here to go to the created beatmap...</a>
           </div>
+          <div id="errorLogLink" style="display:none; margin-top:10px;">
+            <a id="errorLogLinkAnchor" href="#">See why... (opens error log)</a>
+          </div>
         </div>
       </main>
     </div>
@@ -338,7 +352,7 @@
                 console.log("Output folder selection cancelled.");
               }
             } catch (error) {
-               console.error("Error browsing for output folder:", error);
+              console.error("Error browsing for output folder:", error);
               alert("Could not browse for folder. Ensure the backend API is running.");
             }
           });
@@ -364,6 +378,29 @@
 
         }); // End of pywebviewready listener
         // --- End Browse Button Logic ---
+
+        // --- Add to Beatmap Enable/Disable Logic ---
+        const $beatmapPathInputForOption = $('#beatmap_path');
+        const $addToBeatmapCheckbox = $('#add_to_beatmap');
+        const $addToBeatmapOptionDiv = $('#add-to-beatmap-option');
+
+        function updateAddToBeatmapState() {
+          if ($beatmapPathInputForOption.val().trim() !== '') {
+            $addToBeatmapCheckbox.prop('disabled', false);
+            $addToBeatmapOptionDiv.removeClass('disabled');
+          } else {
+            $addToBeatmapCheckbox.prop('disabled', true);
+            $addToBeatmapCheckbox.prop('checked', false); // Uncheck if disabled
+            $addToBeatmapOptionDiv.addClass('disabled');
+          }
+        }
+
+        // Initial check on page load
+        updateAddToBeatmapState();
+
+        // Update on input change
+        $beatmapPathInputForOption.on('input', updateAddToBeatmapState);
+        // --- End Add to Beatmap Logic ---
 
         // --- In-Context Dropdown Logic ---
         const $beatmapPathInput = $('#beatmap_path');
@@ -564,6 +601,7 @@
         var isCancelled = false; // Flag to track cancellation
         let inferenceErrorOccurred = false; // New flag for error state
         let accumulatedErrorMessages = []; // New buffer for error messages
+        let errorLogFilePath = null; // Variable to store the path to the error log
 
         // Function to display flash messages
         function showFlashMessage(message, type = 'success') {
@@ -590,7 +628,19 @@
         }
 
         $("#inferenceForm").submit(function(e) {
-          e.preventDefault(); // Prevent default form submission
+          // --- Validation: Check if Beatmap Path or Audio Path is provided ---
+          const audioPath = $('#audio_path').val().trim();
+          const beatmapPath = $('#beatmap_path').val().trim();
+
+          if (!audioPath && !beatmapPath) {
+              e.preventDefault(); // Prevent form submission
+              $('html, body').animate({ scrollTop: 0 }, 500); // Scroll to top
+              showFlashMessage('Either "Beatmap Path" or "Audio Path" are required for running inference', 'error');
+              return; // Stop further processing
+          }
+          // --- End Validation ---
+
+          e.preventDefault(); // Prevent default form submission (needed for AJAX)
 
           // Clear previous flash messages
           $('#flash-container').empty();
@@ -606,6 +656,7 @@
           $("#progressTitle").show();
           $("#progressBar").css("width", "0%").removeClass('cancelled'); // Reset progress bar
           $("#beatmapLink").hide();
+          $("#errorLogLink").hide(); // Hide error log link on start
           $("#init_message").text("Initializing process... This may take a moment.").show(); // Show init message
           $("#progressTitle").text("");
           $("#cancel-button").hide().prop('disabled', false).text('Cancel'); // Reset cancel button
@@ -620,12 +671,6 @@
           accumulatedErrorMessages = [];
           $("#progressBar").removeClass('error'); // Ensure error class is removed initially
           $("#progressTitle").css('color', ''); // Reset title color
-
-          // State variables for progress tracking
-          var progressTitles = ["Generating Timing", "Generating Kiai", "Generating Map", "Sequence Length"];
-          var phaseIndex = 0;
-          var additionalCounter = 2;
-          var previousPercent = 0;
 
           // Clear previous EventSource if it exists
           if (evtSource) {
@@ -684,6 +729,9 @@
               console.log("Inference started. Connecting to SSE stream...");
               evtSource = new EventSource("/stream_output"); // Flask SSE endpoint
 
+              // Clear previous error log path
+              errorLogFilePath = null;
+
               evtSource.onmessage = function(e) {
                  // Hide init message once data arrives
                 if ($("#init_message").is(":visible")) { $("#init_message").hide(); }
@@ -719,25 +767,30 @@
                     accumulatedErrorMessages.push(messageData);
 
                 } else {
+                    // Check for title keywords (case-insensitive)
+                    const lowerCaseMessage = messageData.toLowerCase();
+                    let newTitle = null;
+
+                    if (lowerCaseMessage.includes("generating timing")) {
+                        newTitle = "Generating Timing";
+                    } else if (lowerCaseMessage.includes("generating kiai")) {
+                        newTitle = "Generating Kiai";
+                    } else if (lowerCaseMessage.includes("generating map")) {
+                        newTitle = "Generating Map";
+                    } else if (lowerCaseMessage.includes("seq len")) {
+                        newTitle = "Refining Positions"; // Or customize further if needed
+                    }
+
+                    if (newTitle) {
+                        $("#progressTitle").text(newTitle);
+                    }
+
                     // --- Normal Progress Processing (Only if no error has occurred) ---
                     var progressMatch = messageData.match(/^\s*(\d+)%\|/);
                     if (progressMatch) {
                       var currentPercent = parseInt(progressMatch[1].trim(), 10);
 
-                      // Logic to update phase title (unchanged from original)
-                      if (currentPercent > 0 && previousPercent === 0 && phaseIndex === 0) {
-                          $("#progressTitle").text(progressTitles[phaseIndex]);
-                      } else if (currentPercent < previousPercent && !isNaN(currentPercent)) {
-                          phaseIndex++;
-                          if (phaseIndex < progressTitles.length) {
-                              $("#progressTitle").text(progressTitles[phaseIndex]);
-                          } else {
-                              $("#progressTitle").text("Sequence Length " + additionalCounter);
-                              additionalCounter++;
-                          }
-                      }
                       if (!isNaN(currentPercent)) {
-                         previousPercent = currentPercent;
                          // Update progress bar width only if no error occurred
                          // Note: progressBar styling might be handled by the .error class instead
                          $("#progressBar").css("width", currentPercent + "%");
@@ -794,6 +847,12 @@
                 $cancelButton.hide(); // Hide cancel on error too
               };
 
+              // Listen for the custom 'error_log' event from Flask
+              evtSource.addEventListener("error_log", function(e) {
+                  console.log("Received error log path from server:", e.data);
+                  errorLogFilePath = e.data; // Store the path
+              });
+
               // Listen for the custom 'end' event from Flask
               evtSource.addEventListener("end", function(e) {
                 console.log("Received end event from server.", e.data);
@@ -807,6 +866,7 @@
                      $("#progressTitle").hide();
                      $("#progressBarContainer").hide();
                      $("#beatmapLink").hide();
+                     $("#errorLogLink").hide();
 
                 } else if (inferenceErrorOccurred) {
                     // Error Occurred Path
@@ -843,6 +903,24 @@
                     $("#progressBarContainer").show(); // Ensure container is visible
                     $("#beatmapLink").hide(); // Hide success link
 
+                    // Show the error log link if a path was received
+                    if (errorLogFilePath) {
+                        $("#errorLogLinkAnchor")
+                            .off("click") // Remove previous handler
+                            .on("click", function(clickEvent) {
+                                clickEvent.preventDefault();
+                                console.log("Requesting log open via Flask:", errorLogFilePath);
+                                $.get("/open_log_file", { path: errorLogFilePath })
+                                    .done(function(response) {
+                                        console.log("Open log response:", response);
+                                    })
+                                    .fail(function() {
+                                        alert("Failed to open log file via backend.");
+                                    });
+                            });
+                        $("#errorLogLink").show();
+                    }
+
                 } else {
                     // Normal Completion Path
                      $("#progressTitle").show().text("Processing Complete").css('color', ''); // Reset color
@@ -858,13 +936,6 @@
                 isCancelled = false;
                 inferenceErrorOccurred = false;
                 accumulatedErrorMessages = []; // Clear buffer
-
-                // Reset progress state variables for next run
-                phaseIndex = 0;
-                additionalCounter = 2;
-                previousPercent = 0;
-                // Ensure title color is reset *after* potential error display
-                // $("#progressTitle").css('color', ''); // Reset in normal completion path is enough
 
               });
 

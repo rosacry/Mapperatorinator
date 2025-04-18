@@ -6,6 +6,7 @@ import subprocess
 import sys
 import threading
 import time
+import datetime
 from typing import Callable, Any, Tuple, Dict
 
 import webview
@@ -239,46 +240,84 @@ def stream_output():
 
     def generate():
         global current_process
+        process_to_stream = None
 
         # Short lock to safely get the process object
         with process_lock:
             if current_process and current_process.poll() is None:
                 process_to_stream = current_process
+                print(f"Attempting to stream output for PID: {process_to_stream.pid}")
             else:
                 # Handle case where process is already finished or never started
-                print("Stream requested but no active process found.")
+                print("Stream requested but no active process found or process already finished.")
                 yield "event: end\ndata: No active process or process already finished\n\n"
                 return
 
+        # If we got a process, proceed with streaming
         if process_to_stream:
             print(f"Streaming output for PID: {process_to_stream.pid}")
+            full_output_lines = []
+            error_occurred = False
+            log_filepath = None
+
             try:
                 # Stream lines from stdout
                 for line in iter(process_to_stream.stdout.readline, ""):
+                    full_output_lines.append(line)
                     yield f"data: {line.rstrip()}\n\n"
                     sys.stdout.flush()  # Ensure data is sent
 
-                # Check process completion status after stream ends
+                # --- Process finished, check status ---
                 process_to_stream.stdout.close()  # Close the pipe
                 return_code = process_to_stream.wait()  # Wait for process to terminate fully
-                print(f"Process {process_to_stream.pid} finished streaming with code: {return_code}")
+                print(f"Process {process_to_stream.pid} finished streaming with exit code: {return_code}")
+
+                if return_code != 0:
+                    error_occurred = True
+                    print(f"Non-zero exit code ({return_code}) detected for PID {process_to_stream.pid}. Marking as error.")
 
             except Exception as e:
                 print(f"Error during streaming for PID {process_to_stream.pid}: {e}")
-                yield f"event: error\ndata: Streaming error: {e}\n\n"
+                error_occurred = True
+                full_output_lines.append(f"\n--- STREAMING ERROR ---\n{e}\n")
             finally:
-                # Send custom 'end' event
-                yield "event: end\ndata: Process completed or stream terminated\n\n"
-                print(f"Finished streaming for PID: {process_to_stream.pid}")
+                # --- Log Saving Logic (if error occurred) ---
+                if error_occurred:
+                    try:
+                        log_dir = os.path.join(script_dir, 'logs')
+                        os.makedirs(log_dir, exist_ok=True)
+                        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+                        log_filename = f"error_{process_to_stream.pid}_{timestamp}.log"
+                        log_filepath = os.path.join(log_dir, log_filename)
+                        error_content = "".join(full_output_lines)
+
+                        with open(log_filepath, 'w', encoding='utf-8') as f:
+                            f.write(error_content)
+                        print(f"Error log saved for PID {process_to_stream.pid} to: {log_filepath}")
+                        yield f"event: error_log\ndata: {log_filepath.replace(os.sep, '/')}\n\n"
+
+                    except Exception as log_e:
+                        print(f"FATAL: Could not write error log for PID {process_to_stream.pid}: {log_e}")
+
+                # --- Standard End Event ---
+                completion_message = "Process completed"
+                if error_occurred:
+                    completion_message += " with errors"
+                yield f"event: end\ndata: {completion_message}\n\n"
+                print(f"Finished streaming for PID: {process_to_stream.pid}. Sent 'end' event.")
+
+                # --- Cleanup global process reference ---
                 with process_lock:
                     if current_process == process_to_stream:
                         current_process = None
                         print("Cleared global current_process reference.")
+                    else:
+                        print(f"Stale process {process_to_stream.pid} finished streaming, global reference was already updated/cleared.")
 
     return Response(generate(), mimetype='text/event-stream')
 
 
-@app.route('/cancel_inference', methods=['POST'])  # Use POST for actions
+@app.route('/cancel_inference', methods=['POST'])
 def cancel_inference():
     """Attempts to terminate the currently running inference process."""
     global current_process
@@ -324,24 +363,75 @@ def cancel_inference():
 def open_folder():
     """Opens a folder in the file explorer."""
     folder_path = request.args.get('folder')
-    print(f"Request received to open folder: {folder_path}")  # Debug print
-    if not folder_path or not os.path.isdir(folder_path):
-        print(f"Invalid folder path provided: {folder_path}")
-        return "Error: Invalid or non-existent folder path specified", 400
+    print(f"Request received to open folder: {folder_path}")
+    if not folder_path:
+         return jsonify({"status": "error", "message": "No folder path specified"}), 400
+
+    # Resolve to absolute path for checks
+    abs_folder_path = os.path.abspath(folder_path)
+
+    # Security check: Basic check if it's within the project directory.
+    # Adjust this check based on your security needs and where output is expected.
+    workspace_root = os.path.abspath(script_dir)
+    # Example: Only allow opening if it's inside the workspace root
+    # if not abs_folder_path.startswith(workspace_root):
+    #     print(f"Security Warning: Attempt to open potentially restricted folder: {abs_folder_path}")
+    #     return jsonify({"status": "error", "message": "Access denied to specified folder path."}), 403
+
+    if not os.path.isdir(abs_folder_path):
+        print(f"Invalid folder path provided or folder does not exist: {abs_folder_path}")
+        return jsonify({"status": "error", "message": "Invalid or non-existent folder path specified"}), 400
 
     try:
         system = platform.system()
         if system == 'Windows':
-            os.startfile(os.path.normpath(folder_path))  # More reliable on Windows
-        elif system == 'Darwin':  # macOS
-            subprocess.Popen(['open', folder_path])
-        else:  # Linux and others
-            subprocess.Popen(['xdg-open', folder_path])
-        print(f"Successfully requested to open folder: {folder_path}")
-        return "Folder open request sent.", 200
+            os.startfile(os.path.normpath(abs_folder_path))
+        elif system == 'Darwin':
+            subprocess.Popen(['open', abs_folder_path])
+        else:
+            subprocess.Popen(['xdg-open', abs_folder_path])
+        print(f"Successfully requested to open folder: {abs_folder_path}")
+        return jsonify({"status": "success", "message": "Folder open request sent."}), 200
     except Exception as e:
-        print(f"Error opening folder '{folder_path}': {e}")
-        return f"Error: Could not open folder - {e}", 500
+        print(f"Error opening folder '{abs_folder_path}': {e}")
+        return jsonify({"status": "error", "message": f"Could not open folder: {e}"}), 500
+
+
+@app.route('/open_log_file', methods=['GET'])
+def open_log_file():
+    """Opens a specific log file."""
+    log_path = request.args.get('path')
+    print(f"Request received to open log file: {log_path}")
+    if not log_path:
+        return jsonify({"status": "error", "message": "No log file path specified"}), 400
+
+    # Security Check: Ensure the file is within the 'logs' directory
+    log_dir = os.path.abspath(os.path.join(script_dir, 'logs'))
+    # Normalize the input path and resolve symlinks etc.
+    abs_log_path = os.path.abspath(os.path.normpath(log_path))
+
+    # IMPORTANT SECURITY CHECK:
+    if not abs_log_path.startswith(log_dir + os.sep):
+        print(f"Security Alert: Attempt to open file outside of logs directory: {abs_log_path} (Log dir: {log_dir})")
+        return jsonify({"status": "error", "message": "Access denied: File is outside the designated logs directory."}), 403
+
+    if not os.path.isfile(abs_log_path):
+        print(f"Log file not found at: {abs_log_path}")
+        return jsonify({"status": "error", "message": "Log file not found."}), 404
+
+    try:
+        system = platform.system()
+        if system == 'Windows':
+            os.startfile(abs_log_path) # normpath already applied
+        elif system == 'Darwin':
+            subprocess.Popen(['open', abs_log_path])
+        else:
+            subprocess.Popen(['xdg-open', abs_log_path])
+        print(f"Successfully requested to open log file: {abs_log_path}")
+        return jsonify({"status": "success", "message": "Log file open request sent."}), 200
+    except Exception as e:
+        print(f"Error opening log file '{abs_log_path}': {e}")
+        return jsonify({"status": "error", "message": f"Could not open log file: {e}"}), 500
 
 
 # --- Function to Run Flask in a Thread ---
