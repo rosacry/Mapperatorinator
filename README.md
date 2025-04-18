@@ -11,7 +11,7 @@ This project is built upon [osuT5](https://github.com/gyataro/osuT5) and [osu-di
 
 ## Web UI (Recommended)
 
-For a more user-friendly experience, we recommend using the Web UI. It provides a graphical interface to configure generation parameters, start the process, and monitor the output.
+For a more user-friendly experience, consider using the Web UI. It provides a graphical interface to configure generation parameters, start the process, and monitor the output.
 
 ### 1. Prerequisites
 
@@ -33,8 +33,6 @@ This will start a local web server and automatically open the UI in a new window
 - **Start:** Click the "Start Inference" button to begin the beatmap generation.
 - **Cancel:** You can stop the ongoing process using the "Cancel Inference" button.
 - **Open Output:** Once finished, use the "Open Output Folder" button for quick access to the generated files.
-
-*(Consider adding a screenshot of the UI here)*
 
 The Web UI acts as a convenient wrapper around the `inference.py` script. For advanced options or troubleshooting, refer to the command-line instructions.
 
