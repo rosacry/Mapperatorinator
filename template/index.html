@@ -13,21 +13,9 @@
       rel="stylesheet"
     />
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
-    <style>
-      /* Style for disabled option */
-      .option-item.disabled label {
-        opacity: 0.6;
-        color: grey;
-        cursor: not-allowed;
-      }
-      .option-item.disabled input {
-        cursor: not-allowed;
-      }
-    </style>
   </head>
   <body>
     <!-- Container for Flash Messages/Popups -->
-    <div id="flash-container"></div>
     <div id="flash-container"></div>
 
     <div class="container">
@@ -43,13 +31,11 @@
               <button type="button" id="browse-output" class="browse-button">Browse...</button>
             </div>
             <div class="path-input-group"> <label for="beatmap_path" title="Path to .osu file to autofill metadata, audio path, and output path, or use as reference">Beatmap Path:</label>
-            <div class="path-input-group"> <label for="beatmap_path" title="Path to .osu file to autofill metadata, audio path, and output path, or use as reference">Beatmap Path:</label>
               <input type="text" id="beatmap_path" name="beatmap_path" />
               <button type="button" id="browse-beatmap" class="browse-button">Browse...</button>
             </div>
             <!-- Start: In-Context Options Box -->
             <div id="in-context-options-box" class="context-options-box" style="display: none;">
-                <h4 title="List of additional context to provide to the model">In-Context Options</h4> <!-- Title inside the box -->
                 <h4 title="List of additional context to provide to the model">In-Context Options</h4> <!-- Title inside the box -->
                 <div class="context-options-container">
                   <div class="context-option-item" data-value="NONE">
@@ -109,22 +95,17 @@
           <fieldset>
             <legend>Optional Settings</legend>
             <label for="mapper_id" title="Mapper user ID for style">Mapper ID:</label>
-            <label for="mapper_id" title="Mapper user ID for style">Mapper ID:</label>
             <input type="text" id="mapper_id" name="mapper_id" />
-            <div class="form-group" id="group-hold_note_ratio">
-              <label for="hold_note_ratio" title="Hold note ratio for mania 0-1">Hold Note Ratio:</label>
+            <div class="form-group" id="group-hold_note_ratio" style="display: none;">
               <label for="hold_note_ratio" title="Hold note ratio for mania 0-1">Hold Note Ratio:</label>
               <input type="number" step="0.01" id="hold_note_ratio" name="hold_note_ratio" min="0" max="1" />
             </div>
-            <div class="form-group" id="group-scroll_speed_ratio">
-              <label for="scroll_speed_ratio" title="Scroll speed ratio for mania and ctb 0-1">Scroll Speed Ratio:</label>
+            <div class="form-group" id="group-scroll_speed_ratio" style="display: none;">
               <label for="scroll_speed_ratio" title="Scroll speed ratio for mania and ctb 0-1">Scroll Speed Ratio:</label>
               <input type="number" step="0.01" id="scroll_speed_ratio" name="scroll_speed_ratio" min="0" max="1" />
             </div>
             <label for="cfg_scale" title="Scale of the classifier-free guidance">CFG Scale:</label>
-            <label for="cfg_scale" title="Scale of the classifier-free guidance">CFG Scale:</label>
             <input type="number" step="0.1" id="cfg_scale" name="cfg_scale" min="0" />
-            <label for="seed" title="Random seed for generation">Random Seed:</label>
             <label for="seed" title="Random seed for generation">Random Seed:</label>
             <input type="text" id="seed" name="seed" />
           </fieldset>
@@ -132,9 +113,7 @@
           <fieldset>
             <legend>Timing & Segments</legend>
             <label for="start_time" title="Generation start time in milliseconds">Start Time (ms):</label>
-            <label for="start_time" title="Generation start time in milliseconds">Start Time (ms):</label>
             <input type="number" id="start_time" name="start_time" min="0" />
-            <label for="end_time" title="Generation end time in milliseconds">End Time (ms):</label>
             <label for="end_time" title="Generation end time in milliseconds">End Time (ms):</label>
             <input type="number" id="end_time" name="end_time" min="0" />
           </fieldset>
@@ -143,17 +122,13 @@
             <legend>Options</legend>
             <div class="option-item">
               <input type="checkbox" id="hitsounded" name="hitsounded" value="true" checked />
-              <input type="checkbox" id="hitsounded" name="hitsounded" value="true" checked />
               <label for="hitsounded">Add Hitsounds</label>
             </div>
-            <div class="option-item" id="add-to-beatmap-option">
+            <div class="option-item" id="add-to-beatmap-option" style="display: none;">
               <input type="checkbox" id="add_to_beatmap" name="add_to_beatmap" value="true" />
-              <label for="add_to_beatmap" title="Whether to add generated content to the reference beatmap instead of making a new beatmap">Add to Beatmap</label>
               <label for="add_to_beatmap" title="Whether to add generated content to the reference beatmap instead of making a new beatmap">Add to Beatmap</label>
             </div>
             <div class="option-item">
-              <input type="checkbox" id="super_timing" name="super_timing" value="true" checked />
-              <label for="super_timing" title="Whether to use slow accurate variable BPM timing generator">Super Timing</label>
               <input type="checkbox" id="super_timing" name="super_timing" value="true" checked />
               <label for="super_timing" title="Whether to use slow accurate variable BPM timing generator">Super Timing</label>
             </div>
@@ -162,7 +137,6 @@
           <div class="custom-dropdown-descriptors">
             <div class="dropdown-header">
               <div>
-                <span class="dropdown-title" title="List of descriptors for style (1 click = include, 2 clicks = exclude)">Descriptors</span>
                 <span class="dropdown-title" title="List of descriptors for style (1 click = include, 2 clicks = exclude)">Descriptors</span>
               </div>
               <span class="dropdown-arrow">&#9660;</span>
@@ -191,7 +165,6 @@
                         { "value": "keysounds", "title": "Uses various pitched hitsounds to create a melody." },
                         { "value": "download unavailable", "title": "Cannot be downloaded from the osu! website." },
                         { "value": "custom skin", "title": "Utilizes custom skin elements and graphics." },
-                        { "value": "featured artist", "title": "Features song(s) from osu!'s Featured Artist listing." },
                         { "value": "featured artist", "title": "Features song(s) from osu!'s Featured Artist listing." },
                         { "value": "custom song", "title": "Maps a song made specifically for the map." }
                     ]},
@@ -368,7 +341,7 @@
                 console.log("Output folder selection cancelled.");
               }
             } catch (error) {
-              console.error("Error browsing for output folder:", error);
+               console.error("Error browsing for output folder:", error);
               alert("Could not browse for folder. Ensure the backend API is running.");
             }
           });
@@ -394,29 +367,6 @@
 
         }); // End of pywebviewready listener
         // --- End Browse Button Logic ---
-
-        // --- Add to Beatmap Enable/Disable Logic ---
-        const $beatmapPathInputForOption = $('#beatmap_path');
-        const $addToBeatmapCheckbox = $('#add_to_beatmap');
-        const $addToBeatmapOptionDiv = $('#add-to-beatmap-option');
-
-        function updateAddToBeatmapState() {
-          if ($beatmapPathInputForOption.val().trim() !== '') {
-            $addToBeatmapCheckbox.prop('disabled', false);
-            $addToBeatmapOptionDiv.removeClass('disabled');
-          } else {
-            $addToBeatmapCheckbox.prop('disabled', true);
-            $addToBeatmapCheckbox.prop('checked', false); // Uncheck if disabled
-            $addToBeatmapOptionDiv.addClass('disabled');
-          }
-        }
-
-        // Initial check on page load
-        updateAddToBeatmapState();
-
-        // Update on input change
-        $beatmapPathInputForOption.on('input', updateAddToBeatmapState);
-        // --- End Add to Beatmap Logic ---
 
         // --- In-Context Dropdown Logic ---
         const $beatmapPathInput = $('#beatmap_path');
@@ -652,19 +602,19 @@
         }
 
         $("#inferenceForm").submit(function(e) {
-          // --- Validation: Check if Beatmap Path or Audio Path is provided ---
+          // --- Validation Step ---           
           const audioPath = $('#audio_path').val().trim();
           const beatmapPath = $('#beatmap_path').val().trim();
-
+          
           if (!audioPath && !beatmapPath) {
-              e.preventDefault(); // Prevent form submission
+              e.preventDefault(); // Stop the form submission
               $('html, body').animate({ scrollTop: 0 }, 500); // Scroll to top
-              showFlashMessage('Either "Beatmap Path" or "Audio Path" are required for running inference', 'error');
-              return; // Stop further processing
+              showFlashMessage("Either 'Beatmap Path' or 'Audio Path' are required for running inference", 'error');
+              return; // Exit the submit handler
           }
-          // --- End Validation ---
+          // --- End Validation Step ---
 
-          e.preventDefault(); // Prevent default form submission (needed for AJAX)
+          e.preventDefault(); // Prevent default form submission (moved after validation)
 
           // Clear previous flash messages
           $('#flash-container').empty();
@@ -791,24 +741,6 @@
                     accumulatedErrorMessages.push(messageData);
 
                 } else {
-                    // Check for title keywords (case-insensitive)
-                    const lowerCaseMessage = messageData.toLowerCase();
-                    let newTitle = null;
-
-                    if (lowerCaseMessage.includes("generating timing")) {
-                        newTitle = "Generating Timing";
-                    } else if (lowerCaseMessage.includes("generating kiai")) {
-                        newTitle = "Generating Kiai";
-                    } else if (lowerCaseMessage.includes("generating map")) {
-                        newTitle = "Generating Map";
-                    } else if (lowerCaseMessage.includes("seq len")) {
-                        newTitle = "Refining Positions"; // Or customize further if needed
-                    }
-
-                    if (newTitle) {
-                        $("#progressTitle").text(newTitle);
-                    }
-
                     // Check for title keywords (case-insensitive)
                     const lowerCaseMessage = messageData.toLowerCase();
                     let newTitle = null;
