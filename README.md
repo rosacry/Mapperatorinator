@@ -29,7 +29,7 @@ This will start a local web server and automatically open the UI in a new window
 
 ### 3. Using the UI
 
-- **Configure:** Set input/output paths using the form fields and "Browse" buttons. Adjust generation parameters like gamemode, difficulty, style (year, mapper ID, descriptors), timing, specific features (hitsounds, super timing), and more, mirroring the command-line options.
+- **Configure:** Set input/output paths using the form fields and "Browse" buttons. Adjust generation parameters like gamemode, difficulty, style (year, mapper ID, descriptors), timing, specific features (hitsounds, super timing), and more, mirroring the command-line options. (Note: If you provide a `beatmap_path`, the UI will automatically determine the `audio_path` and `output_path` from it, so you can leave those fields blank)
 - **Start:** Click the "Start Inference" button to begin the beatmap generation.
 - **Cancel:** You can stop the ongoing process using the "Cancel Inference" button.
 - **Open Output:** Once finished, use the "Open Output Folder" button for quick access to the generated files.
