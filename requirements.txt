@@ -13,6 +13,5 @@ pandas
 pyarrow
 einops
 lightning
-pywebview
+pywebview[qt]
 flask
-pyqtwebengine
