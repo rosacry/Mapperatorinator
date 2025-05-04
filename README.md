@@ -21,6 +21,8 @@ cd Mapperatorinator
 
 ### 2. (Optional) Create virtual environment
 
+Use Python 3.10, later versions will might not be compatible with the dependencies.
+
 ```sh
 python -m venv .venv
 
