@@ -42,7 +42,7 @@ class Preprocessor(object):
             samples: npt.ArrayLike,
             begin_pad: int = 0,
             end_pad: int = 0,
-    ) -> tuple[torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor, float]:
         """Segment audio samples into sequences. Sequences are flattened frames.
 
         Args:
@@ -54,6 +54,7 @@ class Preprocessor(object):
             sequences: A list of sequences of shape (batch size, samples per sequence).
             sequence_times: A list of sequence start times in miliseconds.
         """
+        song_length = len(samples) / self.sample_rate * 1000
         samples = np.pad(samples, [begin_pad, end_pad])
         samples = np.pad(
             samples,
@@ -81,7 +82,7 @@ class Preprocessor(object):
             sequences = sequences[:end_idx]
             sequence_times = sequence_times[:end_idx]
 
-        return sequences, sequence_times
+        return sequences, sequence_times, song_length
 
     @staticmethod
     def window(a, w, o, copy=False):
