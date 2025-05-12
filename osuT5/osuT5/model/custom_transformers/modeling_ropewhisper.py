@@ -255,13 +255,6 @@ class LlamaRotaryEmbedding(nn.Module):
             config=None,
     ):
         super().__init__()
-        # TODO (joao): remove the `if` below, only used for BC
-        self.rope_kwargs = {}
-
-        logger.warning_once(
-            "`LlamaRotaryEmbedding` can now be fully parameterized by passing the model config through the "
-            "`config` argument. All other arguments will be removed in v4.46"
-        )
         self.rope_kwargs = {
             "rope_type": rope_type,
             "factor": scaling_factor,
