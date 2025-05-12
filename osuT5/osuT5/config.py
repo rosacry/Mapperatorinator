@@ -11,10 +11,15 @@ from .event import ContextType
 
 @dataclass
 class SpectrogramConfig:
+    implementation: str = "nnAudio"  # Spectrogram implementation (nnAudio/torchaudio)
+    log_scale: bool = False
     sample_rate: int = 16000
     hop_length: int = 128
     n_fft: int = 1024
     n_mels: int = 388
+    f_min: int = 0
+    f_max: int = 8000
+    pad_mode: str = "constant"
 
 
 @dataclass
@@ -22,9 +27,18 @@ class ModelConfig:
     name: str = "openai/whisper-base"  # Model name
     config_base: str = ""  # Model base for config lookup
     input_features: bool = True
-    do_style_embed: bool = False
+    project_encoder_input: bool = True
     embed_decoder_input: bool = True
     manual_norm_weights: bool = False
+    do_style_embed: bool = False
+    do_difficulty_embed: bool = False
+    do_mapper_embed: bool = False
+    do_song_position_embed: bool = False
+    cond_dim: int = 128
+    cond_size: int = 0
+    rope_type: str = "dynamic"  # RoPE type (dynamic/static)
+    rope_encoder_scaling_factor: float = 1.0
+    rope_decoder_scaling_factor: float = 1.0
     spectrogram: SpectrogramConfig = field(default_factory=SpectrogramConfig)
     overwrite: dict = field(default_factory=lambda: {})  # Overwrite model config
     add_config: dict = field(default_factory=lambda: {})  # Add to model config

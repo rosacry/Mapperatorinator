@@ -10,7 +10,7 @@ import torch.nn.functional as F
 from slider import Beatmap, TimingPoint
 from tqdm import tqdm
 from transformers import LogitsProcessorList, LogitsProcessor, EncoderDecoderCache, StaticCache, \
-    ClassifierFreeGuidanceLogitsProcessor, Cache, DynamicCache
+    ClassifierFreeGuidanceLogitsProcessor, Cache, TemperatureLogitsWarper
 
 from config import InferenceConfig
 from ..dataset import OsuParser
@@ -231,7 +231,10 @@ class Processor(object):
         self.add_gd_context = args.osut5.data.add_gd_context
         self.add_timing = args.osut5.data.add_timing
         self.parser = OsuParser(args.osut5, self.tokenizer)
-        self.need_beatmap_idx = args.osut5.model.do_style_embed
+        self.do_style_embed = args.osut5.model.do_style_embed
+        self.do_difficulty_embed = args.osut5.model.do_difficulty_embed
+        self.do_mapper_embed = args.osut5.model.do_mapper_embed
+        self.do_song_position_embed = args.osut5.model.do_song_position_embed
         self.add_positions = args.osut5.data.add_positions
         self.add_sv_special_token = args.osut5.data.add_sv_special_token
         self.add_sv = args.osut5.data.add_sv
@@ -285,13 +288,14 @@ class Processor(object):
             do_sample=self.do_sample,
             num_beams=self.num_beams,
             use_cache=True,
+            max_length=self.tgt_seq_len,
             **kwargs,
         )
 
     def generate(
             self,
             *,
-            sequences: tuple[torch.Tensor, torch.Tensor],
+            sequences: tuple[torch.Tensor, torch.Tensor, float],
             generation_config: GenerationConfig,
             in_context: list[ContextType] = None,
             out_context: list[ContextType] = None,
@@ -302,7 +306,7 @@ class Processor(object):
         """Generate a list of Event object lists and their timestamps given source sequences.
 
         Args:
-            sequences: A list of batched source sequences.
+            sequences: A list of batched source sequences, and the total song length in milliseconds.
             generation_config: Generation configuration.
             in_context: List of context information.
             out_context: Output contexts to generate.
@@ -346,7 +350,7 @@ class Processor(object):
         out_context_to_generate = all_out_context[:out_context_count]
         req_special_tokens = self.get_required_extra_special_tokens(all_out_context)
 
-        song_length = sequences[1][-1].item() + self.miliseconds_per_sequence
+        song_length = sequences[2]
         in_context_data = self.get_in_context(
             in_context=template["in"],
             beatmap_path=beatmap_path,
@@ -366,22 +370,39 @@ class Processor(object):
         # Prepare logit processors
         logit_processor = self.get_logits_processor(generation_config)
 
-        # Prepare special input for legacy model
-        beatmap_idx = torch.tensor([self.tokenizer.num_classes], dtype=torch.long, device=self.device)
-        if self.need_beatmap_idx and generation_config.beatmap_id is not None:
-            beatmap_idx = torch.tensor(
-                [self.tokenizer.beatmap_idx[generation_config.beatmap_id]], dtype=torch.long, device=self.device)
+        # Prepare special conditioning input for model kwargs
+        model_kwargs = {}
+        if self.do_style_embed:
+            if generation_config.beatmap_id is not None:
+                model_kwargs["beatmap_idx"] = torch.tensor(
+                    [self.tokenizer.beatmap_idx[generation_config.beatmap_id]], dtype=torch.long, device=self.device)
+            else:
+                model_kwargs["beatmap_idx"] = torch.tensor([self.tokenizer.num_classes], dtype=torch.long,
+                                                           device=self.device)
+        if self.do_difficulty_embed:
+            if generation_config.difficulty is not None:
+                model_kwargs["difficulty"] = torch.tensor([generation_config.difficulty], dtype=torch.float32, device=self.device)
+            else:
+                print("WARNING: Difficulty not provided. Selecting 5.0 for difficulty.")
+                model_kwargs["difficulty"] = torch.tensor([5.0], dtype=torch.float32, device=self.device)
+        if self.do_mapper_embed:
+            if generation_config.mapper_id is not None:
+                model_kwargs["mapper_idx"] = torch.tensor([self.tokenizer.get_mapper_idx(generation_config.mapper_id)], dtype=torch.long, device=self.device)
+            else:
+                print("WARNING: Mapper ID not provided. Selecting default mapper.")
+                model_kwargs["mapper_idx"] = torch.tensor([-1], dtype=torch.long, device=self.device)
 
         # Start generation
         inputs = dict(
             sequences=sequences,
             in_context=in_context_data,
             out_context=out_context_data,
-            beatmap_idx=beatmap_idx,
+            model_kwargs=model_kwargs,
             logit_processor=logit_processor,
             req_special_tokens=req_special_tokens,
             verbose=verbose,
         )
+
         if self.parallel:
             self.generate_parallel(**inputs)
         else:
@@ -440,22 +461,23 @@ class Processor(object):
     def generate_sequential(
             self,
             *,
-            sequences: tuple[torch.Tensor, torch.Tensor],
+            sequences: tuple[torch.Tensor, torch.Tensor, float],
             in_context: list[dict[str, Any]],
             out_context: list[dict[str, Any]],
-            beatmap_idx: torch.Tensor,
+            model_kwargs: dict[str, Any],
             logit_processor: LogitsProcessorList,
             req_special_tokens: list[str],
             verbose: bool = True,
     ):
+        song_length = sequences[2]
+
         for i, context in enumerate(out_context):
             if context["finished"]:
                 continue
 
             if verbose:
                 print(f"Generating {context['context_type'].value}")
-
-            iterator = tqdm(list(zip(*sequences))) if verbose else zip(*sequences)
+            iterator = tqdm(list(zip(*sequences[:2]))) if verbose else zip(*sequences[:2])
             for sequence_index, (frames, frame_time) in enumerate(iterator):
                 trim_lookback = sequence_index != 0 and self.types_first and self.lookback_max_time > 0
                 trim_lookahead = sequence_index != len(sequences[0]) - 1
@@ -475,11 +497,17 @@ class Processor(object):
                 [prompt, uncond_prompt], max_len = self.pad_prompts([cond_prompt, uncond_prompt])
                 cache = self.get_cache(prompt.size(0))
 
+                # Prepare additional model kwargs
+                if self.do_song_position_embed:
+                    global_pos_start = frame_time / song_length
+                    global_pos_end = (frame_time + self.miliseconds_per_sequence) / song_length
+                    model_kwargs["song_position"] = torch.tensor([global_pos_start, global_pos_end], dtype=torch.float32, device=self.device).unsqueeze(0)
+
                 result = self.model_generate(
                     frames,
+                    **model_kwargs,
                     decoder_input_ids=prompt,
                     decoder_attention_mask=prompt.ne(self.tokenizer.pad_id),
-                    beatmap_idx=beatmap_idx,
                     logits_processor=logit_processor2,
                     negative_prompt=uncond_prompt,
                     negative_prompt_attention_mask=uncond_prompt.ne(self.tokenizer.pad_id) if uncond_prompt is not None else None,
@@ -494,10 +522,10 @@ class Processor(object):
     def generate_parallel(
             self,
             *,
-            sequences: tuple[torch.Tensor, torch.Tensor],
+            sequences: tuple[torch.Tensor, torch.Tensor, float],
             in_context: list[dict[str, Any]],
             out_context: list[dict[str, Any]],
-            beatmap_idx: torch.Tensor,
+            model_kwargs: dict[str, Any],
             logit_processor: LogitsProcessorList,
             req_special_tokens: list[str],
             verbose: bool = True,
@@ -505,8 +533,10 @@ class Processor(object):
         # Get relevant inputs
         frames = self.prepare_frames(sequences[0])
         frame_times = sequences[1]
+        song_length = sequences[2]
         cond_prompts = []
         uncond_prompts = []
+        model_kwargses = []
 
         for i in range(len(frames)):
             frame_time = frame_times[i].item()
@@ -517,24 +547,37 @@ class Processor(object):
             cond_prompts.append(cond_prompt)
             uncond_prompts.append(uncond_prompt)
 
+            kwargs = model_kwargs.copy()
+            # Prepare additional model kwargs
+            if self.do_song_position_embed:
+                global_pos_start = frame_time / song_length
+                global_pos_end = (frame_time + self.miliseconds_per_sequence) / song_length
+                kwargs["song_position"] = torch.tensor([global_pos_start, global_pos_end], dtype=torch.float32, device=self.device).unsqueeze(0)
+            model_kwargses.append(kwargs)
+
         prompt, uncond_prompt, max_len = self.stack_prompts(cond_prompts, uncond_prompts)
 
         # Split prompts and uncond_prompt into batches
         max_batch_size = max(1, self.max_batch_size // self.num_beams // (2 if self.cfg_scale > 1 else 1))
-        frames_batches = self.split_into_batches(frames, max_batch_size)
-        prompt_batches = self.split_into_batches(prompt, max_batch_size)
-        uncond_prompt_batches = self.split_into_batches(uncond_prompt, max_batch_size, batch_size=prompt.size(0))
+        num_samples = prompt.size(0)
+        model_kwarg_keys = list(model_kwargses[0].keys())
         results = []
 
         # Process each batch
-        for frames_batch, prompt_batch, uncond_prompt_batch in zip(frames_batches, prompt_batches, uncond_prompt_batches):  # type: torch.Tensor, torch.Tensor, torch.Tensor
+        for i in range(0, num_samples, max_batch_size):
+            frames_batch = frames[i:i + max_batch_size]
+            prompt_batch = prompt[i:i + max_batch_size]
+            uncond_prompt_batch = uncond_prompt[i:i + max_batch_size]
+            kwargses_batch = model_kwargses[i:i + max_batch_size]
+            model_kwargs_batch = {k: torch.cat([kwargs[k] for kwargs in kwargses_batch], dim=0) for k in model_kwarg_keys}
+
             cache = self.get_cache(prompt_batch.size(0))
 
             # Start generation
             results.append(self.model_generate(
                 frames_batch,
+                **model_kwargs_batch,
                 decoder_input_ids=prompt_batch,
-                beatmap_idx=beatmap_idx,
                 logits_processor=logit_processor,
                 negative_prompt=uncond_prompt_batch,
                 past_key_values=cache,
@@ -832,16 +875,21 @@ class Processor(object):
     def get_logits_processor(self, generation_config: GenerationConfig) -> LogitsProcessorList:
         processors = LogitsProcessorList(self.base_logit_processor)
 
-        if self.do_sample and self.types_first:
-            processors.append(ConditionalTemperatureLogitsWarper(
-                self.temperature,
-                self.timing_temperature,
-                self.mania_column_temperature,
-                self.taiko_hit_temperature,
-                self.types_first,
-                self.tokenizer,
-                generation_config.gamemode,
-            ))
+        if self.do_sample:
+            if self.types_first:
+                processors.append(ConditionalTemperatureLogitsWarper(
+                    self.temperature,
+                    self.timing_temperature,
+                    self.mania_column_temperature,
+                    self.taiko_hit_temperature,
+                    self.types_first,
+                    self.tokenizer,
+                    generation_config.gamemode,
+                ))
+            else:
+                processors.append(TemperatureLogitsWarper(
+                    self.temperature,
+                ))
 
         return processors
 
