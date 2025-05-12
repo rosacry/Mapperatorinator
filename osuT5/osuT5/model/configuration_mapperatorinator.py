@@ -1,6 +1,6 @@
 from transformers import PretrainedConfig, T5Config, WhisperConfig
 
-from .configuration_nwhisper import NWhisperConfig
+from .custom_transformers import NWhisperConfig
 
 
 class MapperatorinatorConfig(PretrainedConfig):

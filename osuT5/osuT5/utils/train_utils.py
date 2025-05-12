@@ -13,7 +13,7 @@ from torch.optim.lr_scheduler import LRScheduler
 from torch.utils.data import DataLoader
 
 from ..dataset.ors_dataset import LABEL_IGNORE_ID
-from ..model.modeling_nwhisper import NWhisperForConditionalGeneration
+from ..model.custom_transformers import NWhisperForConditionalGeneration
 from ..tokenizer import Tokenizer, EventType, ContextType
 from ..model import Mapperatorinator
 from .log_utils import Averager
