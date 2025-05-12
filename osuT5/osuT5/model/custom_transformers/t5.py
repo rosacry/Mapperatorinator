@@ -33,8 +33,6 @@ from transformers.models.t5.modeling_t5 import (
     T5DenseGatedActDense,
 )
 
-from .spectrogram import MelSpectrogram
-
 
 @dataclass
 class EncoderOutput(ModelOutput):
@@ -480,9 +478,6 @@ class T5(nn.Module):
         self.config = config
         self.model_dim = config.d_model
 
-        self.spectrogram = MelSpectrogram(
-            config.sample_rate, config.n_fft, config.n_mels, config.hop_length
-        )
         self.encoder_embedder = nn.Linear(config.n_mels, config.d_model)
         self.decoder_embedder = nn.Embedding(config.vocab_size, config.d_model)
 

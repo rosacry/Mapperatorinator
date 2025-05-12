@@ -10,9 +10,9 @@ from transformers.modeling_outputs import Seq2SeqLMOutput, BaseModelOutput
 from transformers.models.whisper.modeling_whisper import WhisperEncoder
 
 from .configuration_mapperatorinator import MapperatorinatorConfig
-from .configuration_nwhisper import NWhisperConfig
-from .modeling_nwhisper import NWhisperForConditionalGeneration
-from ..model.spectrogram import MelSpectrogram
+from .custom_transformers import NWhisperConfig
+from .custom_transformers import NWhisperForConditionalGeneration
+from .spectrogram import MelSpectrogram
 
 LABEL_IGNORE_ID = -100
 
