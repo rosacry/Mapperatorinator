@@ -567,7 +567,7 @@ class Processor(object):
         for i in range(0, num_samples, max_batch_size):
             frames_batch = frames[i:i + max_batch_size]
             prompt_batch = prompt[i:i + max_batch_size]
-            uncond_prompt_batch = uncond_prompt[i:i + max_batch_size]
+            uncond_prompt_batch = uncond_prompt[i:i + max_batch_size] if uncond_prompt is not None else None
             kwargses_batch = model_kwargses[i:i + max_batch_size]
             model_kwargs_batch = {k: torch.cat([kwargs[k] for kwargs in kwargses_batch], dim=0) for k in model_kwarg_keys}
 
