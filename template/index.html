@@ -459,22 +459,6 @@
         }
         // --- End In-Context Dropdown Logic ---
 
-        // --- Prevent Number Input Scroll/Arrows (except Year) ---
-        $('input[type="number"]').not('#year').each(function() {
-          // Disable mouse wheel
-          $(this).on('wheel', function(e) {
-            e.preventDefault();
-          });
-
-          // Disable arrow keys (up/down)
-          $(this).on('keydown', function(e) {
-            if (e.key === "ArrowUp" || e.key === "ArrowDown") {
-              e.preventDefault();
-            }
-          });
-        });
-        // --- End Number Input Scroll/Arrows Prevention ---
-
         // --- Gamemode Conditional Visibility ---
         function updateOptionalSettingsVisibility() {
           var selectedGamemode = $("#gamemode").val(); // Get the string value ('0', '1', '2', '3')
