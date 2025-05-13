@@ -126,6 +126,29 @@ def get_optimizer(model: Mapperatorinator, args: TrainConfig) -> Optimizer:
             optimizer_grouped_parameters,
             lr=args.optim.base_lr,
         )
+    elif args.optim.name == 'muon':
+        from .muon_utils import Muon
+        """
+        Muon is intended to optimize only the internal ≥2D parameters of a network. 
+        Embeddings, classifier heads, and scalar or vector parameters should be optimized using AdamW.
+        """
+        adamw_params = [
+            param for name, param in model.named_parameters()
+            if (any(kw in name.lower() for kw in {'embed', 'proj_out'}) or param.ndim <= 1)
+        ]
+        
+        adamw_param_set = set(adamw_params)
+        muon_params = [
+            param for _, param in model.named_parameters()
+            if param not in adamw_param_set
+        ]
+
+        optimizer = Muon(
+            muon_params=muon_params,
+            lr=args.optim.base_lr,
+            adamw_params=adamw_params,
+            adamw_betas=(0.90, 0.95)
+        )
     else:
         raise NotImplementedError
 
