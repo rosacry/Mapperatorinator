@@ -38,10 +38,6 @@
             <div id="in-context-options-box" class="context-options-box" style="display: none;">
                 <h4 title="List of additional context to provide to the model">In-Context Options</h4> <!-- Title inside the box -->
                 <div class="context-options-container">
-                  <div class="context-option-item" data-value="NONE">
-                    <input type="checkbox" id="context-none" name="in_context_options" value="NONE" />
-                    <label for="context-none">None</label>
-                  </div>
                   <div class="context-option-item" data-value="TIMING">
                     <input type="checkbox" id="context-timing" name="in_context_options" value="TIMING" />
                     <label for="context-timing">Timing</label>
@@ -49,10 +45,6 @@
                   <div class="context-option-item" data-value="KIAI">
                     <input type="checkbox" id="context-kiai" name="in_context_options" value="KIAI" />
                     <label for="context-kiai">Kiai</label>
-                  </div>
-                  <div class="context-option-item" data-value="MAP">
-                    <input type="checkbox" id="context-map" name="in_context_options" value="MAP" />
-                    <label for="context-map">Map</label>
                   </div>
                   <div class="context-option-item" data-value="GD">
                     <input type="checkbox" id="context-gd" name="in_context_options" value="GD" />
@@ -358,7 +350,6 @@
         const $beatmapPathInput = $('#beatmap_path');
         const $inContextOptionsBox = $('#in-context-options-box');
         const $allContextCheckboxes = $inContextOptionsBox.find('input[name="in_context_options"]'); // Renamed to $allContextCheckboxes for clarity
-        const $noneCheckbox = $('#context-none');
         const inContextAnimationSpeed = 300; // Used 'animationSpeed' elsewhere, renamed for local consistency
         const $addToBeatmapOption = $('#add-to-beatmap-option');
 
@@ -385,114 +376,6 @@
         $allContextCheckboxes.each(function() {
             $(this).closest('.context-option-item').data('model-allowed', true); // Default to true
         });
-
-        $allContextCheckboxes.on('change', function() {
-            const $changedCheckbox = $(this);
-            const isNoneChecked = $noneCheckbox.is(':checked');
-            // Filter for other checkboxes that are model-allowed
-            const $otherCheckboxes = $allContextCheckboxes.not($noneCheckbox).filter(function() {
-                return $(this).closest('.context-option-item').data('model-allowed') === true;
-            });
-            const $otherChecked = $otherCheckboxes.filter(':checked');
-
-            $allContextCheckboxes.prop('disabled', true); // Disable all temporarily
-
-            if ($changedCheckbox.is($noneCheckbox)) {
-                if (isNoneChecked) { // 'None' was just checked
-                    $otherCheckboxes.prop('checked', false);
-                    $otherCheckboxes.closest('.context-option-item').slideUp(inContextAnimationSpeed, function() {
-                        $noneCheckbox.prop('disabled', false); // Re-enable only 'None'
-                        // And other model-allowed ones that were hidden by this action
-                        $otherCheckboxes.each(function() {
-                           if ($(this).closest('.context-option-item').data('model-allowed') === true) {
-                               $(this).prop('disabled', true); // Keep them disabled as 'None' is active
-                           }
-                        });
-                    });
-                } else { // 'None' was just unchecked
-                    $otherCheckboxes.each(function() {
-                        const $item = $(this).closest('.context-option-item');
-                        if ($item.data('model-allowed') === true) { // Only slide down if model-allowed
-                            $item.slideDown(inContextAnimationSpeed);
-                        }
-                    });
-                    // Enable all model-allowed checkboxes after animation
-                    setTimeout(function() {
-                        $allContextCheckboxes.each(function() {
-                            if ($(this).closest('.context-option-item').data('model-allowed') === true) {
-                                $(this).prop('disabled', false);
-                            }
-                        });
-                    }, inContextAnimationSpeed);
-                }
-            } else { // Another checkbox was changed
-                if ($changedCheckbox.is(':checked')) {
-                    $noneCheckbox.prop('checked', false).prop('disabled', true); // Disable 'None'
-                    if ($noneCheckbox.closest('.context-option-item').data('model-allowed') === true) {
-                         $noneCheckbox.closest('.context-option-item').fadeOut(inContextAnimationSpeed);
-                    }
-                    // Enable others after animation if they are model-allowed
-                     setTimeout(function() {
-                        $otherCheckboxes.not($changedCheckbox).each(function(){
-                             if ($(this).closest('.context-option-item').data('model-allowed') === true) {
-                                $(this).prop('disabled', false);
-                            }
-                        });
-                        $changedCheckbox.prop('disabled', false); // Ensure changed one is enabled
-                    }, inContextAnimationSpeed);
-
-                } else { // Another checkbox was unchecked
-                    if ($otherChecked.length === 0) { // If no others are checked
-                        const $noneItem = $noneCheckbox.closest('.context-option-item');
-                        if ($noneItem.data('model-allowed') === true) { // Only show 'None' if model-allowed
-                            $noneItem.fadeIn(inContextAnimationSpeed, function() {
-                                $allContextCheckboxes.each(function() { // Re-enable all model-allowed
-                                     if ($(this).closest('.context-option-item').data('model-allowed') === true) {
-                                        $(this).prop('disabled', false);
-                                    }
-                                });
-                            });
-                            $noneCheckbox.prop('disabled', false);
-                        } else { // 'None' is not model-allowed, so just re-enable others
-                             setTimeout(function() {
-                                $allContextCheckboxes.each(function() {
-                                     if ($(this).closest('.context-option-item').data('model-allowed') === true) {
-                                        $(this).prop('disabled', false);
-                                    }
-                                });
-                            }, inContextAnimationSpeed);
-                        }
-                    } else { // Others are still checked
-                        setTimeout(function() {
-                            $allContextCheckboxes.each(function() {
-                                 if ($(this).closest('.context-option-item').data('model-allowed') === true) {
-                                    $(this).prop('disabled', false);
-                                }
-                            });
-                        }, inContextAnimationSpeed);
-                    }
-                }
-            }
-        });
-        // Initial state for In-Context (run once if beatmap path might be pre-filled)
-        function initializeInContextVisibility() {
-            const $otherModelAllowedCheckboxes = $allContextCheckboxes.not($noneCheckbox).filter(function() {
-                return $(this).closest('.context-option-item').data('model-allowed') === true && $(this).is(':checked');
-            });
-
-            if ($otherModelAllowedCheckboxes.length > 0) {
-                $noneCheckbox.prop('checked', false).closest('.context-option-item').hide();
-            } else if ($noneCheckbox.is(':checked') && $noneCheckbox.closest('.context-option-item').data('model-allowed') === true) {
-                $allContextCheckboxes.not($noneCheckbox).prop('checked', false).closest('.context-option-item').hide();
-            }
-            // Ensure only model-allowed are visible initially
-            $allContextCheckboxes.each(function() {
-                const $item = $(this).closest('.context-option-item');
-                if ($item.data('model-allowed') === false) {
-                    $item.hide();
-                }
-            });
-        }
         // --- End In-Context Dropdown Logic ---
 
         // --- Gamemode Conditional Visibility ---
@@ -545,7 +428,7 @@
           "v30": {
             supportedGamemodes: ['0'],
             supportsYear: false,
-            supportedInContextOptions: ['TIMING', 'NONE'], // NONE is needed to untick TIMING
+            supportedInContextOptions: ['TIMING'],
             hideHitsoundsOption: true, // Custom flag for specific V30 behavior
             supportsDescriptors: false,
           },
@@ -581,10 +464,6 @@
 
           // In-Context Options
           const supportedContext = capabilities.supportedInContextOptions || ['NONE', 'TIMING', 'KIAI', 'MAP', 'GD', 'NO_HS']; // Default to all for V28/V29
-          let isTimingCheckedForV30 = false;
-          if (selectedModel === "v30") {
-                isTimingCheckedForV30 = $('#context-timing').is(':checked');
-          }
 
           $allContextCheckboxes.each(function() {
             const $checkbox = $(this);
@@ -593,45 +472,14 @@
             if (supportedContext.includes(value)) {
               $item.data('model-allowed', true);
               if (!$item.is(':visible')) $item.slideDown(modelFieldAnimationSpeed);
-              $checkbox.prop('disabled', false); // Enable, specific logic below for V30 None/Timing
+              $checkbox.prop('disabled', false);
             } else {
               $item.data('model-allowed', false);
               if ($item.is(':visible')) $item.slideUp(modelFieldAnimationSpeed);
-              $checkbox.prop('checked', false).prop('disabled', true);
+              $checkbox.prop('disabled', true);
             }
           });
 
-          // Special In-Context logic for V30 (Timing and None interaction)
-          if (selectedModel === "v30") {
-            const $timingCheckboxV30 = $('#context-timing');
-            const $noneCheckboxV30 = $('#context-none');
-             // If TIMING was checked, keep it. Else, ensure NONE is checked.
-            if (isTimingCheckedForV30) {
-                $timingCheckboxV30.prop('checked', true);
-                $noneCheckboxV30.prop('checked', false).prop('disabled', true);
-                $noneCheckboxV30.closest('.context-option-item').hide();
-            } else {
-                $timingCheckboxV30.prop('checked', false);
-                $noneCheckboxV30.prop('checked', true).prop('disabled', false);
-                $noneCheckboxV30.closest('.context-option-item').show();
-            }
-            $timingCheckboxV30.prop('disabled', false); // Timing always toggleable for V30
-          } else {
-            // For V28/V29, re-evaluate "None" based on others after model change
-            const $otherVisibleAllowedAndChecked = $allContextCheckboxes.not($noneCheckbox).filter(function() {
-                return $(this).closest('.context-option-item').data('model-allowed') === true && $(this).is(':checked');
-            });
-            if ($otherVisibleAllowedAndChecked.length > 0) {
-                $noneCheckbox.prop('checked', false).prop('disabled', true);
-                $noneCheckbox.closest('.context-option-item').hide();
-            } else {
-                 $noneCheckbox.prop('checked', true).prop('disabled', false);
-                 // Only show if it's generally model-allowed (which it is for V28/V29)
-                 if ($noneCheckbox.closest('.context-option-item').data('model-allowed') === true) {
-                    $noneCheckbox.closest('.context-option-item').show();
-                 }
-            }
-          }
            // Trigger a change on a context checkbox to re-evaluate display logic if box is visible
            if ($inContextOptionsBox.is(':visible') && $allContextCheckboxes.filter(':visible').length > 0) {
                 $allContextCheckboxes.filter(':visible').first().trigger('change'); // This can be risky if it causes loops.
@@ -667,7 +515,6 @@
               $(this).removeClass('positive-check negative-check').prop('checked', false).prop('disabled', true);
             });
           }
-          initializeInContextVisibility(); // Re-check in-context visibility after model changes
         }
         // --- End Model Conditional Visibility ---
 
