@@ -135,7 +135,12 @@ def start_inference():
 
         # --- Construct Command List (shell=False) ---
         python_executable = sys.executable  # Get path to current Python interpreter
-        cmd = [python_executable, "inference.py"]
+        cmd = [python_executable, "inference.py", "-cn"]
+
+        # Get the model name from the form
+        model_name = request.form.get('model')
+        config_name = "inference_" + model_name
+        cmd.append(config_name)  # Add the config name to the command
 
         # Helper to quote values for Hydra's command-line parser
         def hydra_quote(value):
@@ -179,7 +184,7 @@ def start_inference():
 
         # Numeric settings
         for param in ['slider_multiplier', 'circle_size', 'keycount', 'hold_note_ratio', 'scroll_speed_ratio',
-                      'cfg_scale', 'seed']:
+                      'cfg_scale', 'temperature', 'top_p', 'seed']:
             add_arg(param, request.form.get(param))
         # mapper_id
         add_arg("mapper_id", request.form.get('mapper_id'))

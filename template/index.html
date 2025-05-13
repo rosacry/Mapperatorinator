@@ -17,10 +17,10 @@
   <body>
     <!-- Container for Flash Messages/Popups -->
     <div id="flash-container"></div>
-
     <div class="container">
       <main>
-        <form id="inferenceForm" method="POST" class="card form-card"> <fieldset>
+        <form id="inferenceForm" method="POST" class="card form-card">
+          <fieldset>
             <legend>Paths</legend>
             <div class="path-input-group"> <label for="audio_path" title="Path to audio file">Audio Path:</label>
               <input type="text" id="audio_path" name="audio_path" />
@@ -66,9 +66,14 @@
             </div>
             <!-- End: In-Context Options Box -->
           </fieldset>
-
           <fieldset>
             <legend>Basic Settings</legend>
+            <label for="model">Model:</label>
+            <select id="model" name="model" class="styled-select">
+              <option value="v28">Mapperatorinator V28</option>
+              <option value="v29" selected>Mapperatorinator V29</option>
+              <option value="v30">Mapperatorinator V30</option>
+            </select>
             <label for="gamemode">Gamemode:</label>
             <select id="gamemode" name="gamemode" class="styled-select">
               <option value="0">Standard</option>
@@ -76,8 +81,10 @@
               <option value="2">Catch the Beat</option>
               <option value="3">Mania</option>
             </select>
-            <label for="year" title="Year of the song (2007-2023)">Year (2007-2023):</label>
-            <input type="number" id="year" name="year" min="2007" max="2023" value="2023" />
+            <div class="form-group" id="group-year">
+                <label for="year" title="Year of the song (2007-2023)">Year (2007-2023):</label>
+                <input type="number" id="year" name="year" min="2007" max="2023" value="2023" />
+            </div>
             <label for="difficulty" title="Difficulty rating (star rating)">Difficulty (star rating):</label>
             <input type="number" step="0.1" id="difficulty" name="difficulty" min="0" value="5" />
             <label for="slider_multiplier" title="Slider velocity multiplier">Slider Multiplier:<span style="color:var(--accent-color); margin-left: 3px;">*</span></label>
@@ -91,7 +98,6 @@
               <input type="number" id="keycount" name="keycount" min="0" value="4" />
             </div>
           </fieldset>
-
           <fieldset>
             <legend>Optional Settings</legend>
             <label for="mapper_id" title="Mapper user ID for style">Mapper ID:</label>
@@ -105,11 +111,14 @@
               <input type="number" step="0.01" id="scroll_speed_ratio" name="scroll_speed_ratio" min="0" max="1" />
             </div>
             <label for="cfg_scale" title="Scale of the classifier-free guidance">CFG Scale:</label>
-            <input type="number" step="0.1" id="cfg_scale" name="cfg_scale" min="0" />
+            <input type="number" step="0.1" id="cfg_scale" name="cfg_scale" min="0" value="1.0"/>
+            <label for="temperature">Temperature:</label>
+            <input type="number" id="temperature" name="temperature" step="0.01" min="0" max="1" value="1.0">
+            <label for="top_p">Top-p:</label>
+            <input type="number" id="top_p" name="top_p" step="0.01" min="0" max="1" value="0.95">
             <label for="seed" title="Random seed for generation">Random Seed:</label>
             <input type="text" id="seed" name="seed" />
           </fieldset>
-
           <fieldset>
             <legend>Timing & Segments</legend>
             <label for="start_time" title="Generation start time in milliseconds">Start Time (ms):</label>
@@ -117,10 +126,9 @@
             <label for="end_time" title="Generation end time in milliseconds">End Time (ms):</label>
             <input type="number" id="end_time" name="end_time" min="0" />
           </fieldset>
-
           <fieldset>
             <legend>Options</legend>
-            <div class="option-item">
+            <div class="option-item" id="option-item-hitsounded">
               <input type="checkbox" id="hitsounded" name="hitsounded" value="true" checked />
               <label for="hitsounded">Add Hitsounds</label>
             </div>
@@ -133,7 +141,6 @@
               <label for="super_timing" title="Whether to use slow accurate variable BPM timing generator">Super Timing</label>
             </div>
           </fieldset>
-
           <div class="custom-dropdown-descriptors">
             <div class="dropdown-header">
               <div>
@@ -233,7 +240,7 @@
                         { "value": "port", "title": "Originally created for other media then imported." }
                     ]}
                 ] %}
-          
+
                 {% for group in descriptor_groups %}
                   <div class="descriptor-group">
                     <h3>{{ group.title }}</h3>
@@ -249,10 +256,8 @@
               </div>
             </div>
           </div>
-
           <button type="submit">Run Inference</button>
         </form>
-
         <div id="progress_output" class="card" style="margin-top:20px; display:none;">
           <h3>Progress</h3>
           <div id="init_message">Initializing process... This may take a moment.</div>
@@ -261,7 +266,7 @@
             <div id="progressBar"></div>
           </div>
           <!-- Add Cancel Button (initially hidden) -->
-          <div style="margin-top: 10px; text-align: center;"> 
+          <div style="margin-top: 10px; text-align: center;">
             <button type="button" id="cancel-button" class="cancel-button" style="display:none;">Cancel</button>
           </div>
           <div id="beatmapLink" style="display:none; margin-top:10px;">
@@ -274,17 +279,14 @@
       </main>
     </div>
 
-
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.6.0/jquery.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/select2/4.0.13/js/select2.min.js"></script>
-
     <script>
       $(document).ready(function() {
         // Toggle custom dropdown for descriptors on header click
         $('.custom-dropdown-descriptors .dropdown-header').on('click', function() {
           var $dropdown = $(this).parent();
           $dropdown.toggleClass('open');
-
           // If the dropdown was just opened, scroll its header to the top
           if ($dropdown.hasClass('open')) {
             $('html, body').animate({
@@ -292,34 +294,26 @@
             }, 500); // 500ms smooth scroll duration
           }
         });
-        
+
         $('.select2').select2({
           placeholder: "Select options",
           allowClear: true,
           dropdownCssClass: "select2-dropdown-dark",
           containerCssClass: "select2-container-dark"
         });
-
         // Ensure progress title div exists (idempotent)
         if (!$("#progressTitle").length) {
           $("#progress_output h3").after("<div id='progressTitle' style='font-weight:bold; padding-bottom:5px;'></div>");
         }
-
         // --- Browse Button Logic ---
-        // REMOVED sanitizePath function
-
-        // Wait for pywebview API to be ready before attaching handlers
         window.addEventListener('pywebviewready', function() {
           console.log("pywebview API is ready.");
-
           $("#browse-audio").click(async function() {
             try {
-              // Call using window.pywebview.api
               const filePath = await window.pywebview.api.browse_file();
-              // REMOVED sanitizePath call
-              if (filePath) { // Check raw path
-                $("#audio_path").val(filePath); // Use raw path
-                console.log("Selected audio file:", filePath); // Log raw path
+              if (filePath) {
+                $("#audio_path").val(filePath);
+                console.log("Selected audio file:", filePath);
               } else {
                 console.log("Audio file selection cancelled.");
               }
@@ -328,15 +322,12 @@
               alert("Could not browse for file. Ensure the backend API is running.");
             }
           });
-
           $("#browse-output").click(async function() {
             try {
-              // Call using window.pywebview.api
               const folderPath = await window.pywebview.api.browse_folder();
-              // REMOVED sanitizePath call
-              if (folderPath) { // Check raw path
-                $("#output_path").val(folderPath); // Use raw path
-                 console.log("Selected output folder:", folderPath); // Log raw path
+              if (folderPath) {
+                $("#output_path").val(folderPath);
+                 console.log("Selected output folder:", folderPath);
               } else {
                 console.log("Output folder selection cancelled.");
               }
@@ -345,17 +336,13 @@
               alert("Could not browse for folder. Ensure the backend API is running.");
             }
           });
-
           $("#browse-beatmap").click(async function() {
             try {
-              // Call using window.pywebview.api
-              const filePath = await window.pywebview.api.browse_file(); // Use browse_file for beatmap
-              // REMOVED sanitizePath call
-              if (filePath) { // Check raw path
-                $("#beatmap_path").val(filePath); // Use raw path
-                console.log("Selected beatmap file:", filePath); // Log raw path
-                // Trigger the input event manually to update the UI
-                $("#beatmap_path").trigger('input'); 
+              const filePath = await window.pywebview.api.browse_file();
+              if (filePath) {
+                $("#beatmap_path").val(filePath);
+                console.log("Selected beatmap file:", filePath);
+                $("#beatmap_path").trigger('input');
               } else {
                 console.log("Beatmap file selection cancelled.");
               }
@@ -364,581 +351,582 @@
               alert("Could not browse for file. Ensure the backend API is running.");
             }
           });
-
-        }); // End of pywebviewready listener
+        });
         // --- End Browse Button Logic ---
 
         // --- In-Context Dropdown Logic ---
         const $beatmapPathInput = $('#beatmap_path');
-        const $inContextOptionsBox = $('#in-context-options-box'); // Renamed variable
-        const $contextCheckboxes = $inContextOptionsBox.find('input[name="in_context_options"]');
+        const $inContextOptionsBox = $('#in-context-options-box');
+        const $allContextCheckboxes = $inContextOptionsBox.find('input[name="in_context_options"]'); // Renamed to $allContextCheckboxes for clarity
         const $noneCheckbox = $('#context-none');
-        const animationSpeed = 300; // ms
-        const $addToBeatmapOption = $('#add-to-beatmap-option'); // Cache the option div
+        const inContextAnimationSpeed = 300; // Used 'animationSpeed' elsewhere, renamed for local consistency
+        const $addToBeatmapOption = $('#add-to-beatmap-option');
 
-        // Show/Hide options box based on input content
         $beatmapPathInput.on('input', function() {
           if ($(this).val().trim() !== '') {
             if (!$inContextOptionsBox.is(':visible')) {
-              $inContextOptionsBox.fadeIn(animationSpeed);
+              $inContextOptionsBox.fadeIn(inContextAnimationSpeed);
             }
             if (!$addToBeatmapOption.is(':visible')) {
-              $addToBeatmapOption.slideDown(animationSpeed);
+              $addToBeatmapOption.slideDown(inContextAnimationSpeed);
             }
           } else {
             if ($inContextOptionsBox.is(':visible')) {
-              $inContextOptionsBox.fadeOut(animationSpeed);
+              $inContextOptionsBox.fadeOut(inContextAnimationSpeed);
             }
             if ($addToBeatmapOption.is(':visible')) {
-              $addToBeatmapOption.slideUp(animationSpeed);
-              $('#add_to_beatmap').prop('checked', false); // Uncheck when hidden
+              $addToBeatmapOption.slideUp(inContextAnimationSpeed);
+              $('#add_to_beatmap').prop('checked', false);
             }
           }
         });
 
-        // Handle checkbox interactions
-        $contextCheckboxes.on('change', function() {
+        // Store if a context option item is allowed by the current model
+        $allContextCheckboxes.each(function() {
+            $(this).closest('.context-option-item').data('model-allowed', true); // Default to true
+        });
+
+        $allContextCheckboxes.on('change', function() {
             const $changedCheckbox = $(this);
             const isNoneChecked = $noneCheckbox.is(':checked');
-            const $otherCheckboxes = $contextCheckboxes.not($noneCheckbox);
+            // Filter for other checkboxes that are model-allowed
+            const $otherCheckboxes = $allContextCheckboxes.not($noneCheckbox).filter(function() {
+                return $(this).closest('.context-option-item').data('model-allowed') === true;
+            });
             const $otherChecked = $otherCheckboxes.filter(':checked');
 
-            // Disable all checkboxes temporarily during processing to prevent race conditions
-            $contextCheckboxes.prop('disabled', true);
+            $allContextCheckboxes.prop('disabled', true); // Disable all temporarily
 
             if ($changedCheckbox.is($noneCheckbox)) {
-                // If 'None' was just checked
-                if (isNoneChecked) {
-                    $otherCheckboxes.prop('checked', false); // Uncheck others
-                    // Disable other checkboxes *before* animation
-                    $otherCheckboxes.prop('disabled', true);
-                    $otherCheckboxes.closest('.context-option-item').slideUp(animationSpeed, function() {
-                        // Re-enable only the 'None' checkbox after animation
-                        $noneCheckbox.prop('disabled', false);
+                if (isNoneChecked) { // 'None' was just checked
+                    $otherCheckboxes.prop('checked', false);
+                    $otherCheckboxes.closest('.context-option-item').slideUp(inContextAnimationSpeed, function() {
+                        $noneCheckbox.prop('disabled', false); // Re-enable only 'None'
+                        // And other model-allowed ones that were hidden by this action
+                        $otherCheckboxes.each(function() {
+                           if ($(this).closest('.context-option-item').data('model-allowed') === true) {
+                               $(this).prop('disabled', true); // Keep them disabled as 'None' is active
+                           }
+                        });
                     });
-                } else {
-                    // If 'None' was just unchecked, show and enable others
-                    $otherCheckboxes.closest('.context-option-item').slideDown(animationSpeed, function() {
-                        // Enable others and 'None' after animation
-                         $contextCheckboxes.prop('disabled', false);
+                } else { // 'None' was just unchecked
+                    $otherCheckboxes.each(function() {
+                        const $item = $(this).closest('.context-option-item');
+                        if ($item.data('model-allowed') === true) { // Only slide down if model-allowed
+                            $item.slideDown(inContextAnimationSpeed);
+                        }
                     });
+                    // Enable all model-allowed checkboxes after animation
+                    setTimeout(function() {
+                        $allContextCheckboxes.each(function() {
+                            if ($(this).closest('.context-option-item').data('model-allowed') === true) {
+                                $(this).prop('disabled', false);
+                            }
+                        });
+                    }, inContextAnimationSpeed);
                 }
-            } else {
-                // If another checkbox was just changed
+            } else { // Another checkbox was changed
                 if ($changedCheckbox.is(':checked')) {
-                    // If another was checked, ensure 'None' is unchecked and disabled, then hide
-                    $noneCheckbox.prop('checked', false);
-                    $noneCheckbox.prop('disabled', true); // Disable None immediately
-                    $noneCheckbox.closest('.context-option-item').fadeOut(animationSpeed, function() {
-                         // Re-enable the other checkboxes after fade out
-                         $otherCheckboxes.prop('disabled', false);
-                         // $changedCheckbox is already enabled as it triggered the event
-                    });
-                } else {
-                    // If another was unchecked, check if any others are still checked
-                    if ($otherChecked.length === 0) {
-                       // If no others are checked, show and enable 'None' again
-                       $noneCheckbox.closest('.context-option-item').fadeIn(animationSpeed, function() {
-                           $noneCheckbox.prop('disabled', false); // Enable None after fade in
-                           // Ensure other checkboxes are also enabled
-                           $otherCheckboxes.prop('disabled', false);
-                       });
-                    } else {
-                        // If others are still checked, just re-enable the checkboxes
-                         $contextCheckboxes.prop('disabled', false);
+                    $noneCheckbox.prop('checked', false).prop('disabled', true); // Disable 'None'
+                    if ($noneCheckbox.closest('.context-option-item').data('model-allowed') === true) {
+                         $noneCheckbox.closest('.context-option-item').fadeOut(inContextAnimationSpeed);
+                    }
+                    // Enable others after animation if they are model-allowed
+                     setTimeout(function() {
+                        $otherCheckboxes.not($changedCheckbox).each(function(){
+                             if ($(this).closest('.context-option-item').data('model-allowed') === true) {
+                                $(this).prop('disabled', false);
+                            }
+                        });
+                        $changedCheckbox.prop('disabled', false); // Ensure changed one is enabled
+                    }, inContextAnimationSpeed);
+
+                } else { // Another checkbox was unchecked
+                    if ($otherChecked.length === 0) { // If no others are checked
+                        const $noneItem = $noneCheckbox.closest('.context-option-item');
+                        if ($noneItem.data('model-allowed') === true) { // Only show 'None' if model-allowed
+                            $noneItem.fadeIn(inContextAnimationSpeed, function() {
+                                $allContextCheckboxes.each(function() { // Re-enable all model-allowed
+                                     if ($(this).closest('.context-option-item').data('model-allowed') === true) {
+                                        $(this).prop('disabled', false);
+                                    }
+                                });
+                            });
+                            $noneCheckbox.prop('disabled', false);
+                        } else { // 'None' is not model-allowed, so just re-enable others
+                             setTimeout(function() {
+                                $allContextCheckboxes.each(function() {
+                                     if ($(this).closest('.context-option-item').data('model-allowed') === true) {
+                                        $(this).prop('disabled', false);
+                                    }
+                                });
+                            }, inContextAnimationSpeed);
+                        }
+                    } else { // Others are still checked
+                        setTimeout(function() {
+                            $allContextCheckboxes.each(function() {
+                                 if ($(this).closest('.context-option-item').data('model-allowed') === true) {
+                                    $(this).prop('disabled', false);
+                                }
+                            });
+                        }, inContextAnimationSpeed);
                     }
                 }
             }
         });
-        // Ensure initial state is correct (e.g., if loaded with pre-filled data)
-        // This might need adjustment based on how form state is persisted
-        if ($contextCheckboxes.not($noneCheckbox).is(':checked')) {
-            $noneCheckbox.prop('checked', false).closest('.context-option-item').hide();
-        } else if ($noneCheckbox.is(':checked')) {
-            $contextCheckboxes.not($noneCheckbox).prop('checked', false).closest('.context-option-item').hide();
+        // Initial state for In-Context (run once if beatmap path might be pre-filled)
+        function initializeInContextVisibility() {
+            const $otherModelAllowedCheckboxes = $allContextCheckboxes.not($noneCheckbox).filter(function() {
+                return $(this).closest('.context-option-item').data('model-allowed') === true && $(this).is(':checked');
+            });
+
+            if ($otherModelAllowedCheckboxes.length > 0) {
+                $noneCheckbox.prop('checked', false).closest('.context-option-item').hide();
+            } else if ($noneCheckbox.is(':checked') && $noneCheckbox.closest('.context-option-item').data('model-allowed') === true) {
+                $allContextCheckboxes.not($noneCheckbox).prop('checked', false).closest('.context-option-item').hide();
+            }
+            // Ensure only model-allowed are visible initially
+            $allContextCheckboxes.each(function() {
+                const $item = $(this).closest('.context-option-item');
+                if ($item.data('model-allowed') === false) {
+                    $item.hide();
+                }
+            });
         }
         // --- End In-Context Dropdown Logic ---
 
         // --- Gamemode Conditional Visibility ---
         function updateOptionalSettingsVisibility() {
-          var selectedGamemode = $("#gamemode").val(); // Get the string value ('0', '1', '2', '3')
-          var animationSpeed = 200; // Speed in milliseconds (e.g., 200 for a quick slide)
+          var selectedGamemode = $("#gamemode").val();
+          var animationSpeed = 200;
           var $circleSizeInput = $("#circle_size");
           var $circleSizeAsterisk = $(".cs-required");
           var $keyCountInput = $("#keycount");
           var $keyCountAsterisk = $(".kc-required");
 
-          // Determine which groups should be visible
           var showCircleSize = (selectedGamemode === '0');
           var showKeyCount = (selectedGamemode === '3');
           var showHoldNoteRatio = (selectedGamemode === '3');
           var showScrollSpeed = (selectedGamemode === '2' || selectedGamemode === '3');
 
-          // Animate Circle Size and manage required attribute
           if (showCircleSize) {
-              if (!$("#group-circle_size").is(':visible')) {
-                 $("#group-circle_size").slideDown(animationSpeed);
-              }
-              $circleSizeInput.prop('required', true); // Set as required
-              $circleSizeAsterisk.show();           // Show asterisk
+              if (!$("#group-circle_size").is(':visible')) $("#group-circle_size").slideDown(animationSpeed);
+              $circleSizeInput.prop('required', true); $circleSizeAsterisk.show();
           } else {
-              if ($("#group-circle_size").is(':visible')) {
-                  $("#group-circle_size").slideUp(animationSpeed);
-              }
-              $circleSizeInput.prop('required', false); // Remove required
-              $circleSizeInput.val(''); // Clear value when hidden
-              $circleSizeAsterisk.hide();            // Hide asterisk
+              if ($("#group-circle_size").is(':visible')) $("#group-circle_size").slideUp(animationSpeed);
+              $circleSizeInput.prop('required', false); $circleSizeAsterisk.hide();
           }
-
-          // Animate Key Count and manage required attribute
           if (showKeyCount) {
-              if (!$("#group-keycount").is(':visible')) {
-                  $("#group-keycount").slideDown(animationSpeed);
-              }
-              $keyCountInput.prop('required', true); // Set as required
-              $keyCountAsterisk.show();          // Show asterisk
+              if (!$("#group-keycount").is(':visible')) $("#group-keycount").slideDown(animationSpeed);
+              $keyCountInput.prop('required', true); $keyCountAsterisk.show();
           } else {
-              if ($("#group-keycount").is(':visible')) {
-                  $("#group-keycount").slideUp(animationSpeed);
-              }
-              $keyCountInput.prop('required', false); // Remove required
-              $keyCountInput.val(''); // Clear value when hidden
-              $keyCountAsterisk.hide();           // Hide asterisk
+              if ($("#group-keycount").is(':visible')) $("#group-keycount").slideUp(animationSpeed);
+              $keyCountInput.prop('required', false); $keyCountAsterisk.hide();
           }
-
-          // Animate Hold Note Ratio
           if (showHoldNoteRatio && !$("#group-hold_note_ratio").is(':visible')) {
             $("#group-hold_note_ratio").slideDown(animationSpeed);
           } else if (!showHoldNoteRatio && $("#group-hold_note_ratio").is(':visible')) {
             $("#group-hold_note_ratio").slideUp(animationSpeed);
           }
-
-          // Animate Scroll Speed Ratio
           if (showScrollSpeed && !$("#group-scroll_speed_ratio").is(':visible')) {
             $("#group-scroll_speed_ratio").slideDown(animationSpeed);
           } else if (!showScrollSpeed && $("#group-scroll_speed_ratio").is(':visible')) {
             $("#group-scroll_speed_ratio").slideUp(animationSpeed);
           }
         }
-
-        // Initial call on page load (run without animation initially)
-        updateOptionalSettingsVisibility();
-
-        // Attach change listener to gamemode select
         $("#gamemode").on('change', updateOptionalSettingsVisibility);
         // --- End Gamemode Conditional Visibility ---
 
-        // --- Descriptor Checkbox 3-State Logic ---
-        $('.descriptors-container').on('click', 'input[name="descriptors"]', function(e) {
-            var $checkbox = $(this);
+        // --- Model Conditional Visibility and Disabling ---
+        const modelFieldAnimationSpeed = 200; // Consistent animation speed
+        const modelCapabilities = { // Simplified, actual capabilities checked directly in func
+          "v28": {},
+          "v29": {},
+          "v30": {
+            supportedGamemodes: ['0'],
+            supportsYear: false,
+            supportedInContextOptions: ['TIMING', 'NONE'], // NONE is needed to untick TIMING
+            hideHitsoundsOption: true, // Custom flag for specific V30 behavior
+            supportsDescriptors: false,
+          },
+        };
 
-            // Prevent default checkbox behavior as we manage state manually
-            e.preventDefault();
+        function updateModelSettingsVisibility() {
+          const selectedModel = $("#model").val();
+          const capabilities = modelCapabilities[selectedModel] || {}; // Default to empty if model not in map
 
-            if ($checkbox.hasClass('positive-check')) {
-                // State: Positive -> Negative
-                $checkbox.removeClass('positive-check').addClass('negative-check');
-                $checkbox.prop('checked', true); // Keep it technically 'checked' for form data
-                console.log($checkbox.val() + ' set to negative');
-            } else if ($checkbox.hasClass('negative-check')) {
-                // State: Negative -> Off
-                $checkbox.removeClass('negative-check');
-                $checkbox.prop('checked', false);
-                console.log($checkbox.val() + ' set to off');
+          // Gamemode
+          const $gamemodeSelect = $("#gamemode");
+          const $gamemodeOptions = $gamemodeSelect.find("option");
+          if (selectedModel === "v30") {
+            $gamemodeSelect.val('0').prop('disabled', true); // Force Standard and disable select
+            $gamemodeOptions.each(function() {
+                $(this).prop('disabled', $(this).val() !== '0');
+            });
+          } else { // V28, V29
+            $gamemodeSelect.prop('disabled', false);
+            $gamemodeOptions.prop('disabled', false);
+          }
+          $gamemodeSelect.trigger('change'); // Update fields dependent on gamemode
+
+          // Year
+          const $yearGroup = $("#group-year");
+          const yearSupported = capabilities.supportsYear !== false; // Default to true
+          if (yearSupported) {
+            if (!$yearGroup.is(':visible')) $yearGroup.slideDown(modelFieldAnimationSpeed);
+          } else {
+            if ($yearGroup.is(':visible')) $yearGroup.slideUp(modelFieldAnimationSpeed);
+            $("#year").val('2023'); // Reset to default if hidden
+          }
+
+          // In-Context Options
+          const supportedContext = capabilities.supportedInContextOptions || ['NONE', 'TIMING', 'KIAI', 'MAP', 'GD', 'NO_HS']; // Default to all for V28/V29
+          let isTimingCheckedForV30 = false;
+          if (selectedModel === "v30") {
+                isTimingCheckedForV30 = $('#context-timing').is(':checked');
+          }
+
+          $allContextCheckboxes.each(function() {
+            const $checkbox = $(this);
+            const value = $checkbox.val();
+            const $item = $checkbox.closest('.context-option-item');
+            if (supportedContext.includes(value)) {
+              $item.data('model-allowed', true);
+              if (!$item.is(':visible')) $item.slideDown(modelFieldAnimationSpeed);
+              $checkbox.prop('disabled', false); // Enable, specific logic below for V30 None/Timing
             } else {
-                // State: Off -> Positive
-                $checkbox.addClass('positive-check');
-                $checkbox.prop('checked', true);
-                console.log($checkbox.val() + ' set to positive');
+              $item.data('model-allowed', false);
+              if ($item.is(':visible')) $item.slideUp(modelFieldAnimationSpeed);
+              $checkbox.prop('checked', false).prop('disabled', true);
             }
-        });
+          });
+
+          // Special In-Context logic for V30 (Timing and None interaction)
+          if (selectedModel === "v30") {
+            const $timingCheckboxV30 = $('#context-timing');
+            const $noneCheckboxV30 = $('#context-none');
+             // If TIMING was checked, keep it. Else, ensure NONE is checked.
+            if (isTimingCheckedForV30) {
+                $timingCheckboxV30.prop('checked', true);
+                $noneCheckboxV30.prop('checked', false).prop('disabled', true);
+                $noneCheckboxV30.closest('.context-option-item').hide();
+            } else {
+                $timingCheckboxV30.prop('checked', false);
+                $noneCheckboxV30.prop('checked', true).prop('disabled', false);
+                $noneCheckboxV30.closest('.context-option-item').show();
+            }
+            $timingCheckboxV30.prop('disabled', false); // Timing always toggleable for V30
+          } else {
+            // For V28/V29, re-evaluate "None" based on others after model change
+            const $otherVisibleAllowedAndChecked = $allContextCheckboxes.not($noneCheckbox).filter(function() {
+                return $(this).closest('.context-option-item').data('model-allowed') === true && $(this).is(':checked');
+            });
+            if ($otherVisibleAllowedAndChecked.length > 0) {
+                $noneCheckbox.prop('checked', false).prop('disabled', true);
+                $noneCheckbox.closest('.context-option-item').hide();
+            } else {
+                 $noneCheckbox.prop('checked', true).prop('disabled', false);
+                 // Only show if it's generally model-allowed (which it is for V28/V29)
+                 if ($noneCheckbox.closest('.context-option-item').data('model-allowed') === true) {
+                    $noneCheckbox.closest('.context-option-item').show();
+                 }
+            }
+          }
+           // Trigger a change on a context checkbox to re-evaluate display logic if box is visible
+           if ($inContextOptionsBox.is(':visible') && $allContextCheckboxes.filter(':visible').length > 0) {
+                $allContextCheckboxes.filter(':visible').first().trigger('change'); // This can be risky if it causes loops.
+                                                                                // Better: call a consolidated update function.
+                                                                                // For now, we hope the direct state setting above is enough.
+           }
+
+
+          // Add Hitsounds
+          const $hitsoundedOptionItem = $("#option-item-hitsounded");
+          const $hitsoundedCheckbox = $("#hitsounded");
+          if (capabilities.hideHitsoundsOption === true) { // V30: hide and set to true
+            if ($hitsoundedOptionItem.is(':visible')) $hitsoundedOptionItem.slideUp(modelFieldAnimationSpeed);
+            $hitsoundedCheckbox.prop('checked', true); // Implicitly true for V30
+          } else { // V28, V29: user can choose
+            if (!$hitsoundedOptionItem.is(':visible')) $hitsoundedOptionItem.slideDown(modelFieldAnimationSpeed);
+            $hitsoundedCheckbox.prop('disabled', false);
+            // Do not change checked state, respect user's previous choice or default
+          }
+
+          // Descriptors
+          const $descriptorsDropdown = $(".custom-dropdown-descriptors");
+          const descriptorsSupported = capabilities.supportsDescriptors !== false; // Default to true
+          if (descriptorsSupported) {
+            if (!$descriptorsDropdown.is(':visible')) $descriptorsDropdown.slideDown(modelFieldAnimationSpeed);
+            $descriptorsDropdown.find('input[name="descriptors"]').prop('disabled', false);
+          } else {
+            if ($descriptorsDropdown.is(':visible')) {
+                $descriptorsDropdown.slideUp(modelFieldAnimationSpeed);
+                if ($descriptorsDropdown.hasClass('open')) $descriptorsDropdown.removeClass('open');
+            }
+            $descriptorsDropdown.find('input[name="descriptors"]').each(function() {
+              $(this).removeClass('positive-check negative-check').prop('checked', false).prop('disabled', true);
+            });
+          }
+          initializeInContextVisibility(); // Re-check in-context visibility after model changes
+        }
+        // --- End Model Conditional Visibility ---
+
+        // Initial calls on page load
+        updateOptionalSettingsVisibility(); // For gamemode
+        updateModelSettingsVisibility();    // For model (which also calls updateOptionalSettingsVisibility)
+
+        $("#model").on('change', updateModelSettingsVisibility);
+
+        // --- Descriptor Checkbox 3-State Logic ---
+        function handleDescriptorClick(e) {
+            var $checkbox = $(this);
+            e.preventDefault();
+            if (!$checkbox.prop('disabled')) {
+                 if ($checkbox.hasClass('positive-check')) {
+                    $checkbox.removeClass('positive-check').addClass('negative-check');
+                    $checkbox.prop('checked', true);
+                     console.log($checkbox.val() + ' set to negative');
+                 } else if ($checkbox.hasClass('negative-check')) {
+                    $checkbox.removeClass('negative-check');
+                    $checkbox.prop('checked', false);
+                     console.log($checkbox.val() + ' set to off');
+                 } else {
+                   $checkbox.addClass('positive-check');
+                   $checkbox.prop('checked', true);
+                    console.log($checkbox.val() + ' set to positive');
+                 }
+            }
+        }
+         if (!$('.custom-dropdown-descriptors').data('descriptor-click-attached')) {
+               $('.descriptors-container').on('click', 'input[name="descriptors"]', handleDescriptorClick);
+               $('.custom-dropdown-descriptors').data('descriptor-click-attached', true);
+         }
         // --- End Descriptor Checkbox Logic ---
 
         // --- Form Submission & Progress Handling ---
-        var evtSource = null; // Keep track of the EventSource
-        var isCancelled = false; // Flag to track cancellation
-        let inferenceErrorOccurred = false; // New flag for error state
-        let accumulatedErrorMessages = []; // New buffer for error messages
-        let errorLogFilePath = null; // Variable to store the path to the error log
+        var evtSource = null;
+        var isCancelled = false;
+        let inferenceErrorOccurred = false;
+        let accumulatedErrorMessages = [];
+        let errorLogFilePath = null;
 
-        // Function to display flash messages
         function showFlashMessage(message, type = 'success') {
             const flashContainer = $('#flash-container');
-            // Determine class based on type
             let alertClass = 'alert ';
-            if (type === 'success') {
-                alertClass += 'success';
-            } else if (type === 'error') {
-                alertClass += 'error';
-            } else if (type === 'cancel-success') {
-                alertClass += 'alert-cancel-success'; // Use the new custom class
-            } else { 
-                alertClass += 'success'; // Default to success style
-            }
-
+            if (type === 'success') alertClass += 'success';
+            else if (type === 'error') alertClass += 'error';
+            else if (type === 'cancel-success') alertClass += 'alert-cancel-success';
+            else alertClass += 'success';
             const messageDiv = $('<div class="' + alertClass + '">' + message + '</div>');
             flashContainer.append(messageDiv);
-            
-            // Set timeout for automatic removal based on CSS animation
-            setTimeout(() => {
-                messageDiv.remove();
-            }, 5000); // Match total animation time (slide in + visible + fade out)
+            setTimeout(() => { messageDiv.remove(); }, 5000);
         }
 
         $("#inferenceForm").submit(function(e) {
-          // --- Validation Step ---           
           const audioPath = $('#audio_path').val().trim();
           const beatmapPath = $('#beatmap_path').val().trim();
-          
           if (!audioPath && !beatmapPath) {
-              e.preventDefault(); // Stop the form submission
-              $('html, body').animate({ scrollTop: 0 }, 500); // Scroll to top
+              e.preventDefault();
+              $('html, body').animate({ scrollTop: 0 }, 500);
               showFlashMessage("Either 'Beatmap Path' or 'Audio Path' are required for running inference", 'error');
-              return; // Exit the submit handler
+              return;
           }
-          // --- End Validation Step ---
-
-          e.preventDefault(); // Prevent default form submission (moved after validation)
-
-          // Clear previous flash messages
+          e.preventDefault();
           $('#flash-container').empty();
-          // Clear previous cancellation messages within progress box (belt and suspenders)
           $("#progress_output .cancellation-message").remove();
-
-          // Reset UI
-          $("#progress_output").show(); // Make sure progress box is shown initially
-          // Scroll down to the progress box
-          $('html, body').animate({ scrollTop: $('#progress_output').offset().top }, 500); 
-
-          $("#progressBarContainer").show(); // Ensure these are visible on start
+          $("#progress_output").show();
+          $('html, body').animate({ scrollTop: $('#progress_output').offset().top }, 500);
+          $("#progressBarContainer").show();
           $("#progressTitle").show();
-          $("#progressBar").css("width", "0%").removeClass('cancelled'); // Reset progress bar
+          $("#progressBar").css("width", "0%").removeClass('cancelled error');
           $("#beatmapLink").hide();
-          $("#errorLogLink").hide(); // Hide error log link on start
-          $("#init_message").text("Initializing process... This may take a moment.").show(); // Show init message
+          $("#errorLogLink").hide();
+          $("#init_message").text("Initializing process... This may take a moment.").show();
           $("#progressTitle").text("");
-          $("#cancel-button").hide().prop('disabled', false).text('Cancel'); // Reset cancel button
-
-          // Disable Run button, enable/show Cancel button after short delay
+          $("#cancel-button").hide().prop('disabled', false).text('Cancel');
           var $submitButton = $("button[type='submit']");
           var $cancelButton = $("#cancel-button");
           $submitButton.prop("disabled", true);
-          
-          // Reset error state and buffer
           inferenceErrorOccurred = false;
           accumulatedErrorMessages = [];
-          $("#progressBar").removeClass('error'); // Ensure error class is removed initially
-          $("#progressTitle").css('color', ''); // Reset title color
+          $("#progressTitle").css('color', '');
+          if (evtSource) { evtSource.close(); evtSource = null; }
 
-          // Clear previous EventSource if it exists
-          if (evtSource) {
-            evtSource.close();
-            evtSource = null;
-            console.log("Closed previous SSE stream.");
-          }
-
-          // Use AJAX to POST form data to the Flask backend
           $.ajax({
-            url: "/start_inference", // Flask endpoint
+            url: "/start_inference",
             method: "POST",
             data: function() {
-                var formData = new FormData($("#inferenceForm")[0]); // Use FormData for easier handling
-
-                // Clear existing descriptors and prepare lists
-                formData.delete('descriptors');
+                var formData = new FormData($("#inferenceForm")[0]);
+                formData.delete('descriptors'); // Clear existing
                 var positiveDescriptors = [];
                 var negativeDescriptors = [];
-
-                // Iterate over descriptor checkboxes
                 $('input[name="descriptors"]').each(function() {
                     var $cb = $(this);
-                    if ($cb.hasClass('positive-check')) {
-                        positiveDescriptors.push($cb.val());
-                    } else if ($cb.hasClass('negative-check')) {
-                        negativeDescriptors.push($cb.val());
+                    if ($cb.hasClass('positive-check')) positiveDescriptors.push($cb.val());
+                    else if ($cb.hasClass('negative-check')) negativeDescriptors.push($cb.val());
+                });
+                positiveDescriptors.forEach(val => formData.append('descriptors', val));
+                negativeDescriptors.forEach(val => formData.append('negative_descriptors', val));
+                // Ensure 'hitsounded' for V30 is true if its checkbox is hidden
+                if ($("#model").val() === "v30" && !$("#option-item-hitsounded").is(':visible')) {
+                    if (!formData.has('hitsounded')) { // Add if not present (e.g. checkbox was hidden)
+                        formData.append('hitsounded', 'true');
+                    } else { // Ensure it's true if present
+                         formData.set('hitsounded', 'true');
                     }
-                });
-
-                // Add collected descriptors to FormData using traditional submission format
-                positiveDescriptors.forEach(function(val) {
-                  formData.append('descriptors', val);
-                });
-                negativeDescriptors.forEach(function(val) {
-                  formData.append('negative_descriptors', val);
-                });
-
-                // --- Add In-Context Options ---
-                // REMOVED redundant block that manually appended in_context_options
-                // --- End Add In-Context Options ---
-
-                // Debug: Log FormData contents before sending
-                // for (var pair of formData.entries()) {
-                //    console.log(pair[0]+ ', ' + pair[1]);
-                // }
-
+                }
                 return formData;
             }(),
-            processData: false, // Important: Prevent jQuery from processing the FormData
-            contentType: false, // Important: Let the browser set the correct content type
+            processData: false,
+            contentType: false,
             success: function() {
-              // If POST is successful, show Cancel button and start listening for SSE
-              $cancelButton.show(); 
-              var audioPath = $("#audio_path").val() || "audio file"; 
+              $cancelButton.show();
               console.log("Inference started. Connecting to SSE stream...");
-              evtSource = new EventSource("/stream_output"); // Flask SSE endpoint
-
-              // Clear previous error log path
+              evtSource = new EventSource("/stream_output");
               errorLogFilePath = null;
-
               evtSource.onmessage = function(e) {
-                 // Hide init message once data arrives
-                if ($("#init_message").is(":visible")) { $("#init_message").hide(); }
-                if (isCancelled) return; // Ignore messages after cancellation is confirmed
-
+                if ($("#init_message").is(":visible")) $("#init_message").hide();
+                if (isCancelled) return;
                 console.log("SSE Data:", e.data);
-                const messageData = e.data; // Store for easier access
-
-                // Check for error indicators FIRST
-                const errorIndicators = [
-                    "Traceback (most recent call last):",
-                    "Error executing job with overrides:",
-                    "FileNotFoundError:",
-                    "Exception:", // General Python exception marker
-                    "Set the environment variable HYDRA_FULL_ERROR=1" // Hydra specific
-                ];
-
-                // Check if the current message indicates an error
+                const messageData = e.data;
+                const errorIndicators = ["Traceback (most recent call last):", "Error executing job with overrides:", "FileNotFoundError:", "Exception:", "Set the environment variable HYDRA_FULL_ERROR=1"];
                 let isErrorMessage = errorIndicators.some(indicator => messageData.includes(indicator));
 
                 if (isErrorMessage && !inferenceErrorOccurred) {
-                    // First time encountering an error message in this stream
                     console.warn("Error detected in SSE stream.");
                     inferenceErrorOccurred = true;
-                    accumulatedErrorMessages.push(messageData); // Add the first error message
-                    // Update UI immediately to indicate error
-                    $("#progressTitle").text("Error Detected").css('color', 'var(--accent-color)'); // Use accent color for error text
-                    $("#progressBar").addClass('error'); // Add class for styling (e.g., red color)
-                    // Hide normal progress elements if needed, or let them continue but styled differently
-
-                } else if (inferenceErrorOccurred) {
-                    // Already in error state, accumulate all subsequent messages
                     accumulatedErrorMessages.push(messageData);
-
+                    $("#progressTitle").text("Error Detected").css('color', 'var(--accent-color)');
+                    $("#progressBar").addClass('error');
+                } else if (inferenceErrorOccurred) {
+                    accumulatedErrorMessages.push(messageData);
                 } else {
-                    // Check for title keywords (case-insensitive)
                     const lowerCaseMessage = messageData.toLowerCase();
                     let newTitle = null;
+                    if (lowerCaseMessage.includes("generating timing")) newTitle = "Generating Timing";
+                    else if (lowerCaseMessage.includes("generating kiai")) newTitle = "Generating Kiai";
+                    else if (lowerCaseMessage.includes("generating map")) newTitle = "Generating Map";
+                    else if (lowerCaseMessage.includes("seq len")) newTitle = "Refining Positions";
+                    if (newTitle) $("#progressTitle").text(newTitle);
 
-                    if (lowerCaseMessage.includes("generating timing")) {
-                        newTitle = "Generating Timing";
-                    } else if (lowerCaseMessage.includes("generating kiai")) {
-                        newTitle = "Generating Kiai";
-                    } else if (lowerCaseMessage.includes("generating map")) {
-                        newTitle = "Generating Map";
-                    } else if (lowerCaseMessage.includes("seq len")) {
-                        newTitle = "Refining Positions"; // Or customize further if needed
-                    }
-
-                    if (newTitle) {
-                        $("#progressTitle").text(newTitle);
-                    }
-
-                    // --- Normal Progress Processing (Only if no error has occurred) ---
                     var progressMatch = messageData.match(/^\s*(\d+)%\|/);
                     if (progressMatch) {
                       var currentPercent = parseInt(progressMatch[1].trim(), 10);
-
-                      if (!isNaN(currentPercent)) {
-                         // Update progress bar width only if no error occurred
-                         // Note: progressBar styling might be handled by the .error class instead
-                         $("#progressBar").css("width", currentPercent + "%");
-                      }
-
+                      if (!isNaN(currentPercent)) $("#progressBar").css("width", currentPercent + "%");
                     } else if (messageData.includes("Generated beatmap saved to")) {
-                      // Handle beatmap generation message (unchanged from original)
                       var beatmapLine = messageData.trim();
                       var parts = beatmapLine.split("Generated beatmap saved to");
                       if (parts.length > 1) {
-                        var fullPath = parts[1].trim();
-                        fullPath = fullPath.replace(/\\/g, "/"); // Normalize path
+                        var fullPath = parts[1].trim().replace(/\\/g, "/");
                         var folderPath = fullPath.substring(0, fullPath.lastIndexOf("/"));
-
-                        // Update the link to use the folder path and trigger Flask endpoint
                         $("#beatmapLinkAnchor")
-                          .attr("href", "#") // Keep as non-navigating link
+                          .attr("href", "#")
                           .text("Click here to open the folder containing your map.")
-                          .off("click") // Remove previous handlers
+                          .off("click")
                           .on("click", function(clickEvent) {
                             clickEvent.preventDefault();
-                            console.log("Requesting folder open via Flask:", folderPath);
-                            // Use GET request to Flask endpoint to open folder
                             $.get("/open_folder", { folder: folderPath })
-                              .done(function(response) {
-                                console.log("Open folder response:", response);
-                              })
-                              .fail(function() {
-                                alert("Failed to open folder via backend.");
-                              });
+                              .done(response => console.log("Open folder response:", response))
+                              .fail(() => alert("Failed to open folder via backend."));
                           });
-                        $("#beatmapLink").show(); // Show the link div
+                        $("#beatmapLink").show();
                       }
                     }
                 }
-              }; // End of evtSource.onmessage
-
+              };
               evtSource.onerror = function(err) {
                 console.error("EventSource failed:", err);
-                if (evtSource) evtSource.close();
-                evtSource = null;
-                // Also indicate an error if the stream itself fails unexpectedly
+                if (evtSource) evtSource.close(); evtSource = null;
                 if (!isCancelled && !inferenceErrorOccurred) {
-                   inferenceErrorOccurred = true; // Mark as error
+                   inferenceErrorOccurred = true;
                    accumulatedErrorMessages.push("Error: Connection to process stream lost.");
-                   // Update UI to reflect connection error
                    $("#progressTitle").text("Connection Error").css('color', 'var(--accent-color)');
                    $("#progressBar").addClass('error');
                    showFlashMessage("Error: Connection to process stream lost.", "error");
                 }
-                if (!isCancelled) { // Only re-enable if not cancelled
-                   $submitButton.prop("disabled", false);
-                }
-                $cancelButton.hide(); // Hide cancel on error too
+                if (!isCancelled) $submitButton.prop("disabled", false);
+                $cancelButton.hide();
               };
-
-              // Listen for the custom 'error_log' event from Flask
               evtSource.addEventListener("error_log", function(e) {
-                  console.log("Received error log path from server:", e.data);
-                  errorLogFilePath = e.data; // Store the path
+                  errorLogFilePath = e.data;
               });
-
-              // Listen for the custom 'end' event from Flask
               evtSource.addEventListener("end", function(e) {
                 console.log("Received end event from server.", e.data);
-                if (evtSource) evtSource.close();
-                evtSource = null;
-
+                if (evtSource) evtSource.close(); evtSource = null;
                 if (isCancelled) {
-                    // Cancellation Path: UI is handled by cancel AJAX success (flash message).
-                    // Ensure progress elements are hidden or reset.
                     console.log("SSE End event received after cancellation.");
-                     $("#progressTitle").hide();
-                     $("#progressBarContainer").hide();
-                     $("#beatmapLink").hide();
-                     $("#errorLogLink").hide();
-
+                     $("#progressTitle").hide(); $("#progressBarContainer").hide();
+                     $("#beatmapLink").hide(); $("#errorLogLink").hide();
                 } else if (inferenceErrorOccurred) {
-                    // Error Occurred Path
                     console.error("Process finished with errors.");
-                    // --- Simple Error Parsing ---
-                    let specificError = "An error occurred during processing. Check console/logs."; // Default
-                    const fullErrorText = accumulatedErrorMessages.join("\\n"); // Use newline for searching
-
+                    let specificError = "An error occurred during processing. Check console/logs.";
+                    const fullErrorText = accumulatedErrorMessages.join("\\n");
                     if (fullErrorText.includes("FileNotFoundError:")) {
-                         // Try to extract the filename if possible
                          const fileNotFoundMatch = fullErrorText.match(/FileNotFoundError:.*? file (.*?) not found/);
-                         if (fileNotFoundMatch && fileNotFoundMatch[1]) {
-                             specificError = `Error: File not found - ${fileNotFoundMatch[1].replace(/\\\\/g, '\\\\')}`; // Basic path unescaping for display
-                         } else {
-                              specificError = "Error: A required file was not found.";
-                         }
+                         specificError = fileNotFoundMatch && fileNotFoundMatch[1] ? `Error: File not found - ${fileNotFoundMatch[1].replace(/\\\\/g, '\\\\')}` : "Error: A required file was not found.";
                     } else if (fullErrorText.includes("HYDRA_FULL_ERROR=1")) {
-                        // Use the user-suggested message
                         specificError = "There was an error while creating the beatmap. Check console/logs for details.";
                     } else if (fullErrorText.includes("Error executing job")) {
                          specificError = "There was an error starting or executing the generation task.";
                     } else if (fullErrorText.includes("Connection to process stream lost")) {
-                        // Handle the connection error case specifically if needed, though caught by onerror too
                         specificError = "Error: Connection to the generation process was lost.";
                     }
-                    // --- End Simple Error Parsing ---
-
-                    // Display error message prominently using flash message
-                     showFlashMessage(specificError, "error");
-
-                    // Update progress area to show final failure state
+                    showFlashMessage(specificError, "error");
                     $("#progressTitle").text("Processing Failed").css('color', 'var(--accent-color)').show();
-                    $("#progressBar").css("width", "100%").addClass('error'); // Show full bar in error color
-                    $("#progressBarContainer").show(); // Ensure container is visible
-                    $("#beatmapLink").hide(); // Hide success link
-
-                    // Show the error log link if a path was received
+                    $("#progressBar").css("width", "100%").addClass('error');
+                    $("#progressBarContainer").show();
+                    $("#beatmapLink").hide();
                     if (errorLogFilePath) {
                         $("#errorLogLinkAnchor")
-                            .off("click") // Remove previous handler
+                            .off("click")
                             .on("click", function(clickEvent) {
                                 clickEvent.preventDefault();
-                                console.log("Requesting log open via Flask:", errorLogFilePath);
                                 $.get("/open_log_file", { path: errorLogFilePath })
-                                    .done(function(response) {
-                                        console.log("Open log response:", response);
-                                    })
-                                    .fail(function() {
-                                        alert("Failed to open log file via backend.");
-                                    });
+                                    .done(response => console.log("Open log response:", response))
+                                    .fail(() => alert("Failed to open log file via backend."));
                             });
                         $("#errorLogLink").show();
                     }
-
                 } else {
-                    // Normal Completion Path
-                     $("#progressTitle").show().text("Processing Complete").css('color', ''); // Reset color
+                     $("#progressTitle").show().text("Processing Complete").css('color', '');
                      $("#progressBarContainer").show();
-                     $("#progressBar").css("width", "100%").removeClass('error'); // Ensure error class removed
-                    // Beatmap link visibility is handled by the onmessage handler if successful
+                     $("#progressBar").css("width", "100%").removeClass('error');
                 }
-
-                $submitButton.prop("disabled", false); // Re-enable Run button
-                $cancelButton.hide(); // Hide Cancel button
-
-                // Reset flags for the next run AFTER handling the end event
+                $submitButton.prop("disabled", false);
+                $cancelButton.hide();
                 isCancelled = false;
                 inferenceErrorOccurred = false;
-                accumulatedErrorMessages = []; // Clear buffer
-
+                accumulatedErrorMessages = [];
               });
-
-            }, // End of AJAX success
+            },
             error: function(jqXHR, textStatus, errorThrown) {
-              // Handle AJAX error (failed to start inference)
               console.error("Failed to start inference:", textStatus, errorThrown);
               alert("Failed to start inference process. Check backend console.");
-              $submitButton.prop("disabled", false); // Re-enable Run button
-              $cancelButton.hide(); // Ensure cancel button is hidden
-              $("#progress_output").hide(); // Hide progress section on startup error
+              $submitButton.prop("disabled", false);
+              $cancelButton.hide();
+              $("#progress_output").hide();
             }
-          }); // End of AJAX call
-        }); // End of form submit handler
-
-        // --- Cancel Button Click Handler ---
+          });
+        });
         $("#cancel-button").click(function() {
             var $cancelBtn = $(this);
             $cancelBtn.prop('disabled', true).text('Cancelling...');
-            console.log("Sending cancel request...");
-
             $.ajax({
                 url: "/cancel_inference",
                 method: "POST",
                 success: function(response) {
-                    console.log("Cancel request successful:", response.message);
-                    isCancelled = true; // Set flag early
-                    // Hide the main progress box
-                    $("#progress_output").hide(); 
-                    // Show the flash message popup using the custom style type
+                    isCancelled = true;
+                    $("#progress_output").hide();
                     showFlashMessage("Inference cancelled successfully.", "cancel-success");
-                    // The SSE 'end' event will still fire to re-enable Run button & reset state.
                 },
                 error: function(jqXHR, textStatus, errorThrown) {
-                    console.error("Cancel request failed:", textStatus, errorThrown);
                     const errorMsg = jqXHR.responseJSON ? jqXHR.responseJSON.message : "Failed to send cancel request. Unknown error.";
-                    showFlashMessage(errorMsg, "error"); // Use standard error style
-                    // Re-enable cancel button ONLY if the request failed, allowing retry
-                    $cancelBtn.prop('disabled', false).text('Cancel'); 
+                    showFlashMessage(errorMsg, "error");
+                    $cancelBtn.prop('disabled', false).text('Cancel');
                 }
             });
         });
-        // --- End Cancel Button Click Handler ---
-
-      }); // End of document ready
+      });
     </script>
   </body>
 </html>
