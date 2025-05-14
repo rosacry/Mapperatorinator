@@ -471,11 +471,11 @@
             const $item = $checkbox.closest('.context-option-item');
             if (supportedContext.includes(value)) {
               $item.data('model-allowed', true);
-              if (!$item.is(':visible')) $item.slideDown(modelFieldAnimationSpeed);
+              $item.slideDown(modelFieldAnimationSpeed);
               $checkbox.prop('disabled', false);
             } else {
               $item.data('model-allowed', false);
-              if ($item.is(':visible')) $item.slideUp(modelFieldAnimationSpeed);
+              $item.slideUp(modelFieldAnimationSpeed);
               $checkbox.prop('disabled', true);
             }
           });
