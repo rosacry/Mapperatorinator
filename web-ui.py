@@ -175,7 +175,8 @@ def start_inference():
         add_arg("audio_path", request.form.get('audio_path'))
         add_arg("output_path", request.form.get('output_path'))
         # Beatmap path
-        add_arg("beatmap_path", request.form.get('beatmap_path'))
+        beatmap_path = request.form.get('beatmap_path')
+        add_arg("beatmap_path", beatmap_path)
 
         # Basic settings
         add_arg("gamemode", request.form.get('gamemode'))
@@ -211,7 +212,7 @@ def start_inference():
 
         # In-Context Options
         in_context_options = request.form.getlist('in_context_options')
-        if in_context_options:  # Only add if not empty
+        if in_context_options and beatmap_path:  # Only add if not empty
             add_list_arg("in_context", in_context_options)
         # --- End Command List Construction ---
 
