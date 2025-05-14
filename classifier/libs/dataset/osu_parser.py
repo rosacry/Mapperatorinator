@@ -102,8 +102,12 @@ class OsuParser:
         """Extract all timing information from a beatmap."""
         events = []
         event_times = []
-        last_ho = beatmap.hit_objects(stacking=False)[-1]
-        last_time = last_ho.end_time if hasattr(last_ho, "end_time") else last_ho.time
+        hit_objects = beatmap.hit_objects(stacking=False)
+        if len(hit_objects) == 0:
+            last_time = timedelta(milliseconds=0)
+        else:
+            last_ho = beatmap.hit_objects(stacking=False)[-1]
+            last_time = last_ho.end_time if hasattr(last_ho, "end_time") else last_ho.time
 
         # Get all timing points with BPM changes
         timing_points = [tp for tp in beatmap.timing_points if tp.bpm]
