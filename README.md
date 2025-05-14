@@ -36,7 +36,12 @@ source .venv/bin/activate
 
 ### 3. Install dependencies
 
-Install Python 3.10, [Git](https://git-scm.com/downloads), [ffmpeg](http://www.ffmpeg.org/), [PyTorch](https://pytorch.org/get-started/locally/), and the remaining Python dependencies.
+- Python 3.10
+- [Git](https://git-scm.com/downloads)
+- [ffmpeg](http://www.ffmpeg.org/)
+- [PyTorch](https://pytorch.org/get-started/locally/): Make sure to follow the Get Started guide so you install `torch` and `torchaudio` with GPU support.
+
+- and the remaining Python dependencies:
 
 ```sh
 pip install -r requirements.txt
