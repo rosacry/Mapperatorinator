@@ -218,7 +218,7 @@ def generate(
         if ContextType.TIMING in output_type:
             output_type.remove(ContextType.TIMING)
     elif (ContextType.NONE in args.in_context and ContextType.MAP in output_type and
-          not any("none" in ctx["in"] and ctx["out"] == "map" for ctx in args.osut5.data.context_types)):
+          not any((ContextType.NONE in ctx["in"] or len(ctx["in"]) == 0) and ContextType.MAP in ctx["out"] for ctx in args.osut5.data.context_types)):
         # Generate timing and convert in_context to timing context
         timing_events, timing_times = processor.generate(
             sequences=sequences,
