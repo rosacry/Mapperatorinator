@@ -169,7 +169,7 @@ class Postprocessor(object):
         self.snap_near_perfect_overlaps(groups)
 
         # Prepare unnormalizing scroll speed changes in mania
-        last_time = max(group.time for group in groups)
+        last_time = max(group.time for group in groups) if len(groups) > 0 else 0
         median_mpb = get_median_mpb(timing, last_time)
 
         # Convert to .osu format
