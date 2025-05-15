@@ -101,9 +101,10 @@ def calculate_frechet_distance(mu1, sigma1, mu2, sigma2, eps=1e-6):
     return diff.dot(diff) + np.trace(sigma1) + np.trace(sigma2) - 2 * tr_covmean
 
 
-def worker(beatmap_paths, args: FidConfig, return_dict, idx):
+def worker(beatmap_paths, fid_args: FidConfig, return_dict, idx):
+    args = fid_args.inference.copy()
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    prepare_args(args)
+    prepare_args(fid_args)
 
     model, tokenizer = load_model(args.model_path, args.osut5, args.device)
 
@@ -120,7 +121,7 @@ def worker(beatmap_paths, args: FidConfig, return_dict, idx):
         if args.compile:
             diff_model.forward = torch.compile(diff_model.forward, mode="reduce-overhead", fullgraph=False)
 
-    classifier_model, classifier_args, classifier_tokenizer = load_ckpt(args.classifier_ckpt)
+    classifier_model, classifier_args, classifier_tokenizer = load_ckpt(fid_args.classifier_ckpt)
 
     if args.compile:
         classifier_model.model.transformer.forward = torch.compile(classifier_model.model.transformer.forward, mode="reduce-overhead", fullgraph=False)
@@ -143,6 +144,8 @@ def worker(beatmap_paths, args: FidConfig, return_dict, idx):
         generation_config = generation_config_from_beatmap(beatmap, tokenizer)
         beatmap_config = beatmap_config_from_beatmap(beatmap)
 
+        args.output_path = Path("generated") / beatmap_path.stem
+
         result = generate(
             args,
             audio_path=audio_path,
@@ -157,6 +160,7 @@ def worker(beatmap_paths, args: FidConfig, return_dict, idx):
             verbose=False,
         )[0]
         generated_beatmap = Beatmap.parse(result)
+        print(beatmap_path, "Generated %s hit objects" % len(generated_beatmap.hit_objects(stacking=False)))
 
         # Calculate feature vectors for real and generated beatmaps
         sample_rate = classifier_args.data.sample_rate
