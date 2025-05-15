@@ -1,15 +1,21 @@
 defaults:
-  - inference_v22
+  - base_fid
+  - inference_tiny_dist@inference
   - _self_
 
-compile: true
+compile: false
 pad_sequence: true
 num_processes: 3
+seed: 0
 
 dataset_path: /workspace/datasets/ORS16291
 dataset_start: 16200
 dataset_end: 16291
 
-model_path: 'OliBomby/Mapperatorinator-v29'
-diff_ckpt: 'OliBomby/osu-diffusion-v2'
 classifier_ckpt: 'OliBomby/osu-classifier'
+
+hydra:
+  job:
+    chdir: True
+  run:
+    dir: ./logs/${now:%Y-%m-%d}/${now:%H-%M-%S}
