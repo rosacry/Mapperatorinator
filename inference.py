@@ -12,7 +12,7 @@ from transformers.utils import cached_file
 
 import osu_diffusion
 import routed_pickle
-from config import InferenceConfig
+from config import InferenceConfig, FidConfig
 from diffusion_pipeline import DiffisionPipeline
 from osuT5.osuT5.config import TrainConfig
 from osuT5.osuT5.dataset.data_utils import events_of_type, TIMING_TYPES, merge_events
@@ -26,7 +26,7 @@ from osu_diffusion import DiT_models
 from osu_diffusion.config import DiffusionTrainConfig
 
 
-def prepare_args(args: InferenceConfig):
+def prepare_args(args: FidConfig):
     torch.set_grad_enabled(False)
     torch.set_float32_matmul_precision('high')
     if args.seed is None:

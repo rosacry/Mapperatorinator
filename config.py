@@ -94,10 +94,11 @@ class InferenceConfig:
 
 
 @dataclass
-class FidConfig(InferenceConfig):
+class FidConfig():
     compile: bool = True
     pad_sequence: bool = True
     num_processes: int = 3
+    seed: int = 0
 
     dataset_path: str = '/workspace/datasets/ORS16291'
     dataset_start: int = 16200
@@ -107,6 +108,10 @@ class FidConfig(InferenceConfig):
     diff_ckpt: str = 'OliBomby/osu-diffusion-v2'
     classifier_ckpt: str = 'OliBomby/osu-classifier'
 
+    inference: InferenceConfig = field(default_factory=InferenceConfig)  # Training settings for osuT5 model
+    hydra: Any = MISSING
+
 
 cs = ConfigStore.instance()
 cs.store(name="base_inference", node=InferenceConfig)
+cs.store(name="base_fid", node=FidConfig)
