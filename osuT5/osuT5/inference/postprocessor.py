@@ -603,6 +603,10 @@ class Postprocessor(object):
         for ignore_divisor in ignore_divisors:
             ticks -= local_ticks(ignore_divisor)
 
+        if len(ticks) == 0:
+            # If we don't have any ticks, just return the original time
+            return time
+
         # Find the closest tick to the original time
         new_time = min(ticks, key=lambda x: abs(x - time))
 
