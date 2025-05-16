@@ -1,6 +1,6 @@
 defaults:
   - base_fid
-  - inference_tiny_dist@inference
+  - inference_tiny_nodist@inference
   - _self_
 
 compile: false
