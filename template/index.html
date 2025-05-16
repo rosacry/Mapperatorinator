@@ -120,13 +120,17 @@
           </fieldset>
           <fieldset>
             <legend>Options</legend>
+            <div class="option-item" id="export-osz-option">
+              <input type="checkbox" id="export_osz" name="export_osz" value="false" />
+              <label for="export_osz" title="Whether to export a .osz file containing the generated beatmap and audio file">Export .osz</label>
+            </div>
+            <div class="option-item" id="add-to-beatmap-option">
+              <input type="checkbox" id="add_to_beatmap" name="add_to_beatmap" value="false" />
+              <label for="add_to_beatmap" title="Whether to add generated content to the reference beatmap instead of making a new beatmap">Add to Beatmap</label>
+            </div>
             <div class="option-item" id="option-item-hitsounded">
               <input type="checkbox" id="hitsounded" name="hitsounded" value="true" checked />
               <label for="hitsounded">Add Hitsounds</label>
-            </div>
-            <div class="option-item" id="add-to-beatmap-option" style="display: none;">
-              <input type="checkbox" id="add_to_beatmap" name="add_to_beatmap" value="true" />
-              <label for="add_to_beatmap" title="Whether to add generated content to the reference beatmap instead of making a new beatmap">Add to Beatmap</label>
             </div>
             <div class="option-item">
               <input type="checkbox" id="super_timing" name="super_timing" value="false" />

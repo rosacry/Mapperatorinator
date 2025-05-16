@@ -196,10 +196,12 @@ def start_inference():
             add_arg(param, request.form.get(param))
 
         # Checkboxes
-        if 'hitsounded' in request.form:
-            cmd.append("hitsounded=true")
+        if 'export_osz' in request.form:
+            cmd.append("export_osz=true")
         if 'add_to_beatmap' in request.form:
             cmd.append("add_to_beatmap=true")
+        if 'hitsounded' in request.form:
+            cmd.append("hitsounded=true")
         if 'super_timing' in request.form:
             cmd.append("super_timing=true")
 
