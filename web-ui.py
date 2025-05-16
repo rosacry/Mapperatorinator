@@ -179,7 +179,8 @@ def start_inference():
         add_arg("beatmap_path", beatmap_path)
 
         # Basic settings
-        add_arg("gamemode", request.form.get('gamemode'))
+        if 'gamemode' in request.form:
+            add_arg("gamemode", request.form.get('gamemode'))
         add_arg("difficulty", request.form.get('difficulty'))
         add_arg("year", request.form.get('year'))
 
