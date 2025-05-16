@@ -198,12 +198,20 @@ def start_inference():
         # Checkboxes
         if 'export_osz' in request.form:
             cmd.append("export_osz=true")
+        else :
+            cmd.append("export_osz=false")
         if 'add_to_beatmap' in request.form:
             cmd.append("add_to_beatmap=true")
+        else:
+            cmd.append("add_to_beatmap=false")
         if 'hitsounded' in request.form:
             cmd.append("hitsounded=true")
+        else:
+            cmd.append("hitsounded=false")
         if 'super_timing' in request.form:
             cmd.append("super_timing=true")
+        else:
+            cmd.append("super_timing=false")
 
         # Descriptors
         descriptors = request.form.getlist('descriptors')
