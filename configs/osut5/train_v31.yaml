@@ -60,7 +60,7 @@ data:                  # Data settings
   add_mania_sv: false  # Add mania scroll velocity in map context
 
 dataloader:             # Dataloader settings
-  num_workers: 4
+  num_workers: 32
 
 optim:                  # Optimizer settings
   name: muon
