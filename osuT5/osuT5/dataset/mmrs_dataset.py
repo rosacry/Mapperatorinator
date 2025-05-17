@@ -339,6 +339,7 @@ class BeatmapDatasetIterable:
                                            out_context],
                            "in_context": [slice_context(context, frame_start_idx, frame_end_idx) for context in
                                           in_context],
+                           "song_position": torch.tensor([frame_start_idx / n_frames, frame_end_idx / n_frames], dtype=torch.float32),
                        } | extra_data
 
             sequence["special"] = sequence["special"].copy()
@@ -804,6 +805,8 @@ class BeatmapDatasetIterable:
 
         extra_data = {
             "beatmap_idx": beatmap_metadata["BeatmapIdx"],
+            "mapper_idx": torch.tensor(self.tokenizer.get_mapper_idx(beatmap_metadata["UserId"]) if random.random() >= self.args.mapper_dropout_prob else -1, dtype=torch.long),
+            "difficulty": torch.tensor(self._get_difficulty(beatmap_metadata, speed), dtype=torch.float32),
             "special": {},
         }
 
