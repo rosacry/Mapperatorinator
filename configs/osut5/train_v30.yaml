@@ -58,3 +58,11 @@ data:                  # Data settings
 dataloader:             # Dataloader settings
   num_workers: 4
 
+optim:                  # Optimizer settings
+  name: muon
+  base_lr: 4e-3         # Should not be scaled with the number of devices present
+  batch_size: 64
+  grad_acc: 1
+  total_steps: 65536
+  warmup_steps: 0
+
