@@ -26,8 +26,8 @@ data:                  # Data settings
   add_song_position_token: false  # Add token for the position of the song in the mapset
   add_descriptors: true
   timing_random_offset: 2
-  src_seq_len: 8192
-  tgt_seq_len: 16384
+  src_seq_len: 4096
+  tgt_seq_len: 8192
   rhythm_weight: 1.0    # Weight of rhythm tokens in the loss calculation
   context_types:       # List of context types to include in the dataset
     - "in": ['${context_type:none}']
@@ -65,7 +65,7 @@ dataloader:             # Dataloader settings
 optim:                  # Optimizer settings
   name: muon
   base_lr: 1e-2         # Should not be scaled with the number of devices present
-  batch_size: 16
+  batch_size: 32
   grad_acc: 1
   total_steps: 65536
   warmup_steps: 0
