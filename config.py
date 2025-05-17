@@ -25,13 +25,19 @@ class InferenceConfig:
     mapper_id: Optional[int] = None  # Mapper ID to use as style
     year: Optional[int] = None  # Year to use as style
     hitsounded: Optional[bool] = None  # Whether the beatmap has hitsounds
-    slider_multiplier: Optional[float] = None  # Multiplier for slider velocity
-    circle_size: Optional[float] = None  # Circle size to use for style
     keycount: Optional[int] = None  # Number of keys to use for mania
     hold_note_ratio: Optional[float] = None  # Ratio of how many hold notes to generate in mania
     scroll_speed_ratio: Optional[float] = None  # Ratio of how many scroll speed changes to generate in mania and taiko
     descriptors: Optional[list[str]] = None  # List of descriptors to use for style
     negative_descriptors: Optional[list[str]] = None  # List of descriptors to avoid when using classifier-free guidance
+
+    # Difficulty settings
+    hp_drain_rate: Optional[float] = None  # HP drain rate (HP)
+    circle_size: Optional[float] = None  # Circle size (CS)
+    overall_difficulty: Optional[float] = None  # Overall difficulty (OD)
+    approach_rate: Optional[float] = None  # Approach rate (AR)
+    slider_multiplier: Optional[float] = None  # Multiplier for slider velocity
+    slider_tick_rate: Optional[float] = None  # Rate of slider ticks
 
     # Inference settings
     seed: Optional[int] = None  # Random seed

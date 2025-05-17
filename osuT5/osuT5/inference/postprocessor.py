@@ -45,6 +45,7 @@ class BeatmapConfig:
     overall_difficulty: float = 8
     approach_rate: float = 9
     slider_multiplier: float = 1.4
+    slider_tick_rate: float = 1
 
     # Timing
     bpm: float = 120
@@ -65,8 +66,12 @@ def beatmap_config_from_beatmap(beatmap: Beatmap) -> BeatmapConfig:
         title_unicode=beatmap.title,
         artist_unicode=beatmap.artist,
         audio_filename=beatmap.audio_filename,
+        hp_drain_rate=beatmap.hp_drain_rate,
         circle_size=beatmap.circle_size,
+        overall_difficulty=beatmap.overall_difficulty,
+        approach_rate=beatmap.approach_rate,
         slider_multiplier=beatmap.slider_multiplier,
+        slider_tick_rate=beatmap.slider_tick_rate,
         creator=beatmap.creator,
         version=beatmap.version,
         background_line=background_line(beatmap.background),

@@ -73,26 +73,37 @@
               <option value="2">Catch the Beat</option>
               <option value="3">Mania</option>
             </select>
+            <label for="difficulty" title="Difficulty rating (star rating)">Difficulty (star rating):</label>
+            <input type="number" step="0.1" id="difficulty" name="difficulty" min="0" value="5" />
+          </fieldset>
+          <fieldset>
+            <legend>Difficulty Metadata</legend>
+            <label for="hp_drain_rate" title="HP drain rate (HP)">HP Drain Rate (HP):</label>
+            <input type="number" step="0.1" id="hp_drain_rate" name="hp_drain_rate" min="0" max="10" value="5" />
+            <div class="form-group" id="group-circle_size" style="display: none;">
+              <label for="circle_size" title="Circle size (CS)">Circle Size (CS):</label>
+              <input type="number" step="0.1" id="circle_size" name="circle_size" min="0" max="10" value="4" />
+            </div>
+            <div class="form-group" id="group-keycount" style="display: none;">
+              <label for="keycount" title="Number of keys for mania">Key Count:</label>
+              <input type="number" id="keycount" name="keycount" min="0" max="18" value="4" />
+            </div>
+            <label for="overall_difficulty" title="Overall difficulty (OD)">Overall Difficulty (OD):</label>
+            <input type="number" step="0.1" id="overall_difficulty" name="overall_difficulty" min="0" max="10" value="8" />
+            <label for="approach_rate" title="Approach rate (AR)">Approach Rate (AR):</label>
+            <input type="number" step="0.1" id="approach_rate" name="approach_rate" min="0" max="10" value="9" />
+            <label for="slider_multiplier" title="Slider velocity multiplier">Slider Multiplier:</label>
+            <input type="number" step="0.1" id="slider_multiplier" name="slider_multiplier" min="0" max="3.6" value="1.4" />
+            <label for="slider_tick_rate" title="Slider tick rate">Slider Tick Rate:</label>
+            <input type="number" step="0.5" id="slider_tick_rate" name="slider_tick_rate" min="0.5" max="4.0" value="1" />
+          </fieldset>
+          <fieldset>
+            <legend>Advanced Settings</legend>
+            <label for="mapper_id" title="Mapper user ID for style">Mapper ID:</label>
             <div class="form-group" id="group-year">
                 <label for="year" title="Year of the song (2007-2023)">Year (2007-2023):</label>
                 <input type="number" id="year" name="year" min="2007" max="2023" value="2023" />
             </div>
-            <label for="difficulty" title="Difficulty rating (star rating)">Difficulty (star rating):</label>
-            <input type="number" step="0.1" id="difficulty" name="difficulty" min="0" value="5" />
-            <label for="slider_multiplier" title="Slider velocity multiplier">Slider Multiplier:<span style="color:var(--accent-color); margin-left: 3px;">*</span></label>
-            <input type="number" step="0.1" id="slider_multiplier" name="slider_multiplier" min="0" value="1.4" required />
-            <div class="form-group" id="group-circle_size" style="display: none;">
-              <label for="circle_size" title="Circle size for standard">Circle Size:<span class="required-indicator cs-required" style="color:var(--accent-color); margin-left: 3px; display: none;">*</span></label>
-              <input type="number" step="0.1" id="circle_size" name="circle_size" min="0" value="4" />
-            </div>
-            <div class="form-group" id="group-keycount" style="display: none;">
-              <label for="keycount" title="Number of keys for mania">Key Count:<span class="required-indicator kc-required" style="color:var(--accent-color); margin-left: 3px; display: none;">*</span></label>
-              <input type="number" id="keycount" name="keycount" min="0" value="4" />
-            </div>
-          </fieldset>
-          <fieldset>
-            <legend>Optional Settings</legend>
-            <label for="mapper_id" title="Mapper user ID for style">Mapper ID:</label>
             <input type="text" id="mapper_id" name="mapper_id" />
             <div class="form-group" id="group-hold_note_ratio" style="display: none;">
               <label for="hold_note_ratio" title="Hold note ratio for mania 0-1">Hold Note Ratio:</label>
@@ -112,7 +123,7 @@
             <input type="text" id="seed" name="seed" />
           </fieldset>
           <fieldset>
-            <legend>Timing & Segments</legend>
+            <legend>Generation Interval</legend>
             <label for="start_time" title="Generation start time in milliseconds">Start Time (ms):</label>
             <input type="number" id="start_time" name="start_time" min="0" />
             <label for="end_time" title="Generation end time in milliseconds">End Time (ms):</label>
@@ -398,17 +409,17 @@
 
           if (showCircleSize) {
               if (!$("#group-circle_size").is(':visible')) $("#group-circle_size").slideDown(animationSpeed);
-              $circleSizeInput.prop('required', true); $circleSizeAsterisk.show();
+              $circleSizeAsterisk.show();
           } else {
               if ($("#group-circle_size").is(':visible')) $("#group-circle_size").slideUp(animationSpeed);
-              $circleSizeInput.prop('required', false); $circleSizeAsterisk.hide();
+              $circleSizeAsterisk.hide();
           }
           if (showKeyCount) {
               if (!$("#group-keycount").is(':visible')) $("#group-keycount").slideDown(animationSpeed);
-              $keyCountInput.prop('required', true); $keyCountAsterisk.show();
+              $keyCountAsterisk.show();
           } else {
               if ($("#group-keycount").is(':visible')) $("#group-keycount").slideUp(animationSpeed);
-              $keyCountInput.prop('required', false); $keyCountAsterisk.hide();
+              $keyCountAsterisk.hide();
           }
           if (showHoldNoteRatio && !$("#group-hold_note_ratio").is(':visible')) {
             $("#group-hold_note_ratio").slideDown(animationSpeed);
