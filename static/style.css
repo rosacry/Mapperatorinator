@@ -144,7 +144,6 @@ h1, h2, h3 {
 }
 
 .card:hover {
-  transform: translateY(-3px) scale(1.005);
   box-shadow: 0 6px 12px rgba(0,0,0,0.5);
   border: 1px solid var(--accent-color);
 }
@@ -370,7 +369,6 @@ button[type="submit"]:hover {
 }
 
 .descriptor-group:hover {
-  transform: scale(1.02);
   box-shadow: 0 2px 6px rgba(0,0,0,0.5);
 }
 
@@ -456,7 +454,6 @@ button[type="submit"]:hover {
   
 /* Additional hover lift for form cards */
 .form-card:hover {
-  transform: translateY(-4px) scale(1.01);
   box-shadow: 0 8px 12px rgba(0,0,0,0.4);
 }
 
@@ -528,7 +525,6 @@ input[type="number"]:hover::-webkit-outer-spin-button {
 }
 
 .custom-dropdown-descriptors:hover {
-  transform: translateY(-3px);
 }
 
 .dropdown-header {
