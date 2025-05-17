@@ -302,7 +302,7 @@ class BeatmapDatasetIterable:
 
         sequences = []
         n_frames = len(frames)
-        offset = random.randint(0, self.frame_seq_len)
+        offset = random.randint(0, min(self.frame_seq_len, 2000))
         last_kiai = {}
         last_sv = {}
         # Divide audio frames into splits
