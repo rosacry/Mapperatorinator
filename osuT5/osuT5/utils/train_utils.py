@@ -61,7 +61,7 @@ def maybe_save_checkpoint(accelerator: Accelerator, args: TrainConfig, shared: N
         wandb_tracker = accelerator.get_tracker("wandb")
         if wandb_tracker is not None:
             art = wandb.Artifact(
-                f"osuT5-{wandb.run.id}",
+                f"osuT5-{wandb.run.id}-{shared.current_train_step}",
                 type="model",
                 metadata={
                     "format": "accelerate",
