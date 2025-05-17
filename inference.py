@@ -26,7 +26,7 @@ from osu_diffusion import DiT_models
 from osu_diffusion.config import DiffusionTrainConfig
 
 
-def prepare_args(args: FidConfig):
+def prepare_args(args: FidConfig | InferenceConfig):
     torch.set_grad_enabled(False)
     torch.set_float32_matmul_precision('high')
     if args.seed is None:
@@ -37,6 +37,22 @@ def prepare_args(args: FidConfig):
 
 def get_args_from_beatmap(args: InferenceConfig, tokenizer: Tokenizer):
     if args.beatmap_path is None or args.beatmap_path == "":
+        # populate fair defaults for any inherited args that need to be filled
+        if args.gamemode is None:
+            args.gamemode = 0
+            print(f"Using game mode {args.gamemode}")
+        if args.circle_size is None:
+            args.circle_size = 4
+            print(f"Using circle size {args.circle_size}")
+        if args.slider_multiplier is None:
+            args.slider_multiplier = 1.4
+            print(f"Using slider multiplier {args.slider_multiplier}")
+        if args.hitsounded is None:
+            args.hitsounded = True
+            print(f"Using hitsounded {args.hitsounded}")
+        if args.keycount is None and args.gamemode == 3:
+            args.keycount = 4
+            print(f"Using keycount {args.keycount}")
         return
 
     beatmap_path = Path(args.beatmap_path)
