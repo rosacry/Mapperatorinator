@@ -147,7 +147,7 @@ def start_inference():
             """Quotes a value for Hydra (single quotes, escapes internal)."""
             value_str = str(value)
             # Escape internal single quotes: ' -> '\''
-            escaped_value = value_str.replace("'", "'\\''")
+            escaped_value = value_str.replace("'", r"\'")
             return f"'{escaped_value}'"
 
         # Set of keys known to be paths needing quoting for Hydra
