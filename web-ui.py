@@ -185,7 +185,8 @@ def start_inference():
         add_arg("year", request.form.get('year'))
 
         # Numeric settings
-        for param in ['slider_multiplier', 'circle_size', 'keycount', 'hold_note_ratio', 'scroll_speed_ratio',
+        for param in ['hp_drain_rate', 'circle_size', 'overall_difficulty', 'approach_rate', 'slider_multiplier',
+                      'slider_tick_rate', 'keycount', 'hold_note_ratio', 'scroll_speed_ratio',
                       'cfg_scale', 'temperature', 'top_p', 'seed']:
             add_arg(param, request.form.get(param))
         # mapper_id

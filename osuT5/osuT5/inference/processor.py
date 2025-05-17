@@ -31,8 +31,12 @@ class GenerationConfig:
     mapper_id: Optional[int] = None
     year: Optional[int] = None
     hitsounded: bool = True
-    slider_multiplier: float = 1.4
+    hp_drain_rate: Optional[float] = None
     circle_size: Optional[float] = None
+    overall_difficulty: Optional[float] = None
+    approach_rate: Optional[float] = None
+    slider_multiplier: float = 1.4
+    slider_tick_rate: Optional[float] = None
     keycount: int = 4
     hold_note_ratio: Optional[float] = None
     scroll_speed_ratio: Optional[float] = None
@@ -54,8 +58,12 @@ def generation_config_from_beatmap(beatmap: Beatmap, tokenizer: Tokenizer) -> Ge
         beatmap_id=beatmap.beatmap_id,
         difficulty=difficulty,
         mapper_id=tokenizer.beatmap_mapper.get(beatmap.beatmap_id, None),
-        slider_multiplier=beatmap.slider_multiplier,
+        hp_drain_rate=beatmap.hp_drain_rate,
         circle_size=beatmap.circle_size,
+        overall_difficulty=beatmap.overall_difficulty,
+        approach_rate=beatmap.approach_rate,
+        slider_multiplier=beatmap.slider_multiplier,
+        slider_tick_rate=beatmap.slider_tick_rate,
         hitsounded=get_hitsounded_status(beatmap),
         keycount=int(beatmap.circle_size) if gamemode == 3 else 4,
         hold_note_ratio=get_hold_note_ratio(beatmap) if gamemode == 3 else None,
@@ -784,9 +792,13 @@ class Processor(object):
                     difficulty=generation_config.difficulty,
                     mapper_id=generation_config.mapper_id if (generation_config.descriptors and len(generation_config.descriptors) > 0) or (generation_config.negative_descriptors and len(generation_config.negative_descriptors) > 0) else None,
                     year=generation_config.year,
+                    hp_drain_rate=generation_config.hp_drain_rate,
                     circle_size=generation_config.circle_size,
-                    hitsounded=generation_config.hitsounded,
+                    overall_difficulty=generation_config.overall_difficulty,
+                    approach_rate=generation_config.approach_rate,
                     slider_multiplier=generation_config.slider_multiplier,
+                    slider_tick_rate=generation_config.slider_tick_rate,
+                    hitsounded=generation_config.hitsounded,
                     keycount=generation_config.keycount,
                     hold_note_ratio=generation_config.hold_note_ratio,
                     scroll_speed_ratio=generation_config.scroll_speed_ratio,

@@ -11,8 +11,12 @@ difficulty: null          # Difficulty star rating to map
 mapper_id: null           # Mapper ID to use as style
 year: null                # Year to use as style
 hitsounded: null        # Whether the beatmap has hitsounds
+hp_drain_rate: null     # HP drain rate (HP)
+circle_size: null         # Circle size (CS)
+overall_difficulty: null  # Overall difficulty (OD)
+approach_rate: null      # Approach rate (AR)
 slider_multiplier: null   # Multiplier for slider velocity
-circle_size: null         # Circle size to use for style
+slider_tick_rate: null      # Rate of slider ticks
 keycount: null            # Number of keys to use for mania
 hold_note_ratio: null     # Ratio of how many hold notes to generate in mania
 scroll_speed_ratio: null  # Ratio of how many scroll speed changes to generate in mania and taiko

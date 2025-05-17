@@ -41,12 +41,24 @@ def get_args_from_beatmap(args: InferenceConfig, tokenizer: Tokenizer):
         if args.gamemode is None:
             args.gamemode = 0
             print(f"Using game mode {args.gamemode}")
+        if args.hp_drain_rate is None:
+            args.hp_drain_rate = 5
+            print(f"Using HP drain rate {args.hp_drain_rate}")
         if args.circle_size is None:
             args.circle_size = 4
             print(f"Using circle size {args.circle_size}")
+        if args.overall_difficulty is None:
+            args.overall_difficulty = 8
+            print(f"Using overall difficulty {args.overall_difficulty}")
+        if args.approach_rate is None:
+            args.approach_rate = 9
+            print(f"Using approach rate {args.approach_rate}")
         if args.slider_multiplier is None:
             args.slider_multiplier = 1.4
             print(f"Using slider multiplier {args.slider_multiplier}")
+        if args.slider_tick_rate is None:
+            args.slider_tick_rate = 1
+            print(f"Using slider tick rate {args.slider_tick_rate}")
         if args.hitsounded is None:
             args.hitsounded = True
             print(f"Using hitsounded {args.hitsounded}")
@@ -85,12 +97,24 @@ def get_args_from_beatmap(args: InferenceConfig, tokenizer: Tokenizer):
     if args.descriptors is None and beatmap.beatmap_id in tokenizer.beatmap_descriptors:
         args.descriptors = generation_config.descriptors
         print(f"Using descriptors {args.descriptors}")
+    if args.hp_drain_rate is None:
+        args.hp_drain_rate = generation_config.hp_drain_rate
+        print(f"Using HP drain rate {args.hp_drain_rate}")
     if args.circle_size is None:
         args.circle_size = generation_config.circle_size
         print(f"Using circle size {args.circle_size}")
+    if args.overall_difficulty is None:
+        args.overall_difficulty = generation_config.overall_difficulty
+        print(f"Using overall difficulty {args.overall_difficulty}")
+    if args.approach_rate is None:
+        args.approach_rate = generation_config.approach_rate
+        print(f"Using approach rate {args.approach_rate}")
     if args.slider_multiplier is None:
         args.slider_multiplier = generation_config.slider_multiplier
         print(f"Using slider multiplier {args.slider_multiplier}")
+    if args.slider_tick_rate is None:
+        args.slider_tick_rate = generation_config.slider_tick_rate
+        print(f"Using slider tick rate {args.slider_tick_rate}")
     if args.hitsounded is None:
         args.hitsounded = generation_config.hitsounded
         print(f"Using hitsounded {args.hitsounded}")
@@ -172,8 +196,12 @@ def get_config(args: InferenceConfig):
         mapper_id=args.mapper_id,
         year=args.year,
         hitsounded=args.hitsounded if args.hitsounded is not None else True,
-        slider_multiplier=args.slider_multiplier or 1.4,
+        hp_drain_rate=args.hp_drain_rate,
         circle_size=args.circle_size,
+        overall_difficulty=args.overall_difficulty,
+        approach_rate=args.approach_rate,
+        slider_multiplier=args.slider_multiplier or 1.4,
+        slider_tick_rate=args.slider_tick_rate or 1,
         keycount=args.keycount if args.keycount is not None else 4,
         hold_note_ratio=args.hold_note_ratio,
         scroll_speed_ratio=args.scroll_speed_ratio,
@@ -185,8 +213,12 @@ def get_config(args: InferenceConfig):
         title_unicode=args.title,
         artist_unicode=args.artist,
         audio_filename=Path(args.audio_path).name,
+        hp_drain_rate=args.hp_drain_rate or 5,
         circle_size=(args.keycount if args.gamemode == 3 else args.circle_size) or 4,
+        overall_difficulty=args.overall_difficulty or 8,
+        approach_rate=args.approach_rate or 9,
         slider_multiplier=args.slider_multiplier or 1.4,
+        slider_tick_rate=args.slider_tick_rate or 1,
         creator=args.creator,
         version=args.version,
         tags=tags,
