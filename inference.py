@@ -27,6 +27,9 @@ from osu_diffusion.config import DiffusionTrainConfig
 
 
 def prepare_args(args: FidConfig | InferenceConfig):
+    if not torch.cuda.is_available() and args.device == "cuda":
+        print("CUDA is not available, using CPU instead.")
+        args.device = "cpu"
     torch.set_grad_enabled(False)
     torch.set_float32_matmul_precision('high')
     if args.seed is None:
