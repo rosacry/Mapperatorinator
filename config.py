@@ -102,9 +102,11 @@ class InferenceConfig:
 @dataclass
 class FidConfig():
     compile: bool = True
-    pad_sequence: bool = True
     num_processes: int = 3
     seed: int = 0
+
+    fid: bool = True
+    rhythm_stats: bool = True
 
     dataset_path: str = '/workspace/datasets/ORS16291'
     dataset_start: int = 16200
