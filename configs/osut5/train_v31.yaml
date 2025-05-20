@@ -65,7 +65,7 @@ dataloader:             # Dataloader settings
 optim:                  # Optimizer settings
   name: muon
   base_lr: 1e-2         # Should not be scaled with the number of devices present
-  batch_size: 32
+  batch_size: 32        # Batch size per GPU (128 for 4 GPUs)
   grad_acc: 1
   total_steps: 65536
   warmup_steps: 0
