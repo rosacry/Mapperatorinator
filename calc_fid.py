@@ -146,21 +146,25 @@ def worker(beatmap_paths, fid_args: FidConfig, return_dict, idx):
 
         args.output_path = Path("generated") / beatmap_path.stem
 
-        result = generate(
-            args,
-            audio_path=audio_path,
-            beatmap_path=other_beatmap_path,
-            generation_config=generation_config,
-            beatmap_config=beatmap_config,
-            model=model,
-            tokenizer=tokenizer,
-            diff_model=diff_model,
-            diff_tokenizer=diff_tokenizer,
-            refine_model=refine_model,
-            verbose=False,
-        )[0]
-        generated_beatmap = Beatmap.parse(result)
-        print(beatmap_path, "Generated %s hit objects" % len(generated_beatmap.hit_objects(stacking=False)))
+        if args.output_path.exists() and len(list(args.output_path.glob("*.osu"))) > 0:
+            generated_beatmap = Beatmap.parse(list(args.output_path.glob("*.osu"))[0])
+            print(f"Skipping {args.output_path} as it already exists")
+        else:
+            result = generate(
+                args,
+                audio_path=audio_path,
+                beatmap_path=other_beatmap_path,
+                generation_config=generation_config,
+                beatmap_config=beatmap_config,
+                model=model,
+                tokenizer=tokenizer,
+                diff_model=diff_model,
+                diff_tokenizer=diff_tokenizer,
+                refine_model=refine_model,
+                verbose=False,
+            )[0]
+            generated_beatmap = Beatmap.parse(result)
+            print(beatmap_path, "Generated %s hit objects" % len(generated_beatmap.hit_objects(stacking=False)))
 
         # Calculate feature vectors for real and generated beatmaps
         sample_rate = classifier_args.data.sample_rate
