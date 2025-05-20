@@ -181,6 +181,9 @@ def start_inference():
         # Basic settings
         if 'gamemode' in request.form:
             add_arg("gamemode", request.form.get('gamemode'))
+        else:
+            # Default to 0 if not provided
+            add_arg("gamemode", 0)
         add_arg("difficulty", request.form.get('difficulty'))
         add_arg("year", request.form.get('year'))
 
