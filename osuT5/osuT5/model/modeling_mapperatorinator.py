@@ -39,7 +39,7 @@ def get_backbone_model(name, config):
     return model
 
 
-class Mapperatorinator(GenerationMixin, PreTrainedModel):
+class Mapperatorinator(PreTrainedModel, GenerationMixin):
     __slots__ = ["spectrogram", "decoder_embedder", "encoder_embedder", "transformer", "style_embedder", "num_classes"]
     config_class = MapperatorinatorConfig
     base_model_prefix = "model"
