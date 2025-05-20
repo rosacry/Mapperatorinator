@@ -196,6 +196,11 @@ class MapperatorinatorCache(EncoderDecoderCache):
     def __init__(self, self_attention_cache: Cache, cross_attention_cache: Cache, cfg_scale: float):
         super().__init__(self_attention_cache, cross_attention_cache)
         self.cfg_scale = cfg_scale
+        self.is_compileable = False  # https://github.com/huggingface/transformers/pull/38244
+
+    def get_max_cache_shape(self):
+        """Returns the maximum shape of the cache."""
+        return self.self_attention_cache.get_max_cache_shape()
 
     def reorder_cache(self, beam_idx: torch.LongTensor):
         """Reorders the cache for beam search, given the selected beam indices."""
