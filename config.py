@@ -110,8 +110,6 @@ class FidConfig():
     dataset_start: int = 16200
     dataset_end: int = 16291
 
-    model_path: str = 'OliBomby/Mapperatorinator-v29'
-    diff_ckpt: str = 'OliBomby/osu-diffusion-v2'
     classifier_ckpt: str = 'OliBomby/osu-classifier'
 
     inference: InferenceConfig = field(default_factory=InferenceConfig)  # Training settings for osuT5 model
