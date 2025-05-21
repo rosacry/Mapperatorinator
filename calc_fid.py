@@ -186,25 +186,28 @@ def worker(beatmap_paths, fid_args: FidConfig, return_dict, idx):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     prepare_args(fid_args)
 
-    model, tokenizer = load_model(args.model_path, args.osut5, args.device)
-
-    if args.compile:
-        model.transformer.forward = torch.compile(model.transformer.forward, mode="reduce-overhead", fullgraph=True)
-
-    diff_model, diff_tokenizer, refine_model = None, None, None
-    if args.generate_positions:
-        diff_model, diff_tokenizer = load_diff_model(args.diff_ckpt, args.diffusion, args.device)
-
-        if os.path.exists(args.diff_refine_ckpt):
-            refine_model = load_diff_model(args.diff_refine_ckpt, args.diffusion, args.device)[0]
+    model, tokenizer, diff_model, diff_tokenizer, refine_model = None, None, None, None, None
+    if not fid_args.skip_generation:
+        model, tokenizer = load_model(args.model_path, args.osut5, args.device)
 
         if args.compile:
-            diff_model.forward = torch.compile(diff_model.forward, mode="reduce-overhead", fullgraph=False)
+            model.transformer.forward = torch.compile(model.transformer.forward, mode="reduce-overhead", fullgraph=True)
 
-    classifier_model, classifier_args, classifier_tokenizer = load_ckpt(fid_args.classifier_ckpt)
+        if args.generate_positions:
+            diff_model, diff_tokenizer = load_diff_model(args.diff_ckpt, args.diffusion, args.device)
 
-    if args.compile:
-        classifier_model.model.transformer.forward = torch.compile(classifier_model.model.transformer.forward, mode="reduce-overhead", fullgraph=False)
+            if os.path.exists(args.diff_refine_ckpt):
+                refine_model = load_diff_model(args.diff_refine_ckpt, args.diffusion, args.device)[0]
+
+            if args.compile:
+                diff_model.forward = torch.compile(diff_model.forward, mode="reduce-overhead", fullgraph=False)
+
+    classifier_model, classifier_args, classifier_tokenizer = None, None, None
+    if fid_args.fid:
+        classifier_model, classifier_args, classifier_tokenizer = load_ckpt(fid_args.classifier_ckpt)
+
+        if args.compile:
+            classifier_model.model.transformer.forward = torch.compile(classifier_model.model.transformer.forward, mode="reduce-overhead", fullgraph=False)
 
     real_features = []
     generated_features = []
@@ -215,24 +218,24 @@ def worker(beatmap_paths, fid_args: FidConfig, return_dict, idx):
         audio_path = beatmap_path.parents[1] / list(beatmap_path.parents[1].glob('audio.*'))[0]
         beatmap = Beatmap.from_path(beatmap_path)
 
-        if ContextType.GD in args.in_context:
-            other_beatmaps = [k for k in beatmap_path.parent.glob("*.osu") if k != beatmap_path]
-            if len(other_beatmaps) == 0:
-                continue
-            other_beatmap_path = random.choice(other_beatmaps)
-        else:
-            other_beatmap_path = beatmap_path
-
-        generation_config = generation_config_from_beatmap(beatmap, tokenizer)
-        beatmap_config = beatmap_config_from_beatmap(beatmap)
-
         output_path = Path("generated") / beatmap_path.stem
         args.output_path = output_path
 
-        if output_path.exists() and len(list(output_path.glob("*.osu"))) > 0:
+        if fid_args.skip_generation or (output_path.exists() and len(list(output_path.glob("*.osu"))) > 0):
             generated_beatmap = Beatmap.from_path(list(output_path.glob("*.osu"))[0])
             print(f"Skipping {beatmap_path.stem} as it already exists")
         else:
+            if ContextType.GD in args.in_context:
+                other_beatmaps = [k for k in beatmap_path.parent.glob("*.osu") if k != beatmap_path]
+                if len(other_beatmaps) == 0:
+                    continue
+                other_beatmap_path = random.choice(other_beatmaps)
+            else:
+                other_beatmap_path = beatmap_path
+
+            generation_config = generation_config_from_beatmap(beatmap, tokenizer)
+            beatmap_config = beatmap_config_from_beatmap(beatmap)
+
             result = generate(
                 args,
                 audio_path=audio_path,
