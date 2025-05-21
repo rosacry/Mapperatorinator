@@ -215,69 +215,72 @@ def worker(beatmap_paths, fid_args: FidConfig, return_dict, idx):
     passive_rhythm_stats = {}
 
     for beatmap_path in tqdm(beatmap_paths, desc=f"Process {idx}"):
-        audio_path = beatmap_path.parents[1] / list(beatmap_path.parents[1].glob('audio.*'))[0]
-        beatmap = Beatmap.from_path(beatmap_path)
+        try:
+            audio_path = beatmap_path.parents[1] / list(beatmap_path.parents[1].glob('audio.*'))[0]
+            beatmap = Beatmap.from_path(beatmap_path)
 
-        output_path = Path("generated") / beatmap_path.stem
-        args.output_path = output_path
+            output_path = Path("generated") / beatmap_path.stem
+            args.output_path = output_path
 
-        if fid_args.skip_generation or (output_path.exists() and len(list(output_path.glob("*.osu"))) > 0):
-            generated_beatmap = Beatmap.from_path(list(output_path.glob("*.osu"))[0])
-            print(f"Skipping {beatmap_path.stem} as it already exists")
-        else:
-            if ContextType.GD in args.in_context:
-                other_beatmaps = [k for k in beatmap_path.parent.glob("*.osu") if k != beatmap_path]
-                if len(other_beatmaps) == 0:
-                    continue
-                other_beatmap_path = random.choice(other_beatmaps)
+            if fid_args.skip_generation or (output_path.exists() and len(list(output_path.glob("*.osu"))) > 0):
+                generated_beatmap = Beatmap.from_path(list(output_path.glob("*.osu"))[0])
+                print(f"Skipping {beatmap_path.stem} as it already exists")
             else:
-                other_beatmap_path = beatmap_path
+                if ContextType.GD in args.in_context:
+                    other_beatmaps = [k for k in beatmap_path.parent.glob("*.osu") if k != beatmap_path]
+                    if len(other_beatmaps) == 0:
+                        continue
+                    other_beatmap_path = random.choice(other_beatmaps)
+                else:
+                    other_beatmap_path = beatmap_path
 
-            generation_config = generation_config_from_beatmap(beatmap, tokenizer)
-            beatmap_config = beatmap_config_from_beatmap(beatmap)
+                generation_config = generation_config_from_beatmap(beatmap, tokenizer)
+                beatmap_config = beatmap_config_from_beatmap(beatmap)
 
-            result = generate(
-                args,
-                audio_path=audio_path,
-                beatmap_path=other_beatmap_path,
-                generation_config=generation_config,
-                beatmap_config=beatmap_config,
-                model=model,
-                tokenizer=tokenizer,
-                diff_model=diff_model,
-                diff_tokenizer=diff_tokenizer,
-                refine_model=refine_model,
-                verbose=False,
-            )[0]
-            generated_beatmap = Beatmap.parse(result)
-            print(beatmap_path, "Generated %s hit objects" % len(generated_beatmap.hit_objects(stacking=False)))
+                result = generate(
+                    args,
+                    audio_path=audio_path,
+                    beatmap_path=other_beatmap_path,
+                    generation_config=generation_config,
+                    beatmap_config=beatmap_config,
+                    model=model,
+                    tokenizer=tokenizer,
+                    diff_model=diff_model,
+                    diff_tokenizer=diff_tokenizer,
+                    refine_model=refine_model,
+                    verbose=False,
+                )[0]
+                generated_beatmap = Beatmap.parse(result)
+                print(beatmap_path, "Generated %s hit objects" % len(generated_beatmap.hit_objects(stacking=False)))
 
-        if fid_args.fid:
-            # Calculate feature vectors for real and generated beatmaps
-            sample_rate = classifier_args.data.sample_rate
-            audio = load_audio_file(audio_path, sample_rate)
+            if fid_args.fid:
+                # Calculate feature vectors for real and generated beatmaps
+                sample_rate = classifier_args.data.sample_rate
+                audio = load_audio_file(audio_path, sample_rate)
 
-            for example in iterate_examples(beatmap, audio, classifier_args, classifier_tokenizer, device):
-                classifier_result: OsuClassifierOutput = classifier_model(**example)
-                features = classifier_result.feature_vector
-                real_features.append(features.squeeze(0).cpu().numpy())
+                for example in iterate_examples(beatmap, audio, classifier_args, classifier_tokenizer, device):
+                    classifier_result: OsuClassifierOutput = classifier_model(**example)
+                    features = classifier_result.feature_vector
+                    real_features.append(features.squeeze(0).cpu().numpy())
 
-            for example in iterate_examples(generated_beatmap, audio, classifier_args, classifier_tokenizer, device):
-                classifier_result: OsuClassifierOutput = classifier_model(**example)
-                features = classifier_result.feature_vector
-                generated_features.append(features.squeeze(0).cpu().numpy())
+                for example in iterate_examples(generated_beatmap, audio, classifier_args, classifier_tokenizer, device):
+                    classifier_result: OsuClassifierOutput = classifier_model(**example)
+                    features = classifier_result.feature_vector
+                    generated_features.append(features.squeeze(0).cpu().numpy())
 
-        if fid_args.rhythm_stats:
-            # Calculate rhythm stats
-            real_active_rhythm = get_rhythm(beatmap, passive=False)
-            generated_active_rhythm = get_rhythm(generated_beatmap, passive=False)
-            add_to_dict(calculate_rhythm_stats(real_active_rhythm, generated_active_rhythm), active_rhythm_stats)
+            if fid_args.rhythm_stats:
+                # Calculate rhythm stats
+                real_active_rhythm = get_rhythm(beatmap, passive=False)
+                generated_active_rhythm = get_rhythm(generated_beatmap, passive=False)
+                add_to_dict(calculate_rhythm_stats(real_active_rhythm, generated_active_rhythm), active_rhythm_stats)
 
-            real_passive_rhythm = get_rhythm(beatmap, passive=True)
-            generated_passive_rhythm = get_rhythm(generated_beatmap, passive=True)
-            add_to_dict(calculate_rhythm_stats(real_passive_rhythm, generated_passive_rhythm), passive_rhythm_stats)
-
-        torch.cuda.empty_cache()  # Clear any cached memory
+                real_passive_rhythm = get_rhythm(beatmap, passive=True)
+                generated_passive_rhythm = get_rhythm(generated_beatmap, passive=True)
+                add_to_dict(calculate_rhythm_stats(real_passive_rhythm, generated_passive_rhythm), passive_rhythm_stats)
+        except Exception as e:
+            print(f"Error processing {beatmap_path}: {e}")
+        finally:
+            torch.cuda.empty_cache()  # Clear any cached memory
 
     return_dict[idx] = dict(
         real_features=real_features,
