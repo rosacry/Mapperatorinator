@@ -105,6 +105,7 @@ class FidConfig():
     num_processes: int = 3
     seed: int = 0
 
+    skip_generation: bool = False
     fid: bool = True
     rhythm_stats: bool = True
 
