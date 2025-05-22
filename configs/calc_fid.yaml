@@ -1,6 +1,6 @@
 defaults:
   - base_fid
-  - inference_v31@inference
+  - inference_v30@inference
   - _self_
 
 compile: false
@@ -19,6 +19,10 @@ classifier_ckpt: 'OliBomby/osu-classifier'
 
 inference:
   super_timing: false
+  temperature: 0.9        # Sampling temperature
+  top_p: 0.9              # Top-p sampling threshold
+  lookback: 0.25             # Fraction of audio sequence to fill with tokens from previous inference window
+  lookahead: 0.7            # Fraction of audio sequence to skip at the end of the audio window
 
 hydra:
   job:
