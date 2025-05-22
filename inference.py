@@ -347,15 +347,18 @@ def generate(
 
 
 def load_model(
-        ckpt_path: str,
+        ckpt_path_str: str,
         t5_args: TrainConfig,
         device,
 ):
-    ckpt_path = Path(ckpt_path)
+    if ckpt_path_str == "":
+        raise ValueError("Model path is empty.")
+
+    ckpt_path = Path(ckpt_path_str)
     if not (ckpt_path / "pytorch_model.bin").exists() or not (ckpt_path / "custom_checkpoint_0.pkl").exists():
-        model = Mapperatorinator.from_pretrained(ckpt_path)
+        model = Mapperatorinator.from_pretrained(ckpt_path_str)
         model.generation_config.disable_compile = True
-        tokenizer = Tokenizer.from_pretrained(ckpt_path)
+        tokenizer = Tokenizer.from_pretrained(ckpt_path_str)
     else:
         model_state = torch.load(ckpt_path / "pytorch_model.bin", map_location=device, weights_only=True)
         tokenizer_state = torch.load(ckpt_path / "custom_checkpoint_0.pkl", pickle_module=routed_pickle, weights_only=False)
