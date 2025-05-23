@@ -13,6 +13,8 @@ from transformers import LogitsProcessorList, LogitsProcessor, EncoderDecoderCac
     ClassifierFreeGuidanceLogitsProcessor, Cache, TemperatureLogitsWarper
 
 from config import InferenceConfig
+from .cache_utils import get_cache
+from .server import InferenceClient
 from ..dataset import OsuParser
 from ..dataset.data_utils import (update_event_times, remove_events_of_type, get_hold_note_ratio,
                                   get_scroll_speed_ratio, get_hitsounded_status, TIMED_EVENTS)
@@ -192,25 +194,8 @@ class LookbackBiasLogitsWarper(LogitsProcessor):
         return scores_processed
 
 
-class MapperatorinatorCache(EncoderDecoderCache):
-    def __init__(self, self_attention_cache: Cache, cross_attention_cache: Cache, cfg_scale: float):
-        super().__init__(self_attention_cache, cross_attention_cache)
-        self.cfg_scale = cfg_scale
-        self.is_compileable = False  # https://github.com/huggingface/transformers/pull/38244
-
-    def get_max_cache_shape(self):
-        """Returns the maximum shape of the cache."""
-        return self.self_attention_cache.get_max_cache_shape()
-
-    def reorder_cache(self, beam_idx: torch.LongTensor):
-        """Reorders the cache for beam search, given the selected beam indices."""
-        beam_idx = beam_idx.repeat(2) if self.cfg_scale > 1 else beam_idx
-        self.self_attention_cache.reorder_cache(beam_idx)
-        self.cross_attention_cache.reorder_cache(beam_idx)
-
-
 class Processor(object):
-    def __init__(self, args: InferenceConfig, model: Mapperatorinator, tokenizer: Tokenizer, cfg_scale: float = None):
+    def __init__(self, args: InferenceConfig, model: Mapperatorinator | InferenceClient, tokenizer: Tokenizer, cfg_scale: float = None):
         """Model inference stage that processes sequences."""
         self.device = args.device
         self.args = args
@@ -293,17 +278,29 @@ class Processor(object):
 
         self.lookback_bias_logit_processor = LookbackBiasLogitsWarper(self.lookback_max_time, tokenizer, self.types_first, self.device)
 
-    def model_generate(self, inputs, **kwargs: Any) -> Any:
-        return self.model.generate(
-            inputs,
-            top_p=self.top_p,
-            top_k=self.top_k,
+    def model_generate(self, inputs, model_kwargs, **generate_kwargs: Any) -> Any:
+        generate_kwargs2 = generate_kwargs | dict(
             do_sample=self.do_sample,
             num_beams=self.num_beams,
-            use_cache=True,
+            top_p=self.top_p,
+            top_k=self.top_k,
             max_length=self.tgt_seq_len,
-            **kwargs,
         )
+
+        if isinstance(self.model, InferenceClient):
+            return self.model.generate(
+                {"inputs": inputs} | model_kwargs,
+                {"cfg_scale": self.cfg_scale} | generate_kwargs2
+            )
+        else:
+            cache = get_cache(self.model, inputs.size(0), generate_kwargs2.get("num_beams", 1), self.cfg_scale)
+            return self.model.generate(
+                inputs,
+                **model_kwargs,
+                **generate_kwargs2,
+                use_cache=True,
+                past_key_values=cache,
+            )
 
     def generate(
             self,
@@ -508,7 +505,6 @@ class Processor(object):
                 )
 
                 [prompt, uncond_prompt], max_len = self.pad_prompts([cond_prompt, uncond_prompt])
-                cache = self.get_cache(prompt.size(0))
 
                 # Prepare additional model kwargs
                 if self.do_song_position_embed:
@@ -518,13 +514,13 @@ class Processor(object):
 
                 result = self.model_generate(
                     frames,
-                    **model_kwargs,
-                    decoder_input_ids=prompt,
-                    decoder_attention_mask=prompt.ne(self.tokenizer.pad_id),
+                    model_kwargs | dict(
+                        decoder_input_ids=prompt,
+                        decoder_attention_mask=prompt.ne(self.tokenizer.pad_id),
+                        negative_prompt=uncond_prompt,
+                        negative_prompt_attention_mask=uncond_prompt.ne(self.tokenizer.pad_id) if uncond_prompt is not None else None,
+                    ),
                     logits_processor=logit_processor2,
-                    negative_prompt=uncond_prompt,
-                    negative_prompt_attention_mask=uncond_prompt.ne(self.tokenizer.pad_id) if uncond_prompt is not None else None,
-                    past_key_values=cache,
                     eos_token_id=self.get_eos_token_id(trim_lookback, trim_lookahead, context["context_type"]),
                 )
 
@@ -584,16 +580,16 @@ class Processor(object):
             kwargses_batch = model_kwargses[i:i + max_batch_size]
             model_kwargs_batch = {k: torch.cat([kwargs[k] for kwargs in kwargses_batch], dim=0) for k in model_kwarg_keys}
 
-            cache = self.get_cache(prompt_batch.size(0))
-
             # Start generation
             results.append(self.model_generate(
                 frames_batch,
-                **model_kwargs_batch,
-                decoder_input_ids=prompt_batch,
+                model_kwargs_batch | dict(
+                    decoder_input_ids=prompt_batch,
+                    decoder_attention_mask=prompt_batch.ne(self.tokenizer.pad_id),
+                    negative_prompt=uncond_prompt_batch,
+                    negative_prompt_attention_mask=uncond_prompt_batch.ne(self.tokenizer.pad_id) if uncond_prompt_batch is not None else None,
+                ),
                 logits_processor=logit_processor,
-                negative_prompt=uncond_prompt_batch,
-                past_key_values=cache,
                 eos_token_id=self.get_eos_token_id(context_type=out_context[-1]["context_type"]),
             ))
 
@@ -621,20 +617,6 @@ class Processor(object):
         if tensor is None:
             return [None] * batch_size
         return [tensor[i:i + max_batch_size] for i in range(0, tensor.size(0), max_batch_size)]
-
-    def get_cache(self, batch_size: int):
-        cache_kwargs = {
-            "config": self.model.config,
-            "max_batch_size": batch_size * self.num_beams * 2 if self.cfg_scale > 1 else batch_size * self.num_beams,
-            "max_cache_len": self.model.config.max_target_positions,
-            "device": self.device,
-            "dtype": self.model.dtype,
-        }
-        decoder_cache = StaticCache(**cache_kwargs)
-        encoder_kwargs = cache_kwargs.copy()
-        encoder_kwargs["max_cache_len"] = self.model.config.max_source_positions
-        encoder_cache = StaticCache(**encoder_kwargs)
-        return MapperatorinatorCache(decoder_cache, encoder_cache, self.cfg_scale)
 
     def prepare_frames(self, frames: torch.Tensor) -> torch.Tensor:
         frames = frames.to(self.device)
