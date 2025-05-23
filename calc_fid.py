@@ -1,5 +1,6 @@
 import os
 import random
+import traceback
 from datetime import timedelta
 from pathlib import Path
 
@@ -8,9 +9,10 @@ import numpy as np
 import torch
 from scipy import linalg
 from slider import Beatmap, Circle, Slider, Spinner, HoldNote
+from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-from classifier.classify import iterate_examples
+from classifier.classify import ExampleDataset
 from classifier.libs.model.model import OsuClassifierOutput
 from classifier.libs.utils import load_ckpt
 from config import FidConfig
@@ -223,6 +225,8 @@ def worker(beatmap_paths, fid_args: FidConfig, return_dict, idx):
             args.output_path = output_path
 
             if fid_args.skip_generation or (output_path.exists() and len(list(output_path.glob("*.osu"))) > 0):
+                if not output_path.exists() or len(list(output_path.glob("*.osu"))) == 0:
+                    raise FileNotFoundError(f"Generated beatmap not found in {output_path}")
                 generated_beatmap = Beatmap.from_path(list(output_path.glob("*.osu"))[0])
                 print(f"Skipping {beatmap_path.stem} as it already exists")
             else:
@@ -258,15 +262,15 @@ def worker(beatmap_paths, fid_args: FidConfig, return_dict, idx):
                 sample_rate = classifier_args.data.sample_rate
                 audio = load_audio_file(audio_path, sample_rate)
 
-                for example in iterate_examples(beatmap, audio, classifier_args, classifier_tokenizer, device):
+                for example in DataLoader(ExampleDataset(beatmap, audio, classifier_args, classifier_tokenizer, device), batch_size=fid_args.classifier_batch_size):
                     classifier_result: OsuClassifierOutput = classifier_model(**example)
                     features = classifier_result.feature_vector
-                    real_features.append(features.squeeze(0).cpu().numpy())
+                    real_features.append(features.cpu().numpy())
 
-                for example in iterate_examples(generated_beatmap, audio, classifier_args, classifier_tokenizer, device):
+                for example in DataLoader(ExampleDataset(generated_beatmap, audio, classifier_args, classifier_tokenizer, device), batch_size=fid_args.classifier_batch_size):
                     classifier_result: OsuClassifierOutput = classifier_model(**example)
                     features = classifier_result.feature_vector
-                    generated_features.append(features.squeeze(0).cpu().numpy())
+                    generated_features.append(features.cpu().numpy())
 
             if fid_args.rhythm_stats:
                 # Calculate rhythm stats
@@ -279,6 +283,7 @@ def worker(beatmap_paths, fid_args: FidConfig, return_dict, idx):
                 add_to_dict(calculate_rhythm_stats(real_passive_rhythm, generated_passive_rhythm), passive_rhythm_stats)
         except Exception as e:
             print(f"Error processing {beatmap_path}: {e}")
+            traceback.print_exc()
         finally:
             torch.cuda.empty_cache()  # Clear any cached memory
 
@@ -327,8 +332,8 @@ def main(args: FidConfig):
 
     if args.fid:
         # Calculate FID
-        real_features = np.stack(real_features)
-        generated_features = np.stack(generated_features)
+        real_features = np.concatenate(real_features, axis=0)
+        generated_features = np.concatenate(generated_features, axis=0)
         m1, s1 = np.mean(real_features, axis=0), np.cov(real_features, rowvar=False)
         m2, s2 = np.mean(generated_features, axis=0), np.cov(generated_features, rowvar=False)
         fid = calculate_frechet_distance(m1, s1, m2, s2)

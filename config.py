@@ -100,7 +100,7 @@ class InferenceConfig:
 
 
 @dataclass
-class FidConfig():
+class FidConfig:
     compile: bool = True
     num_processes: int = 3
     seed: int = 0
@@ -114,6 +114,7 @@ class FidConfig():
     dataset_end: int = 16291
 
     classifier_ckpt: str = 'OliBomby/osu-classifier'
+    classifier_batch_size: int = 16
 
     inference: InferenceConfig = field(default_factory=InferenceConfig)  # Training settings for osuT5 model
     hydra: Any = MISSING

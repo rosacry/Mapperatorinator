@@ -7,7 +7,7 @@ compile: false
 num_processes: 3
 seed: 0
 
-skip_generation: false
+skip_generation: true
 fid: true
 rhythm_stats: true
 
@@ -16,6 +16,7 @@ dataset_start: 16200
 dataset_end: 16291
 
 classifier_ckpt: 'OliBomby/osu-classifier'
+classifier_batch_size: 16
 
 inference:
   super_timing: false
