@@ -209,7 +209,7 @@ cd Mapperatorinator
 
 ### 2. Create dataset
 
-Create your own dataset using the [Mapperator console app](https://github.com/mappingtools/Mapperator). It requires an [osu! OAuth client token](https://osu.ppy.sh/home/account/edit) to verify beatmaps and get additional metadata. Place the dataset in the `datasets` directory next to the `Mapperatorinator` directory.
+Create your own dataset using the [Mapperator console app](https://github.com/mappingtools/Mapperator/blob/master/README.md#create-a-high-quality-dataset). It requires an [osu! OAuth client token](https://osu.ppy.sh/home/account/edit) to verify beatmaps and get additional metadata. Place the dataset in a `datasets` directory next to the `Mapperatorinator` directory.
 
 ```sh
 Mapperator.ConsoleApp.exe dataset2 -t "/Mapperatorinator/datasets/beatmap_descriptors.csv" -i "path/to/osz/files" -o "/datasets/cool_dataset"
