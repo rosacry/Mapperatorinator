@@ -241,6 +241,9 @@ def worker(beatmap_paths, fid_args: FidConfig, return_dict, idx):
                 generation_config = generation_config_from_beatmap(beatmap, tokenizer)
                 beatmap_config = beatmap_config_from_beatmap(beatmap)
 
+                if args.year is not None:
+                    generation_config.year = args.year
+
                 result = generate(
                     args,
                     audio_path=audio_path,
