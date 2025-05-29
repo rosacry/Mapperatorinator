@@ -587,10 +587,17 @@
         $("#inferenceForm").submit(function(e) {
           const audioPath = $('#audio_path').val().trim();
           const beatmapPath = $('#beatmap_path').val().trim();
+          const outputPath = $('#output_path').val().trim();
           if (!audioPath && !beatmapPath) {
               e.preventDefault();
               $('html, body').animate({ scrollTop: 0 }, 500);
               showFlashMessage("Either 'Beatmap Path' or 'Audio Path' are required for running inference", 'error');
+              return;
+          }
+          if (!outputPath && !beatmapPath) {
+              e.preventDefault();
+              $('html, body').animate({ scrollTop: 0 }, 500);
+              showFlashMessage("Either 'Output Path' or 'Beatmap Path' are required for running inference", 'error');
               return;
           }
           e.preventDefault();
