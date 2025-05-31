@@ -93,8 +93,8 @@ python inference.py \
   keycount             [Key count for mania] \
   hold_note_ratio      [Hold note ratio for mania 0-1] \
   scroll_speed_ratio   [Scroll speed ratio for mania and ctb 0-1] \
-  descriptors          [List of OMDB descriptors for style] \
-  negative_descriptors [List of OMDB negative descriptors for classifier-free guidance] \
+  descriptors          [List of beatmap user tags for style] \
+  negative_descriptors [List of beatmap user tags for classifier-free guidance] \
   
   add_to_beatmap       [Whether to add generated content to the reference beatmap instead of making a new beatmap] \
   start_time           [Generation start time in milliseconds] \
@@ -114,7 +114,7 @@ python inference.py beatmap_path="'C:\Users\USER\AppData\Local\osu!\Songs\1 Kenj
 ## Generation Tips
 
 - You can edit `configs/inference_v29.yaml` and add your arguments there instead of typing them in the terminal every time.
-- All available descriptors can be found [here](https://omdb.nyahh.net/descriptors/).
+- All available descriptors can be found [here](https://osu.ppy.sh/wiki/en/Beatmap/Beatmap_tags).
 - Always provide a year argument between 2007 and 2023. If you leave it unknown, the model might generate with an inconsistent style.
 - Always provide a difficulty argument. If you leave it unknown, the model might generate with an inconsistent difficulty.
 - Increase the `cfg_scale` parameter to increase the effectiveness of the `mapper_id` and `descriptors` arguments.
