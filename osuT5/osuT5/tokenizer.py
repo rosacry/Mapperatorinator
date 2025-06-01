@@ -112,7 +112,8 @@ class Tokenizer(PushToHubMixin):
 
             if args.model.do_mapper_embed or args.data.add_mapper_token:
                 self._init_mapper_idx(args)
-                self.input_event_ranges.append(EventRange(EventType.MAPPER, 0, self.num_mapper_classes))
+                if args.data.add_mapper_token:
+                    self.input_event_ranges.append(EventRange(EventType.MAPPER, 0, self.num_mapper_classes))
 
             if args.data.add_cs_token:
                 self.num_cs_classes = args.data.num_cs_classes
