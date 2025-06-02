@@ -521,12 +521,6 @@ class BeatmapDatasetIterable:
             sequence["pre_tokens"] = pre_tokens
             del sequence["pre_events"]
 
-        # We keep beatmap_idx because it is a model input
-        sequence["beatmap_idx"] = sequence["beatmap_idx"] \
-            if random.random() >= self.args.class_dropout_prob else self.tokenizer.num_classes
-        sequence["mapper_idx"] = sequence["mapper_idx"] \
-            if random.random() >= self.args.mapper_dropout_prob else self.tokenizer.num_mapper_classes
-
         return sequence
 
     def _pad_and_split_token_sequence(self, sequence: dict) -> dict:
@@ -807,8 +801,10 @@ class BeatmapDatasetIterable:
             return data
 
         extra_data = {
-            "beatmap_idx": beatmap_metadata["BeatmapIdx"],
-            "mapper_idx": torch.tensor(self.tokenizer.get_mapper_idx(beatmap_metadata["UserId"]) if random.random() >= self.args.mapper_dropout_prob else -1, dtype=torch.long),
+            "beatmap_idx": torch.tensor(beatmap_metadata["BeatmapIdx"]
+                                        if random.random() >= self.args.class_dropout_prob else self.tokenizer.num_classes, dtype=torch.long),
+            "mapper_idx": torch.tensor(self.tokenizer.get_mapper_idx(beatmap_metadata["UserId"])
+                                       if random.random() >= self.args.mapper_dropout_prob else self.tokenizer.num_mapper_classes, dtype=torch.long),
             "difficulty": torch.tensor(self._get_difficulty(beatmap_metadata, speed), dtype=torch.float32),
             "special": {},
         }
