@@ -96,7 +96,7 @@ class Tokenizer(PushToHubMixin):
             ]
             self.input_event_ranges: list[EventRange] = []
 
-            if args.data.gamemodes != [0]:
+            if args.data.add_gamemode_token:
                 self.input_event_ranges.append(EventRange(EventType.GAMEMODE, 0, 3))
 
             if args.model.do_style_embed or args.data.add_style_token:
