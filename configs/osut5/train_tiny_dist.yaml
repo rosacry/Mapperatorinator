@@ -8,9 +8,9 @@ precision: 'bf16'         # Enable mixed precision (no/fp16/bf16/fp8)
 flash_attention: false  # Enable Flash Attention
 
 data:                  # Data settings
-  dataset_type: "ors"
-  train_dataset_path: ""
-  test_dataset_path: ""
+  dataset_type: "mmrs"
+  train_dataset_path: "/workspace/datasets/MMRS39389"
+  test_dataset_path: "/workspace/datasets/MMRS39389"
   train_dataset_start: 0
   train_dataset_end: 38689
   test_dataset_start: 38689
@@ -58,7 +58,7 @@ data:                  # Data settings
   dt_augment_range: [1.25, 1.5]  # Range of DT augmentation
   types_first: false       # Put the type token at the start of the group before the timeshift token
   add_kiai: false        # Model kiai times
-  gamemodes: [0, 1, 2, 3]  # List of gamemodes to include in the dataset
+  gamemodes: [0]  # List of gamemodes to include in the dataset
   mania_bpm_normalized_scroll_speed: true  # Normalize mania scroll speed by BPM
   add_sv: false  # Model slider velocity in std and ctb
   add_mania_sv: false  # Add mania scroll velocity in map context
