@@ -521,9 +521,11 @@ class BeatmapDatasetIterable:
             sequence["pre_tokens"] = pre_tokens
             del sequence["pre_events"]
 
+        # We keep beatmap_idx because it is a model input
         sequence["beatmap_idx"] = sequence["beatmap_idx"] \
             if random.random() >= self.args.class_dropout_prob else self.tokenizer.num_classes
-        # We keep beatmap_idx because it is a model input
+        sequence["mapper_idx"] = sequence["mapper_idx"] \
+            if random.random() >= self.args.mapper_dropout_prob else self.tokenizer.num_mapper_classes
 
         return sequence
 
