@@ -70,7 +70,7 @@ optim:                  # Optimizer settings
   name: muon
   base_lr: 4e-3         # Should be scaled with the number of devices present
   batch_size: 64
-  grad_acc: 1
+  grad_acc: 2
   total_steps: 32768
   warmup_steps: 0
 
