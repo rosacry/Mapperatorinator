@@ -3,6 +3,7 @@ import random
 import traceback
 from datetime import timedelta
 from pathlib import Path
+from threading import Thread
 
 import hydra
 import numpy as np
@@ -313,7 +314,7 @@ def main(args: FidConfig):
     processes = []
 
     for i in range(num_processes):
-        p = Process(target=worker, args=(chunks[i], args, return_dict, i))
+        p = Thread(target=worker, args=(chunks[i], args, return_dict, i))
         processes.append(p)
         p.start()
 
