@@ -71,7 +71,7 @@ def model_generate(model, tokenizer, model_kwargs, generate_kwargs):
     else:
         logits_processor_list.append(TemperatureLogitsWarper(temperature))
     if lookback_time > 0:
-        logits_processor_list.append(LookbackBiasLogitsWarper(lookback_time, tokenizer, types_first))
+        logits_processor_list.append(LookbackBiasLogitsWarper(lookback_time, tokenizer, types_first, model.device))
 
     # Prepare cache
     cache = get_cache(model, batch_size, generate_kwargs.get('num_beams', 1), cfg_scale)

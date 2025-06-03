@@ -84,9 +84,10 @@ class Processor(object):
         self.sample_rate = args.osut5.model.spectrogram.sample_rate
         self.samples_per_sequence = self.frame_seq_len * self.frame_size
         self.miliseconds_per_sequence = self.samples_per_sequence * MILISECONDS_PER_SECOND / self.sample_rate
-        self.lookback_max_time = args.lookback * self.miliseconds_per_sequence
-        self.lookback_time_range = range(tokenizer.event_start[EventType.TIME_SHIFT], tokenizer.encode(Event(EventType.TIME_SHIFT, int(self.lookback_max_time / MILISECONDS_PER_STEP))))
+        self.lookback_time = args.lookback * self.miliseconds_per_sequence
+        self.lookback_time_range = range(tokenizer.event_start[EventType.TIME_SHIFT], tokenizer.encode(Event(EventType.TIME_SHIFT, int(self.lookback_time / MILISECONDS_PER_STEP))))
         self.lookahead_max_time = (1 - args.lookahead) * self.miliseconds_per_sequence
+        self.lookahead_time = args.lookahead * self.miliseconds_per_sequence
         self.lookahead_time_range = range(tokenizer.encode(Event(EventType.TIME_SHIFT, int(self.lookahead_max_time / MILISECONDS_PER_STEP))), tokenizer.event_end[EventType.TIME_SHIFT])
         self.eos_time = (1 - args.osut5.data.lookahead) * self.miliseconds_per_sequence
         self.center_pad_decoder = args.osut5.data.center_pad_decoder
@@ -356,7 +357,7 @@ class Processor(object):
                 print(f"Generating {context['context_type'].value}")
             iterator = tqdm(list(zip(*sequences[:2]))) if verbose else zip(*sequences[:2])
             for sequence_index, (frames, frame_time) in enumerate(iterator):
-                trim_lookback = sequence_index != 0 and self.types_first and self.lookback_max_time > 0
+                trim_lookback = sequence_index != 0 and self.types_first and self.lookback_time > 0
                 trim_lookahead = sequence_index != len(sequences[0]) - 1
 
                 # noinspection PyUnresolvedReferences
@@ -385,8 +386,8 @@ class Processor(object):
                         negative_prompt=uncond_prompt,
                         negative_prompt_attention_mask=uncond_prompt.ne(self.tokenizer.pad_id) if uncond_prompt is not None else None,
                     ),
-                    lookback_time=self.lookback_max_time if trim_lookback else 0,
-                    lookahead_time=self.lookahead_max_time if trim_lookahead else 0,
+                    lookback_time=self.lookback_time if trim_lookback else 0,
+                    lookahead_time=self.lookahead_time if trim_lookahead else 0,
                 )
 
                 # Only support batch size 1

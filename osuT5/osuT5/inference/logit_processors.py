@@ -87,21 +87,21 @@ class LookbackBiasLogitsWarper(LogitsProcessor):
     and it is not full of generated tokens. In this case, the lookback window will be considered multiple times for
     generating the next token, so we nill the scores of the lookback tokens and increase the chance of eos.
     """
-    def __init__(self, lookback_max_time: float, tokenizer: Tokenizer, types_first: bool):
+    def __init__(self, lookback_max_time: float, tokenizer: Tokenizer, types_first: bool, device):
         self.types_first = types_first  # Lookback bias is only supported for types_first=True
         self.lookback_start = tokenizer.event_start[EventType.TIME_SHIFT]
         self.lookback_end = tokenizer.encode(Event(EventType.TIME_SHIFT, int(lookback_max_time / MILISECONDS_PER_STEP)))
-        self.lookback_range = torch.full((tokenizer.vocab_size_out,), False, dtype=torch.bool)
+        self.lookback_range = torch.full((tokenizer.vocab_size_out,), False, dtype=torch.bool, device=device)
         self.lookback_range[self.lookback_start:self.lookback_end] = True
         self.other_range = ~self.lookback_range
-        self.eos_ids = torch.tensor([tokenizer.eos_id] + [tokenizer.context_eos[context] for context in tokenizer.context_eos], dtype=torch.long)
+        self.eos_ids = torch.tensor([tokenizer.eos_id] + [tokenizer.context_eos[context] for context in tokenizer.context_eos], dtype=torch.long, device=device)
 
         self.last_scores = None
         self.timed_tokens = []
         for event_type in TIMED_EVENTS:
             if event_type in tokenizer.event_start:
                 self.timed_tokens.extend(list(range(tokenizer.event_start[event_type], tokenizer.event_end[event_type])))
-        self.timed_tokens = torch.tensor(self.timed_tokens, dtype=torch.long)
+        self.timed_tokens = torch.tensor(self.timed_tokens, dtype=torch.long, device=device)
 
     def __call__(self, input_ids: torch.LongTensor, scores: torch.FloatTensor) -> torch.Tensor:
         if not self.types_first:
