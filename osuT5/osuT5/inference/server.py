@@ -15,8 +15,6 @@ from ..tokenizer import Tokenizer
 
 # Path for the Unix domain socket used for IPC
 SOCKET_PATH = r'\\.\pipe\Mapperatorinator_inference'
-# Maximum number of inputs to batch per generation call
-BATCH_SIZE = 8
 # Maximum time to wait (in seconds) for more requests to form a batch
 BATCH_TIMEOUT = 0.1
 # Idle time (in seconds) before shutting down due to no clients
@@ -95,7 +93,13 @@ def model_generate(model, tokenizer, model_kwargs, generate_kwargs):
 
 
 class InferenceServer:
-    def __init__(self, model, tokenizer, socket_path=SOCKET_PATH):
+    def __init__(
+            self,
+            model,
+            tokenizer,
+            max_batch_size=8,
+            socket_path=SOCKET_PATH
+    ):
         self.model: Mapperatorinator = model
         self.tokenizer: Tokenizer = tokenizer
         self.socket_path = socket_path

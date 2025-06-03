@@ -359,6 +359,8 @@ def load_model(
         ckpt_path_str: str,
         t5_args: TrainConfig,
         device,
+        max_batch_size: int = 8,
+        use_server: bool = False,
 ):
     if ckpt_path_str == "":
         raise ValueError("Model path is empty.")
@@ -389,7 +391,7 @@ def load_model(
         model.to(device)
         return model
 
-    return InferenceClient(model_loader, tokenizer_loader), tokenizer
+    return InferenceClient(model_loader, tokenizer_loader, max_batch_size) if use_server else model_loader(), tokenizer
 
 
 def load_diff_model(
@@ -423,7 +425,7 @@ def load_diff_model(
 def main(args: InferenceConfig):
     prepare_args(args)
 
-    model, tokenizer = load_model(args.model_path, args.osut5, args.device)
+    model, tokenizer = load_model(args.model_path, args.osut5, args.device, args.max_batch_size, args.use_server)
 
     diff_model, diff_tokenizer, refine_model = None, None, None
     if args.generate_positions:
