@@ -279,10 +279,11 @@ class Processor(object):
             verbose=verbose,
         )
 
-        if self.parallel:
-            self.generate_parallel(**inputs)
-        else:
-            self.generate_sequential(**inputs)
+        with self.model:
+            if self.parallel:
+                self.generate_parallel(**inputs)
+            else:
+                self.generate_sequential(**inputs)
 
         # Post-process events
         for context in out_context_data:
