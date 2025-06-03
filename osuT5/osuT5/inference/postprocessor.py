@@ -582,6 +582,9 @@ class Postprocessor(object):
             16: [8],
         }
 
+        if len(timing) == 0:
+            return time
+
         before_tp = self.timing_point_at(timedelta(milliseconds=time), timing)
         before_tp = before_tp if before_tp.parent is None else before_tp.parent
         before_time = round(before_tp.offset.total_seconds() * 1000)

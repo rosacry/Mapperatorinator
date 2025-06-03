@@ -184,7 +184,6 @@ def get_rhythm(beatmap, passive=False):
 
 
 def worker(beatmap_paths, fid_args: FidConfig, return_dict, idx):
-    args = fid_args.inference.copy()
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     prepare_args(fid_args)
 
@@ -222,7 +221,6 @@ def worker(beatmap_paths, fid_args: FidConfig, return_dict, idx):
             beatmap = Beatmap.from_path(beatmap_path)
 
             output_path = Path("generated") / beatmap_path.stem
-            args.output_path = output_path
 
             if fid_args.skip_generation or (output_path.exists() and len(list(output_path.glob("*.osu"))) > 0):
                 if not output_path.exists() or len(list(output_path.glob("*.osu"))) == 0:
@@ -241,10 +239,14 @@ def worker(beatmap_paths, fid_args: FidConfig, return_dict, idx):
                 generation_config = generation_config_from_beatmap(beatmap, tokenizer)
                 beatmap_config = beatmap_config_from_beatmap(beatmap)
 
+                if args.year is not None:
+                    generation_config.year = args.year
+
                 result = generate(
                     args,
                     audio_path=audio_path,
                     beatmap_path=other_beatmap_path,
+                    output_path=output_path,
                     generation_config=generation_config,
                     beatmap_config=beatmap_config,
                     model=model,

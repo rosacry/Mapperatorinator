@@ -362,12 +362,13 @@ class BeatmapDatasetIterable:
                         last_kiai[sequence_context["id"]] = event
                         break
 
-            for sequence_context in sequence["in_context"]:
-                add_last_kiai(sequence_context, last_kiai)
-            for sequence_context in sequence["out_context"]:  # type: dict
-                add_last_kiai(sequence_context, last_kiai)
-                if "last_kiai" in sequence_context:
-                    sequence["special"]["last_kiai"] = sequence_context["last_kiai"]
+            if self.args.add_kiai_special_token:
+                for sequence_context in sequence["in_context"]:
+                    add_last_kiai(sequence_context, last_kiai)
+                for sequence_context in sequence["out_context"]:  # type: dict
+                    add_last_kiai(sequence_context, last_kiai)
+                    if "last_kiai" in sequence_context:
+                        sequence["special"]["last_kiai"] = sequence_context["last_kiai"]
 
             def add_last_sv(sequence_context, last_sv):
                 if (sequence_context["context_type"] != ContextType.SV and
@@ -458,21 +459,21 @@ class BeatmapDatasetIterable:
             if self.args.add_song_length_token:
                 special_tokens.append(self.tokenizer.encode_song_length(context["song_length"]))
 
-            if self.args.add_sv and "global_sv" in context:
+            if self.args.add_global_sv_token and "global_sv" in context:
                 special_tokens.append(self.tokenizer.encode_global_sv(context["global_sv"]))
 
             if self.args.add_cs_token and "circle_size" in context:
                 special_tokens.append(self.tokenizer.encode_cs(context["circle_size"])
                                       if random.random() >= self.args.cs_dropout_prob else self.tokenizer.cs_unk)
 
-            if "keycount" in context:
+            if self.args.add_keycount_token and "keycount" in context:
                 special_tokens.append(self.tokenizer.encode(Event(EventType.MANIA_KEYCOUNT, context["keycount"])))
 
-            if "hold_note_ratio" in context:
+            if self.args.add_hold_note_ratio_token and "hold_note_ratio" in context:
                 special_tokens.append(self.tokenizer.encode_hold_note_ratio(context["hold_note_ratio"])
                                       if random.random() >= self.args.hold_note_ratio_dropout_prob else self.tokenizer.hold_note_ratio_unk)
 
-            if "scroll_speed_ratio" in context:
+            if self.args.add_scroll_speed_ratio_token and "scroll_speed_ratio" in context:
                 special_tokens.append(self.tokenizer.encode_scroll_speed_ratio(context["scroll_speed_ratio"])
                                       if random.random() >= self.args.scroll_speed_ratio_dropout_prob else self.tokenizer.scroll_speed_ratio_unk)
 
@@ -481,10 +482,10 @@ class BeatmapDatasetIterable:
                                       if random.random() >= self.args.descriptor_dropout_prob else [
                     self.tokenizer.descriptor_unk])
 
-            if "last_kiai" in context:
+            if self.args.add_kiai_special_token and "last_kiai" in context:
                 special_tokens.append(self.tokenizer.encode(context["last_kiai"]))
 
-            if "last_sv" in context:
+            if self.args.add_sv_special_token and "last_sv" in context:
                 special_tokens.append(self.tokenizer.encode(context["last_sv"]))
 
             if self.args.add_song_position_token:
@@ -519,10 +520,6 @@ class BeatmapDatasetIterable:
                 pre_tokens[i] = self.tokenizer.encode(event)
             sequence["pre_tokens"] = pre_tokens
             del sequence["pre_events"]
-
-        sequence["beatmap_idx"] = sequence["beatmap_idx"] \
-            if random.random() >= self.args.class_dropout_prob else self.tokenizer.num_classes
-        # We keep beatmap_idx because it is a model input
 
         return sequence
 
@@ -804,8 +801,10 @@ class BeatmapDatasetIterable:
             return data
 
         extra_data = {
-            "beatmap_idx": beatmap_metadata["BeatmapIdx"],
-            "mapper_idx": torch.tensor(self.tokenizer.get_mapper_idx(beatmap_metadata["UserId"]) if random.random() >= self.args.mapper_dropout_prob else -1, dtype=torch.long),
+            "beatmap_idx": torch.tensor(beatmap_metadata["BeatmapIdx"]
+                                        if random.random() >= self.args.class_dropout_prob else self.tokenizer.num_classes, dtype=torch.long),
+            "mapper_idx": torch.tensor(self.tokenizer.get_mapper_idx(beatmap_metadata["UserId"])
+                                       if random.random() >= self.args.mapper_dropout_prob else self.tokenizer.num_mapper_classes, dtype=torch.long),
             "difficulty": torch.tensor(self._get_difficulty(beatmap_metadata, speed), dtype=torch.float32),
             "special": {},
         }
