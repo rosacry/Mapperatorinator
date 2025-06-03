@@ -5,9 +5,9 @@ defaults:
   - diffusion: v1
   - _self_
 
-model_path: '../../../test/tiny-dist/'  # Path to trained model
+model_path: './test/tiny-dist2/'  # Path to trained model
 diff_ckpt: 'OliBomby/osu-diffusion-v2'
-version: 'Mapperatorinator tiny dist'        # Beatmap version
+version: 'Mapperatorinator tiny dist2'        # Beatmap version
 in_context: []
 output_type: [MAP]    # Output type (map, timing)
 temperature: 0.9        # Sampling temperature
