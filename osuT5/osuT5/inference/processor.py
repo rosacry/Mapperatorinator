@@ -279,17 +279,12 @@ class Processor(object):
             verbose=verbose,
         )
 
-        def start_generate():
-            if self.parallel:
-                self.generate_parallel(**inputs)
-            else:
-                self.generate_sequential(**inputs)
-
+        generate_func = self.generate_parallel if not self.parallel else self.generate_sequential
         if isinstance(self.model, InferenceClient):
             with self.model:
-                start_generate()
+                generate_func(**inputs)
         else:
-            start_generate()
+            generate_func(**inputs)
 
         # Post-process events
         for context in out_context_data:
