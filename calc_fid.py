@@ -186,10 +186,11 @@ def get_rhythm(beatmap, passive=False):
 def worker(beatmap_paths, fid_args: FidConfig, return_dict, idx):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     prepare_args(fid_args)
+    args = fid_args.inference
 
     model, tokenizer, diff_model, diff_tokenizer, refine_model = None, None, None, None, None
     if not fid_args.skip_generation:
-        model, tokenizer = load_model(args.model_path, args.osut5, args.device)
+        model, tokenizer = load_model(args.model_path, args.osut5, args.device, args.max_batch_size, args.use_server)
 
         if args.compile:
             model.transformer.forward = torch.compile(model.transformer.forward, mode="reduce-overhead", fullgraph=True)
