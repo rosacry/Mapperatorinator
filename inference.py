@@ -18,6 +18,7 @@ from osuT5.osuT5.config import TrainConfig
 from osuT5.osuT5.dataset.data_utils import events_of_type, TIMING_TYPES, merge_events
 from osuT5.osuT5.inference import Preprocessor, Processor, Postprocessor, BeatmapConfig, GenerationConfig, \
     generation_config_from_beatmap, beatmap_config_from_beatmap, background_line
+from osuT5.osuT5.inference.server import InferenceClient
 from osuT5.osuT5.inference.super_timing_generator import SuperTimingGenerator
 from osuT5.osuT5.model import Mapperatorinator
 from osuT5.osuT5.tokenizer import Tokenizer, ContextType
@@ -241,7 +242,7 @@ def generate(
         output_path: str = None,
         generation_config: GenerationConfig,
         beatmap_config: BeatmapConfig,
-        model,
+        model: Mapperatorinator | InferenceClient,
         tokenizer,
         diff_model=None,
         diff_tokenizer=None,
@@ -358,29 +359,58 @@ def load_model(
         ckpt_path_str: str,
         t5_args: TrainConfig,
         device,
+        max_batch_size: int = 8,
+        use_server: bool = False,
 ):
     if ckpt_path_str == "":
         raise ValueError("Model path is empty.")
 
     ckpt_path = Path(ckpt_path_str)
-    if not (ckpt_path / "pytorch_model.bin").exists() or not (ckpt_path / "custom_checkpoint_0.pkl").exists():
-        model = Mapperatorinator.from_pretrained(ckpt_path_str)
-        model.generation_config.disable_compile = True
-        tokenizer = Tokenizer.from_pretrained(ckpt_path_str)
+
+    def tokenizer_loader():
+        if not (ckpt_path / "pytorch_model.bin").exists() or not (ckpt_path / "custom_checkpoint_0.pkl").exists():
+            tokenizer = Tokenizer.from_pretrained(ckpt_path_str)
+        else:
+            tokenizer_state = torch.load(ckpt_path / "custom_checkpoint_0.pkl", pickle_module=routed_pickle, weights_only=False)
+            tokenizer = Tokenizer()
+            tokenizer.load_state_dict(tokenizer_state)
+        return tokenizer
+
+    tokenizer = tokenizer_loader()
+
+    def model_loader():
+        if not (ckpt_path / "pytorch_model.bin").exists() or not (ckpt_path / "custom_checkpoint_0.pkl").exists():
+            model = Mapperatorinator.from_pretrained(ckpt_path_str)
+            model.generation_config.disable_compile = True
+        else:
+            model_state = torch.load(ckpt_path / "pytorch_model.bin", map_location=device, weights_only=True)
+            model = get_model(t5_args, tokenizer)
+            model.load_state_dict(model_state)
+
+        model.eval()
+        model.to(device)
+        return model
+
+    return InferenceClient(
+        model_loader,
+        tokenizer_loader,
+        max_batch_size=max_batch_size,
+        socket_path=get_server_address(ckpt_path_str),
+    ) if use_server else model_loader(), tokenizer
+
+
+def get_server_address(ckpt_path_str: str):
+    """
+    Get a valid socket address for the OS and model version.
+    """
+    ckpt_path_str = ckpt_path_str.replace(" ", "_").replace("/", "_").replace("\\", "_")
+    # Check if the OS supports Unix sockets
+    if os.name == 'posix':
+        # Use a Unix socket for Linux and macOS
+        return f"/tmp/{ckpt_path_str}.sock"
     else:
-        model_state = torch.load(ckpt_path / "pytorch_model.bin", map_location=device, weights_only=True)
-        tokenizer_state = torch.load(ckpt_path / "custom_checkpoint_0.pkl", pickle_module=routed_pickle, weights_only=False)
-
-        tokenizer = Tokenizer()
-        tokenizer.load_state_dict(tokenizer_state)
-
-        model = get_model(t5_args, tokenizer)
-        model.load_state_dict(model_state)
-
-    model.eval()
-    model.to(device)
-
-    return model, tokenizer
+        # Use a Windows named pipe
+        return fr"\\.\pipe\{ckpt_path_str}"
 
 
 def load_diff_model(
@@ -414,7 +444,7 @@ def load_diff_model(
 def main(args: InferenceConfig):
     prepare_args(args)
 
-    model, tokenizer = load_model(args.model_path, args.osut5, args.device)
+    model, tokenizer = load_model(args.model_path, args.osut5, args.device, args.max_batch_size, args.use_server)
 
     diff_model, diff_tokenizer, refine_model = None, None, None
     if args.generate_positions:
