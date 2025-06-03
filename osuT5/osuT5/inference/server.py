@@ -13,13 +13,8 @@ from .cache_utils import get_cache
 from ..model import Mapperatorinator
 from ..tokenizer import Tokenizer
 
-# Path for the Unix domain socket used for IPC
+# The address used for IPC
 SOCKET_PATH = r'\\.\pipe\Mapperatorinator_inference'
-# Maximum time to wait (in seconds) for more requests to form a batch
-BATCH_TIMEOUT = 0.1
-# Idle time (in seconds) before shutting down due to no clients
-IDLE_TIMEOUT = 2
-
 
 MILISECONDS_PER_SECOND = 1000
 MILISECONDS_PER_STEP = 10
@@ -98,10 +93,24 @@ class InferenceServer:
             model,
             tokenizer,
             max_batch_size=8,
+            batch_timeout=0.1,
+            idle_timeout=2,
             socket_path=SOCKET_PATH
     ):
+        """
+        Initializes the inference server.
+        :param model: The model to use for inference.
+        :param tokenizer: The tokenizer to use for processing inputs.
+        :param max_batch_size: Maximum batch size for processing requests.
+        :param batch_timeout: Time in seconds to wait for more requests before processing a batch.
+        :param idle_timeout: Time in seconds to wait before shutting down due to no clients.
+        :param socket_path: The address used for IPC.
+        """
         self.model: Mapperatorinator = model
         self.tokenizer: Tokenizer = tokenizer
+        self.max_batch_size = max_batch_size
+        self.batch_timeout = batch_timeout
+        self.idle_timeout = idle_timeout
         self.socket_path = socket_path
         self.grouped_requests = {}  # holds pending requests
         self.lock = threading.Lock()
@@ -164,7 +173,7 @@ class InferenceServer:
 
     def _batch_thread(self):
         while not self.shutdown_flag.is_set():
-            time.sleep(BATCH_TIMEOUT)
+            time.sleep(self.batch_timeout)
             with self.lock:
                 if not self.grouped_requests:
                     continue
@@ -178,7 +187,7 @@ class InferenceServer:
 
                 # Grab full or partial requests until BATCH_SIZE is reached or requests is empty
                 batch_requests = []
-                remaining_batch_size = BATCH_SIZE // batch_multiplier
+                remaining_batch_size = self.max_batch_size // batch_multiplier
                 while remaining_batch_size > 0 and len(requests) > 0:
                     request = requests.pop(0)
                     req_kwargs = request['model_kwargs']
@@ -230,11 +239,11 @@ class InferenceServer:
     def _idle_monitor(self):
         last_activity = time.time()
         while not self.shutdown_flag.is_set():
-            time.sleep(IDLE_TIMEOUT / 2)
+            time.sleep(self.idle_timeout / 2)
             with self.lock:
                 if self.connections > 0:
                     last_activity = time.time()
-            if time.time() - last_activity > IDLE_TIMEOUT:
+            if time.time() - last_activity > self.idle_timeout:
                 # No requests for a while: shutdown
                 self.shutdown_flag.set()
                 try:
@@ -245,10 +254,31 @@ class InferenceServer:
 
 
 class InferenceClient:
-    def __init__(self, model_loader, tokenizer_loader, socket_path=SOCKET_PATH):
-        self.socket_path = socket_path
+    def __init__(
+            self,
+            model_loader,
+            tokenizer_loader,
+            max_batch_size=8,
+            batch_timeout=0.1,
+            idle_timeout=2,
+            socket_path=SOCKET_PATH,
+    ):
+        """
+        Initializes the inference client. Automatically starts the inference server if it is not running.
+        :param model_loader: Function to load the model.
+        :param tokenizer_loader: Function to load the tokenizer.
+        :param max_batch_size: Maximum batch size for processing requests.
+        :param batch_timeout: Time in seconds to wait for more requests before processing a batch.
+        :param idle_timeout: Time in seconds to wait before shutting down due to no clients.
+        :param socket_path: The address used for IPC.
+        """
         self.model_loader = model_loader
         self.tokenizer_loader = tokenizer_loader
+        self.max_batch_size = max_batch_size
+        self.batch_timeout = batch_timeout
+        self.idle_timeout = idle_timeout
+        self.socket_path = socket_path
+        self.conn = None
 
     def __enter__(self):
         try:
@@ -271,7 +301,14 @@ class InferenceClient:
         model = model_loader()
         tokenizer = tokenizer_loader()
         print(f"Model loaded: {model.name_or_path} on device {model.device}")
-        server = InferenceServer(model, tokenizer, socket_path=self.socket_path)
+        server = InferenceServer(
+            model,
+            tokenizer,
+            max_batch_size=self.max_batch_size,
+            batch_timeout=self.batch_timeout,
+            idle_timeout=self.idle_timeout,
+            socket_path=self.socket_path
+        )
         server.start()
         # Block until shutdown
         while not server.shutdown_flag.is_set():
@@ -297,7 +334,7 @@ if __name__ == "__main__":
     def tokenizer_loader():
         return Tokenizer.from_pretrained(ckpt_path_str)
 
-    client = InferenceClient(model_loader, tokenizer_loader, SOCKET_PATH)
+    client = InferenceClient(model_loader, tokenizer_loader)
     tokenizer = Tokenizer.from_pretrained(ckpt_path_str)
 
     # Example model_kwargs and generate_kwargs

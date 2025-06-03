@@ -391,7 +391,7 @@ def load_model(
         model.to(device)
         return model
 
-    return InferenceClient(model_loader, tokenizer_loader, max_batch_size) if use_server else model_loader(), tokenizer
+    return InferenceClient(model_loader, tokenizer_loader, max_batch_size=max_batch_size) if use_server else model_loader(), tokenizer
 
 
 def load_diff_model(
