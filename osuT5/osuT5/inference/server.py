@@ -20,7 +20,7 @@ BATCH_SIZE = 8
 # Maximum time to wait (in seconds) for more requests to form a batch
 BATCH_TIMEOUT = 0.1
 # Idle time (in seconds) before shutting down due to no clients
-IDLE_TIMEOUT = 60
+IDLE_TIMEOUT = 2
 
 
 MILISECONDS_PER_SECOND = 1000
@@ -129,7 +129,6 @@ class InferenceServer:
     def _client_handler(self, conn):
         with self.lock:
             self.connections += 1
-            print(f"New client connected. Total connections: {self.connections}")
         with conn:
             while True:
                 try:
@@ -158,7 +157,6 @@ class InferenceServer:
                 conn.send(record['result'])
         with self.lock:
             self.connections -= 1
-            print(f"Client disconnected. Remaining connections: {self.connections}")
 
     def _batch_thread(self):
         while not self.shutdown_flag.is_set():
@@ -235,7 +233,6 @@ class InferenceServer:
             if time.time() - last_activity > IDLE_TIMEOUT:
                 # No requests for a while: shutdown
                 self.shutdown_flag.set()
-                print("No activity for a while, shutting down server.")
                 try:
                     self.listener.close()
                     os.unlink(self.socket_path)
@@ -246,15 +243,24 @@ class InferenceServer:
 class InferenceClient:
     def __init__(self, model_loader, tokenizer_loader, socket_path=SOCKET_PATH):
         self.socket_path = socket_path
+        self.model_loader = model_loader
+        self.tokenizer_loader = tokenizer_loader
+
+    def __enter__(self):
         try:
             self.conn = Client(self.socket_path, family='AF_PIPE')
         except FileNotFoundError:
             # No server: start one
-            threading.Thread(target=self._start_server, args=(model_loader, tokenizer_loader), daemon=True).start()
+            threading.Thread(target=self._start_server, args=(self.model_loader, self.tokenizer_loader), daemon=False).start()
             # Wait for server socket to appear
             while not os.path.exists(self.socket_path):
                 time.sleep(0.1)
             self.conn = Client(self.socket_path, family='AF_PIPE')
+        return self
+
+    def __exit__(self, exception_type, exception_value, exception_traceback):
+        if self.conn:
+            self.conn.close()
 
     def _start_server(self, model_loader, tokenizer_loader):
         # Load model inside server process
