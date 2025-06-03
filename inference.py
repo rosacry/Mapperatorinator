@@ -364,12 +364,17 @@ def load_model(
         raise ValueError("Model path is empty.")
 
     ckpt_path = Path(ckpt_path_str)
-    if not (ckpt_path / "pytorch_model.bin").exists() or not (ckpt_path / "custom_checkpoint_0.pkl").exists():
-        tokenizer = Tokenizer.from_pretrained(ckpt_path_str)
-    else:
-        tokenizer_state = torch.load(ckpt_path / "custom_checkpoint_0.pkl", pickle_module=routed_pickle, weights_only=False)
-        tokenizer = Tokenizer()
-        tokenizer.load_state_dict(tokenizer_state)
+
+    def tokenizer_loader():
+        if not (ckpt_path / "pytorch_model.bin").exists() or not (ckpt_path / "custom_checkpoint_0.pkl").exists():
+            tokenizer = Tokenizer.from_pretrained(ckpt_path_str)
+        else:
+            tokenizer_state = torch.load(ckpt_path / "custom_checkpoint_0.pkl", pickle_module=routed_pickle, weights_only=False)
+            tokenizer = Tokenizer()
+            tokenizer.load_state_dict(tokenizer_state)
+        return tokenizer
+
+    tokenizer = tokenizer_loader()
 
     def model_loader():
         if not (ckpt_path / "pytorch_model.bin").exists() or not (ckpt_path / "custom_checkpoint_0.pkl").exists():
@@ -382,8 +387,9 @@ def load_model(
 
         model.eval()
         model.to(device)
+        return model
 
-    return InferenceClient(model_loader), tokenizer
+    return InferenceClient(model_loader, tokenizer_loader), tokenizer
 
 
 def load_diff_model(

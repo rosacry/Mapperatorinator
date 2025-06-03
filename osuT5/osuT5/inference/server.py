@@ -4,14 +4,17 @@ import threading
 import torch
 from multiprocessing.connection import Listener, Client
 
-from torch.utils.data import default_collate
-from transformers import EncoderDecoderCache, Cache, StaticCache
+from transformers import LogitsProcessorList, ClassifierFreeGuidanceLogitsProcessor, TemperatureLogitsWarper
 
+from osuT5.osuT5.event import EventType
+from osuT5.osuT5.inference.logit_processors import ConditionalTemperatureLogitsWarper, get_beat_type_tokens, \
+    get_mania_type_tokens, get_scroll_speed_tokens, TimeshiftBias, LookbackBiasLogitsWarper
 from osuT5.osuT5.inference.cache_utils import get_cache
 from osuT5.osuT5.model import Mapperatorinator
+from osuT5.osuT5.tokenizer import Tokenizer
 
 # Path for the Unix domain socket used for IPC
-SOCKET_PATH = '/tmp/transformer_batch.sock'
+SOCKET_PATH = r'\\.\pipe\Mapperatorinator_inference'
 # Maximum number of inputs to batch per generation call
 BATCH_SIZE = 8
 # Maximum time to wait (in seconds) for more requests to form a batch
@@ -20,14 +23,87 @@ BATCH_TIMEOUT = 0.1
 IDLE_TIMEOUT = 60
 
 
+MILISECONDS_PER_SECOND = 1000
+MILISECONDS_PER_STEP = 10
+
+
+def get_eos_token_id(tokenizer, lookback_time: float = 0, lookahead_time: float = 0):
+    eos_token_id = [tokenizer.eos_id]
+    eos_token_id.extend(tokenizer.context_eos.values())
+    if lookback_time > 0:
+        eos_token_id.extend(range(tokenizer.event_start[EventType.TIME_SHIFT], tokenizer.event_start[EventType.TIME_SHIFT] + int(lookback_time / MILISECONDS_PER_STEP)))
+    if lookahead_time > 0:
+        eos_token_id.extend(range(tokenizer.event_end[EventType.TIME_SHIFT] - int(lookahead_time / MILISECONDS_PER_STEP), tokenizer.event_end[EventType.TIME_SHIFT]))
+    return eos_token_id
+
+
+def model_generate(model, tokenizer, model_kwargs, generate_kwargs):
+    # To device
+    model_kwargs = {k: v.to(model.device) if isinstance(v, torch.Tensor) else v for k, v in model_kwargs.items()}
+    batch_size = model_kwargs['inputs'].shape[0]
+
+    cfg_scale = generate_kwargs.pop('cfg_scale', 1.0)
+    timeshift_bias = generate_kwargs.pop('timeshift_bias', 0)
+    types_first = generate_kwargs.pop('types_first', False)
+    temperature = generate_kwargs.pop('temperature', 1.0)
+    timing_temperature = generate_kwargs.pop('timing_temperature', temperature)
+    mania_column_temperature = generate_kwargs.pop('mania_column_temperature', temperature)
+    taiko_hit_temperature = generate_kwargs.pop('taiko_hit_temperature', temperature)
+    lookback_time = generate_kwargs.pop('lookback_time', 0.0)
+    lookahead_time = generate_kwargs.pop('lookahead_time', 0.0)
+
+    # Create the logits processors
+    logits_processor_list = LogitsProcessorList()
+    if cfg_scale > 1.0:
+        logits_processor_list.append(ClassifierFreeGuidanceLogitsProcessor(cfg_scale))
+    if timeshift_bias != 0:
+        logits_processor_list.append(
+            TimeshiftBias(
+                timeshift_bias,
+                tokenizer.event_start[EventType.TIME_SHIFT],
+                tokenizer.event_end[EventType.TIME_SHIFT]
+            )
+        )
+    if types_first:
+        logits_processor_list.append(ConditionalTemperatureLogitsWarper(
+            temperature,
+            timing_temperature,
+            mania_column_temperature,
+            taiko_hit_temperature,
+            types_first,
+            get_beat_type_tokens(tokenizer),
+            get_mania_type_tokens(tokenizer),
+            get_scroll_speed_tokens(tokenizer),
+        ))
+    else:
+        logits_processor_list.append(TemperatureLogitsWarper(temperature))
+    if lookback_time > 0:
+        logits_processor_list.append(LookbackBiasLogitsWarper(lookback_time, tokenizer, types_first))
+
+    # Prepare cache
+    cache = get_cache(model, batch_size, generate_kwargs.get('num_beams', 1), cfg_scale)
+
+    # Perform batched generation
+    return model.generate(
+        **model_kwargs,
+        **generate_kwargs,
+        use_cache=True,
+        past_key_values=cache,
+        logits_processor=logits_processor_list,
+        eos_token_id=get_eos_token_id(tokenizer, lookback_time=lookback_time, lookahead_time=lookahead_time),
+    ).cpu()
+
+
 class InferenceServer:
-    def __init__(self, model, socket_path=SOCKET_PATH):
+    def __init__(self, model, tokenizer, socket_path=SOCKET_PATH):
         self.model: Mapperatorinator = model
+        self.tokenizer: Tokenizer = tokenizer
         self.socket_path = socket_path
-        self.requests = {}  # holds pending requests
+        self.grouped_requests = {}  # holds pending requests
         self.lock = threading.Lock()
         self.shutdown_flag = threading.Event()
         self.listener = None
+        self.connections = 0
 
     def start(self):
         # Remove stale socket
@@ -51,6 +127,9 @@ class InferenceServer:
             threading.Thread(target=self._client_handler, args=(conn,), daemon=True).start()
 
     def _client_handler(self, conn):
+        with self.lock:
+            self.connections += 1
+            print(f"New client connected. Total connections: {self.connections}")
         with conn:
             while True:
                 try:
@@ -58,64 +137,105 @@ class InferenceServer:
                 except EOFError:
                     break
 
+                generate_kwargs_set = frozenset(generate_kwargs.items())
+
                 # Prepare a response event
                 response_event = threading.Event()
-                record = {'model_kwargs': model_kwargs, 'conn': conn, 'event': response_event, 'result': None}
+                batch_size = model_kwargs['inputs'].shape[0]
+                record = {'model_kwargs': model_kwargs, 'total_work': batch_size, 'work_done': 0, 'conn': conn, 'event': response_event, 'result': None}
 
                 # Enqueue request
                 with self.lock:
-                    if generate_kwargs in self.requests:
-                        self.requests[generate_kwargs].append(record)
+                    if generate_kwargs_set in self.grouped_requests:
+                        self.grouped_requests[generate_kwargs_set].append(record)
                     else:
-                        self.requests[generate_kwargs] = [record]
+                        self.grouped_requests[generate_kwargs_set] = [record]
 
                 # Wait until batch thread processes it
                 response_event.wait()
 
                 # Send back result
                 conn.send(record['result'])
+        with self.lock:
+            self.connections -= 1
+            print(f"Client disconnected. Remaining connections: {self.connections}")
 
     def _batch_thread(self):
         while not self.shutdown_flag.is_set():
             time.sleep(BATCH_TIMEOUT)
             with self.lock:
-                if not self.requests:
+                if not self.grouped_requests:
                     continue
-                generate_kwargs: dict = list(self.requests.keys())[0]
-                records = self.requests[generate_kwargs]
-                batch = records[:BATCH_SIZE]
-                self.requests[generate_kwargs] = records[BATCH_SIZE:]
-                if not self.requests[generate_kwargs]:
-                    del self.requests[generate_kwargs]
+                generate_kwargs_set: frozenset = list(self.grouped_requests.keys())[0]
+                requests: list = self.grouped_requests[generate_kwargs_set]
+
+                generate_kwargs: dict = dict(generate_kwargs_set)
+                cfg_scale = generate_kwargs.get('cfg_scale', 1.0)
+                num_beams = generate_kwargs.get('num_beams', 1)
+                batch_multiplier = 2 * num_beams if cfg_scale > 1 else num_beams
+
+                # Grab full or partial requests until BATCH_SIZE is reached or requests is empty
+                batch_requests = []
+                remaining_batch_size = BATCH_SIZE // batch_multiplier
+                while remaining_batch_size > 0 and len(requests) > 0:
+                    request = requests.pop(0)
+                    req_kwargs = request['model_kwargs']
+                    req_total_work = request['total_work']
+                    req_work_done = request['work_done']
+                    req_remaining_work = req_total_work - req_work_done
+                    work = min(req_remaining_work, remaining_batch_size)
+                    batch_requests.append((self._cut_model_kwargs(req_kwargs, req_work_done, work), request, work))
+                    remaining_batch_size -= work
+                    if req_remaining_work > work:
+                        # If there is still work left, re-add the record to the queue
+                        requests.insert(0, request)
+
+                if not self.grouped_requests[generate_kwargs_set]:
+                    del self.grouped_requests[generate_kwargs_set]
 
             # Collate inputs
-            model_kwargs = default_collate([record['model_kwargs'] for record in batch])
+            keys = [k for k in batch_requests[0][0].keys() if batch_requests[0][0][k] is not None]
+            model_kwargs = {}
+            paddings = [0 for _ in range(len(batch_requests))]  # For padding left
+            for k in keys:
+                kwargses = [b[0][k] for b in batch_requests]
+                # Pad left if necessary
+                if kwargses[0].dim() > 1:
+                    max_len = max(tensor.size(-1) for tensor in kwargses)
+                    if k == 'decoder_input_ids':
+                        paddings = [max_len - tensor.size(-1) for tensor in kwargses]
+                    kwargses = [torch.nn.functional.pad(tensor, (max_len - tensor.size(-1), 0)) for tensor in kwargses]
+                model_kwargs[k] = torch.cat(kwargses, dim=0)
 
-            cache = get_cache(self.model, len(batch), generate_kwargs.get('num_beams', 1), generate_kwargs.pop('cfg_scale', 1.0))
-
-            # Perform batched generation
-            outputs = self.model.generate(
-                model_kwargs,
-                use_cache=True,
-                past_key_values=cache,
-                **generate_kwargs,
-            )
+            outputs = model_generate(self.model, self.tokenizer, model_kwargs, generate_kwargs)
 
             # Split and dispatch results
-            for out, record in zip(outputs, batch):
-                record['result'] = out
-                record['event'].set()
+            batch_i = 0
+            for i, (_, request, work_done) in enumerate(batch_requests):
+                padding = paddings[i]
+                out = outputs[batch_i:batch_i + work_done, padding:]  # Remove padding from the left
+                batch_i += work_done
+                request['result'] = out if request['result'] is None else torch.cat((request['result'], out), dim=0)
+                request['work_done'] += work_done
+                if request['work_done'] >= request['total_work']:
+                    # All work done for this record, signal completion
+                    request['event'].set()
+
+    def _cut_model_kwargs(self, model_kwargs, start, length):
+        """Cuts the model_kwargs tensors to the specified range."""
+        return {k: v[start:start + length] if isinstance(v, torch.Tensor) else v for k, v in model_kwargs.items()}
 
     def _idle_monitor(self):
         last_activity = time.time()
         while not self.shutdown_flag.is_set():
             time.sleep(IDLE_TIMEOUT / 2)
             with self.lock:
-                if self.requests:
+                if self.connections > 0:
                     last_activity = time.time()
             if time.time() - last_activity > IDLE_TIMEOUT:
                 # No requests for a while: shutdown
                 self.shutdown_flag.set()
+                print("No activity for a while, shutting down server.")
                 try:
                     self.listener.close()
                     os.unlink(self.socket_path)
@@ -124,22 +244,24 @@ class InferenceServer:
 
 
 class InferenceClient:
-    def __init__(self, model_loader, socket_path=SOCKET_PATH):
+    def __init__(self, model_loader, tokenizer_loader, socket_path=SOCKET_PATH):
         self.socket_path = socket_path
         try:
             self.conn = Client(self.socket_path, family='AF_PIPE')
         except FileNotFoundError:
             # No server: start one
-            threading.Thread(target=self._start_server, args=(model_loader,), daemon=True).start()
+            threading.Thread(target=self._start_server, args=(model_loader, tokenizer_loader), daemon=True).start()
             # Wait for server socket to appear
             while not os.path.exists(self.socket_path):
                 time.sleep(0.1)
             self.conn = Client(self.socket_path, family='AF_PIPE')
 
-    def _start_server(self, model_loader):
+    def _start_server(self, model_loader, tokenizer_loader):
         # Load model inside server process
         model = model_loader()
-        server = InferenceServer(model, socket_path=self.socket_path)
+        tokenizer = tokenizer_loader()
+        print(f"Model loaded: {model.name_or_path} on device {model.device}")
+        server = InferenceServer(model, tokenizer, socket_path=self.socket_path)
         server.start()
         # Block until shutdown
         while not server.shutdown_flag.is_set():
@@ -149,3 +271,50 @@ class InferenceClient:
         # Send request and wait for response
         self.conn.send((model_kwargs, generate_kwargs))
         return self.conn.recv()
+
+
+if __name__ == "__main__":
+    ckpt_path_str = "OliBomby/Mapperatorinator-v30"
+
+    # Example usage
+    def model_loader():
+        model = Mapperatorinator.from_pretrained(ckpt_path_str)
+        model.generation_config.disable_compile = True
+        model.eval()
+        model.to('cuda')
+        return model
+
+    def tokenizer_loader():
+        return Tokenizer.from_pretrained(ckpt_path_str)
+
+    client = InferenceClient(model_loader, tokenizer_loader, SOCKET_PATH)
+    tokenizer = Tokenizer.from_pretrained(ckpt_path_str)
+
+    # Example model_kwargs and generate_kwargs
+    model_kwargs = {
+        'inputs': torch.rand((1, 524160)),  # Example input
+        'difficulty': torch.tensor([7.]),
+        'mapper_idx': torch.tensor([-1]),
+        'song_position': torch.tensor([[0., .112]]),
+    }
+    generate_kwargs = {
+        'num_beams': 1,
+        'max_length': 2048,
+        'do_sample': True,
+        'cfg_scale': 1.0,
+        'top_p': 0.9,
+        'top_k': 0,
+        'pad_token_id': tokenizer.pad_id,
+        'timeshift_bias': 0,
+        'types_first': False,
+        'temperature': 0.9,
+        'timing_temperature': 0.0,
+        'mania_column_temperature': 0.7,
+        'taiko_hit_temperature': 0.7,
+        'lookback_time': 0,
+        'lookahead_time': 3000,
+    }
+
+    result = client.generate(model_kwargs, generate_kwargs)
+    events = [tokenizer.decode(t) if t > 10 else t for t in result[0].numpy()]
+    print(events)  # Process the result as needed
