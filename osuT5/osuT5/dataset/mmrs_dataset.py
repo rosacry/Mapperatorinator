@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import random
+from datetime import datetime
 from multiprocessing.managers import Namespace
 from typing import Optional, Callable
 from pathlib import Path
@@ -92,6 +93,8 @@ class MmrsDataset(IterableDataset):
         df.set_index(["BeatmapSetId", "Id"], inplace=True)
         df.sort_index(inplace=True)
         df = df[df["ModeInt"].isin(self.args.gamemodes)]
+        if self.args.min_year:
+            df = df[df["RankedDate"] >= datetime(self.args.min_year, 1, 1)]
         return df
 
     def _beatmap_set_ids_from_metadata(self):
