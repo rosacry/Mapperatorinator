@@ -6,12 +6,12 @@ from multiprocessing.connection import Listener, Client
 
 from transformers import LogitsProcessorList, ClassifierFreeGuidanceLogitsProcessor, TemperatureLogitsWarper
 
-from osuT5.osuT5.event import EventType
-from osuT5.osuT5.inference.logit_processors import ConditionalTemperatureLogitsWarper, get_beat_type_tokens, \
+from ..event import EventType
+from .logit_processors import ConditionalTemperatureLogitsWarper, get_beat_type_tokens, \
     get_mania_type_tokens, get_scroll_speed_tokens, TimeshiftBias, LookbackBiasLogitsWarper
-from osuT5.osuT5.inference.cache_utils import get_cache
-from osuT5.osuT5.model import Mapperatorinator
-from osuT5.osuT5.tokenizer import Tokenizer
+from .cache_utils import get_cache
+from ..model import Mapperatorinator
+from ..tokenizer import Tokenizer
 
 # Path for the Unix domain socket used for IPC
 SOCKET_PATH = r'\\.\pipe\Mapperatorinator_inference'
