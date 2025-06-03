@@ -239,6 +239,7 @@ def generate(
         *,
         audio_path: str = None,
         beatmap_path: str = None,
+        output_path: str = None,
         generation_config: GenerationConfig,
         beatmap_config: BeatmapConfig,
         model: Mapperatorinator | InferenceClient,
@@ -250,6 +251,13 @@ def generate(
 ):
     audio_path = args.audio_path if audio_path is None else audio_path
     beatmap_path = args.beatmap_path if beatmap_path is None else beatmap_path
+    output_path = args.output_path if output_path is None else output_path
+
+    # Do some validation
+    if not Path(audio_path).exists() or not Path(audio_path).is_file():
+        raise FileNotFoundError(f"Provided audio file path does not exist: {audio_path}")
+    if beatmap_path and (not Path(beatmap_path).exists() or not Path(beatmap_path).is_file()):
+        raise FileNotFoundError(f"Provided beatmap file path does not exist: {beatmap_path}")
 
     preprocessor = Preprocessor(args, parallel=args.parallel)
     processor = Processor(args, model, tokenizer)
@@ -334,13 +342,13 @@ def generate(
         result_path = postprocessor.add_to_beatmap(result, beatmap_path)
         if verbose:
             print(f"Added generated content to {result_path}")
-    elif args.output_path is not None and args.output_path != "":
-        result_path = postprocessor.write_result(result, args.output_path)
+    elif output_path is not None and output_path != "":
+        result_path = postprocessor.write_result(result, output_path)
         if verbose:
             print(f"Generated beatmap saved to {result_path}")
 
     if args.export_osz:
-        osz_path = postprocessor.export_osz(result_path, audio_path, args.output_path)
+        osz_path = postprocessor.export_osz(result_path, audio_path, output_path)
         if verbose:
             print(f"Generated .osz saved to {osz_path}")
 

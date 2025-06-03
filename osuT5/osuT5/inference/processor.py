@@ -213,6 +213,8 @@ class Processor(object):
         self.lookahead_time_range = range(tokenizer.encode(Event(EventType.TIME_SHIFT, int(self.lookahead_max_time / MILISECONDS_PER_STEP))), tokenizer.event_end[EventType.TIME_SHIFT])
         self.eos_time = (1 - args.osut5.data.lookahead) * self.miliseconds_per_sequence
         self.center_pad_decoder = args.osut5.data.center_pad_decoder
+        # All Special Prefix Tokens
+        self.add_out_context_types = args.osut5.data.add_out_context_types
         self.add_gamemode_token = args.osut5.data.add_gamemode_token
         self.add_style_token = args.osut5.data.add_style_token
         self.add_diff_token = args.osut5.data.add_diff_token
@@ -220,9 +222,16 @@ class Processor(object):
         self.add_year_token = args.osut5.data.add_year_token
         self.add_hitsounded_token = args.osut5.data.add_hitsounded_token
         self.add_song_length_token = args.osut5.data.add_song_length_token
-        self.add_song_position_token = args.osut5.data.add_song_position_token
+        self.add_global_sv_token = args.osut5.data.add_global_sv_token
         self.add_cs_token = args.osut5.data.add_cs_token
+        self.add_keycount_token = args.osut5.data.add_keycount_token
+        self.add_hold_note_ratio_token = args.osut5.data.add_hold_note_ratio_token
+        self.add_scroll_speed_ratio_token = args.osut5.data.add_scroll_speed_ratio_token
         self.add_descriptors = args.osut5.data.add_descriptors
+        self.add_sv_special_token = args.osut5.data.add_sv_special_token
+        self.add_kiai_special_token = args.osut5.data.add_kiai_special_token
+        self.add_song_position_token = args.osut5.data.add_song_position_token
+        # ---
         self.add_kiai = args.osut5.data.add_kiai
         self.max_pre_token_len = args.osut5.data.max_pre_token_len
         self.add_pre_tokens = args.osut5.data.add_pre_tokens
@@ -234,12 +243,10 @@ class Processor(object):
         self.do_mapper_embed = args.osut5.model.do_mapper_embed
         self.do_song_position_embed = args.osut5.model.do_song_position_embed
         self.add_positions = args.osut5.data.add_positions
-        self.add_sv_special_token = args.osut5.data.add_sv_special_token
         self.add_sv = args.osut5.data.add_sv
         self.add_mania_sv = args.osut5.data.add_mania_sv
         self.context_types: list[dict[str, list[ContextType]]] = \
             [{k: [ContextType(t) for t in v] for k, v in ct.items()} for ct in args.osut5.data.context_types]
-        self.add_out_context_types = args.osut5.data.add_out_context_types
         self.add_to_beatmap = args.add_to_beatmap
         self.start_time = args.start_time
         self.end_time = args.end_time
@@ -829,18 +836,20 @@ class Processor(object):
         if self.add_song_length_token:
             song_length_token = self.tokenizer.encode_song_length(song_length)
             cond_tokens.append(song_length_token)
-        if self.add_sv and config.gamemode in [0, 2]:
+        if self.add_global_sv_token and self.add_sv and config.gamemode in [0, 2]:
             global_sv_token = self.tokenizer.encode_global_sv(config.slider_multiplier)
             cond_tokens.append(global_sv_token)
         if self.add_cs_token and config.gamemode in [0, 2]:
             cs_token = self.tokenizer.encode_cs(config.circle_size) if config.circle_size is not None else self.tokenizer.cs_unk
             cond_tokens.append(cs_token)
         if config.gamemode == 3:
-            keycount_token = self.tokenizer.encode(Event(EventType.MANIA_KEYCOUNT, config.keycount))
-            cond_tokens.append(keycount_token)
-            hold_note_ratio_token = self.tokenizer.encode_hold_note_ratio(config.hold_note_ratio) if config.hold_note_ratio is not None else self.tokenizer.hold_note_ratio_unk
-            cond_tokens.append(hold_note_ratio_token)
-        if config.gamemode in [1, 3]:
+            if self.add_keycount_token:
+                keycount_token = self.tokenizer.encode(Event(EventType.MANIA_KEYCOUNT, config.keycount))
+                cond_tokens.append(keycount_token)
+            if self.add_hold_note_ratio_token:
+                hold_note_ratio_token = self.tokenizer.encode_hold_note_ratio(config.hold_note_ratio) if config.hold_note_ratio is not None else self.tokenizer.hold_note_ratio_unk
+                cond_tokens.append(hold_note_ratio_token)
+        if self.add_scroll_speed_ratio_token and config.gamemode in [1, 3]:
             scroll_speed_ratio_token = self.tokenizer.encode_scroll_speed_ratio(config.scroll_speed_ratio) if config.scroll_speed_ratio is not None else self.tokenizer.scroll_speed_ratio_unk
             cond_tokens.append(scroll_speed_ratio_token)
 
@@ -991,11 +1000,11 @@ class Processor(object):
 
         # Prepare extra special tokens
         extra_special_events = {}
-        if context["context_type"] == ContextType.KIAI or (self.add_kiai and context["context_type"] in [ContextType.GD, ContextType.MAP]):
+        if self.add_kiai_special_token and (context["context_type"] == ContextType.KIAI or (self.add_kiai and context["context_type"] in [ContextType.GD, ContextType.MAP])):
             extra_special_events["last_kiai"] = self._kiai_before_time(context["events"], context["event_times"], frame_time)
-        if context["context_type"] == ContextType.SV or ((self.add_sv or self.add_mania_sv) and context["context_type"] in [ContextType.GD, ContextType.MAP]):
+        if self.add_sv_special_token and (context["context_type"] == ContextType.SV or ((self.add_sv or self.add_mania_sv) and context["context_type"] in [ContextType.GD, ContextType.MAP])):
             extra_special_events["last_sv"] = self._sv_before_time(context["events"], context["event_times"], frame_time)
-        if "class" in context and self.add_song_position_token:
+        if self.add_song_position_token and "class" in context:
             extra_special_events["song_position"] = self.tokenizer.encode_song_position_event(frame_time, context["song_length"])
 
         result["extra_special_events"] = extra_special_events
