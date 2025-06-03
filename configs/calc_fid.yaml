@@ -1,14 +1,14 @@
 defaults:
   - base_fid
-  - inference_v29@inference
+  - inference_tiny_dist2@inference
   - _self_
 
 compile: false
-num_processes: 3
+num_processes: 16
 seed: 0
 
-skip_generation: false
-fid: true
+skip_generation: true
+fid: false
 rhythm_stats: true
 
 dataset_path: /workspace/datasets/ORS16291
@@ -30,4 +30,5 @@ hydra:
   job:
     chdir: True
   run:
-    dir: ./logs_fid/${now:%Y-%m-%d}/${now:%H-%M-%S}
+#    dir: ./logs_fid/${now:%Y-%m-%d}/${now:%H-%M-%S}
+    dir: ./logs_fid/tiny-dist2
