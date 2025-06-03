@@ -94,6 +94,7 @@ data:                  # Data settings
   mania_bpm_normalized_scroll_speed: false  # Normalize mania scroll speed by BPM
   add_sv: false  # Model slider velocity in std and ctb
   add_mania_sv: false  # Add mania scroll velocity in map context
+  min_year: null  # Minimum year of the beatmap to include in the dataset
 
 
 dataloader:             # Dataloader settings

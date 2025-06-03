@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Optional
 
 from hydra.core.config_store import ConfigStore
 from omegaconf import OmegaConf, MISSING
@@ -129,6 +129,7 @@ class DataConfig:
     mania_bpm_normalized_scroll_speed: bool = True  # Normalize mania scroll speed by BPM
     add_sv: bool = True  # Model slider velocity in std and ctb
     add_mania_sv: bool = False  # Add mania scroll velocity in map context
+    min_year: Optional[int] = None  # Minimum year of the beatmap to include in the dataset
 
 
 @dataclass
