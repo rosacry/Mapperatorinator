@@ -13,8 +13,8 @@ from .cache_utils import get_cache
 from ..model import Mapperatorinator
 from ..tokenizer import Tokenizer
 
-# The address used for IPC
-SOCKET_PATH = r'\\.\pipe\Mapperatorinator_inference'
+# The default address used for IPC
+SOCKET_PATH = r'\\.\pipe\Mapperatorinator'
 
 MILISECONDS_PER_SECOND = 1000
 MILISECONDS_PER_STEP = 10
@@ -126,7 +126,7 @@ class InferenceServer:
             pass
 
         # Start IPC listener
-        self.listener = Listener(self.socket_path, family='AF_PIPE')
+        self.listener = Listener(self.socket_path)
         threading.Thread(target=self._listener_thread, daemon=True).start()
         # Start batcher thread
         threading.Thread(target=self._batch_thread, daemon=True).start()
@@ -282,14 +282,14 @@ class InferenceClient:
 
     def __enter__(self):
         try:
-            self.conn = Client(self.socket_path, family='AF_PIPE')
+            self.conn = Client(self.socket_path)
         except FileNotFoundError:
             # No server: start one
             threading.Thread(target=self._start_server, args=(self.model_loader, self.tokenizer_loader), daemon=False).start()
             # Wait for server socket to appear
             while not os.path.exists(self.socket_path):
                 time.sleep(0.1)
-            self.conn = Client(self.socket_path, family='AF_PIPE')
+            self.conn = Client(self.socket_path)
         return self
 
     def __exit__(self, exception_type, exception_value, exception_traceback):

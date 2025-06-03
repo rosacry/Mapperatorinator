@@ -391,7 +391,26 @@ def load_model(
         model.to(device)
         return model
 
-    return InferenceClient(model_loader, tokenizer_loader, max_batch_size=max_batch_size) if use_server else model_loader(), tokenizer
+    return InferenceClient(
+        model_loader,
+        tokenizer_loader,
+        max_batch_size=max_batch_size,
+        socket_path=get_server_address(ckpt_path_str),
+    ) if use_server else model_loader(), tokenizer
+
+
+def get_server_address(ckpt_path_str: str):
+    """
+    Get a valid socket address for the OS and model version.
+    """
+    ckpt_path_str = ckpt_path_str.replace(" ", "_").replace("/", "_").replace("\\", "_")
+    # Check if the OS supports Unix sockets
+    if os.name == 'posix':
+        # Use a Unix socket for Linux and macOS
+        return f"/tmp/{ckpt_path_str}.sock"
+    else:
+        # Use a Windows named pipe
+        return fr"\\.\pipe\{ckpt_path_str}"
 
 
 def load_diff_model(
