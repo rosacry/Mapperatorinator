@@ -314,7 +314,7 @@ def main(args: FidConfig):
     processes = []
 
     for i in range(num_processes):
-        p = Thread(target=worker, args=(chunks[i], args, return_dict, i))
+        p = Process(target=worker, args=(chunks[i], args, return_dict, i))
         processes.append(p)
         p.start()
 
