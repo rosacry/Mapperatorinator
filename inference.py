@@ -403,7 +403,7 @@ def get_server_address(ckpt_path_str: str):
     """
     Get a valid socket address for the OS and model version.
     """
-    ckpt_path_str = ckpt_path_str.replace(" ", "_").replace("/", "_").replace("\\", "_")
+    ckpt_path_str = ckpt_path_str.replace(" ", "_").replace("/", "_").replace("\\", "_").replace(".", "_")
     # Check if the OS supports Unix sockets
     if os.name == 'posix':
         # Use a Unix socket for Linux and macOS
