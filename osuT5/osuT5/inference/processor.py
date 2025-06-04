@@ -280,7 +280,7 @@ class Processor(object):
             verbose=verbose,
         )
 
-        generate_func = self.generate_parallel if not self.parallel else self.generate_sequential
+        generate_func = self.generate_parallel if self.parallel else self.generate_sequential
         if isinstance(self.model, InferenceClient):
             with self.model:
                 generate_func(**inputs)
@@ -438,7 +438,8 @@ class Processor(object):
         results = []
 
         # Process each batch
-        for i in range(0, num_samples, max_batch_size):
+        iterator = tqdm(list(range(0, num_samples, max_batch_size))) if verbose else range(0, num_samples, max_batch_size)
+        for i in iterator:
             frames_batch = frames[i:i + max_batch_size]
             prompt_batch = prompt[i:i + max_batch_size]
             uncond_prompt_batch = uncond_prompt[i:i + max_batch_size] if uncond_prompt is not None else None
