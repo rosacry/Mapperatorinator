@@ -1,7 +1,7 @@
 defaults:
   - base_inference
   - inference
-  - osut5: train_tiny_dist
+  - osut5: train_tiny_dist3
   - diffusion: v1
   - _self_
 

@@ -5,7 +5,7 @@ defaults:
   - diffusion: v1
   - _self_
 
-model_path: '../../test/tiny-dist3/'  # Path to trained model
+model_path: './test/tiny-dist3/'  # Path to trained model
 diff_ckpt: 'OliBomby/osu-diffusion-v2'
 version: 'Mapperatorinator tiny dist3'        # Beatmap version
 in_context: []
