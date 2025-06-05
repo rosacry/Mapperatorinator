@@ -135,9 +135,13 @@ class InferenceServer:
 
     def _listener_thread(self):
         while not self.shutdown_flag.is_set():
-            conn = self.listener.accept()
-            # Handle each client in its own thread
-            threading.Thread(target=self._client_handler, args=(conn,), daemon=True).start()
+            try:
+                conn = self.listener.accept()
+                # Handle each client in its own thread
+                threading.Thread(target=self._client_handler, args=(conn,), daemon=True).start()
+            except (OSError, EOFError) as e:
+                print(f"[Listener] Error in accept: {e}")
+                time.sleep(1)  # Wait before retrying
 
     def _client_handler(self, conn):
         with self.lock:
