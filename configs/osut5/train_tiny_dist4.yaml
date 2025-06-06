@@ -46,7 +46,7 @@ data:                  # Data settings
   mappers_path: "./datasets/beatmap_users.json"       # Path to file with all beatmap mappers
   add_timing: true      # Interweave timing tokens with the beatmap tokens
   add_snapping: true    # Model hit object snapping
-  add_timing_points: true  # Model beatmap timing with timing points
+  add_timing_points: false  # Model beatmap timing with timing points
   add_hitsounds: true   # Model beatmap hitsounds
   add_pre_tokens: false
   per_track: true
