@@ -310,7 +310,7 @@ class BeatmapDatasetIterable:
         last_sv = {}
 
         # Divide audio frames into splits
-        for frame_start_idx in range(offset, n_frames - self.gen_start_frame, self.frame_seq_len):
+        for frame_start_idx in range(offset, n_frames - gen_start_frame_x, self.frame_seq_len):
             frame_end_idx = min(frame_start_idx + self.frame_seq_len, n_frames)
 
             gen_start_frame = min(frame_start_idx + gen_start_frame_x, n_frames - 1)
@@ -719,7 +719,7 @@ class BeatmapDatasetIterable:
                 continue
 
             if all(beatmap_metadata["DifficultyRating"] < self.args.min_difficulty or
-                   beatmap_metadata["DifficultyRating"] > self.args.max_difficulty for beatmap_metadata in metadata):
+                   beatmap_metadata["DifficultyRating"] > self.args.max_difficulty for _, beatmap_metadata in metadata.iterrows()):
                 continue
 
             speed = self._get_speed_augment()
