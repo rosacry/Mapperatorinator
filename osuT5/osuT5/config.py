@@ -98,6 +98,8 @@ class DataConfig:
     add_pre_tokens_at_step: int = -1
     max_pre_token_len: int = -1
     timing_random_offset: int = 2
+    timing_random_offset_2: int = 0
+    timing_random_offset_prob: float = 1.0  # Probability of using random timing offset
     add_gd_context: bool = False  # Prefix the decoder with tokens of another beatmap in the mapset
     min_difficulty: float = 0  # Minimum difficulty to consider including in the dataset
     max_difficulty: float = 100  # Maximum difficulty to consider including in the dataset

@@ -624,11 +624,16 @@ class BeatmapDatasetIterable:
 
         # Randomize some input tokens
         def randomize_tokens(tokens):
+            if random.random() > self.args.timing_random_offset_prob:
+                return tokens
+
             offset = torch.randint(low=-self.args.timing_random_offset, high=self.args.timing_random_offset + 1,
                                    size=tokens.shape)
+            offset2 = torch.randint(low=-self.args.timing_random_offset_2, high=self.args.timing_random_offset_2 + 1,
+                                    size=(1,))
             return torch.where((self.tokenizer.event_start[EventType.TIME_SHIFT] <= tokens) & (
                     tokens < self.tokenizer.event_end[EventType.TIME_SHIFT]),
-                               torch.clamp(tokens + offset,
+                               torch.clamp(tokens + offset + offset2,
                                            self.tokenizer.event_start[EventType.TIME_SHIFT],
                                            self.tokenizer.event_end[EventType.TIME_SHIFT] - 1),
                                tokens)

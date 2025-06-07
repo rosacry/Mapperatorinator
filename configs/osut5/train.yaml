@@ -65,6 +65,8 @@ data:                  # Data settings
   add_pre_tokens_at_step: -1
   max_pre_token_len: -1
   timing_random_offset: 0
+  timing_random_offset_2: 0
+  timing_random_offset_prob: 1.0  # Probability of using random timing offset
   add_gd_context: false  # Prefix the decoder with tokens of another beatmap in the mapset
   min_difficulty: 0     # Minimum difficulty to consider including in the dataset
   max_difficulty: 100   # Maximum difficulty to consider including in the dataset
