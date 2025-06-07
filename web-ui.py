@@ -13,6 +13,8 @@ import webview
 import werkzeug.serving
 from flask import Flask, render_template, request, Response, jsonify
 
+from inference import autofill_paths
+
 script_dir = os.path.dirname(os.path.abspath(__file__))
 template_folder = os.path.join(script_dir, 'template')
 static_folder = os.path.join(script_dir, 'static')
@@ -396,7 +398,7 @@ def open_folder():
     folder_path = request.args.get('folder')
     print(f"Request received to open folder: {folder_path}")
     if not folder_path:
-         return jsonify({"status": "error", "message": "No folder path specified"}), 400
+        return jsonify({"status": "error", "message": "No folder path specified"}), 400
 
     # Resolve to absolute path for checks
     abs_folder_path = os.path.abspath(folder_path)
@@ -489,6 +491,47 @@ def save_config():
             'success': False,
             'error': f'Failed to save configuration: {str(e)}'
         })
+
+
+@app.route('/validate_paths', methods=['POST'])
+def validate_paths():
+    """Validates and autofills missing paths."""
+    try:
+        # Get paths
+        audio_path = request.form.get('audio_path', '').strip()
+        beatmap_path = request.form.get('beatmap_path', '').strip()
+        output_path = request.form.get('output_path', '').strip()
+
+        class BeatmapArgs:
+            def __init__(self):
+                self.audio_path = audio_path
+                self.beatmap_path = beatmap_path
+                self.output_path = output_path
+
+        # Run autofill
+        result = autofill_paths(BeatmapArgs())
+
+        # Return the results
+        response_data = {
+            'success': result['success'],
+            'autofilled_audio_path': result['audio_path'],
+            'autofilled_output_path': result['output_path'],
+            'warnings': result['warnings'],
+            'errors': result['errors']
+        }
+
+        return jsonify(response_data), 200
+
+    except Exception as e:
+        error_msg = f"Error during path validation: {str(e)}"
+        print(f"Path validation error: {error_msg}")
+        return jsonify({
+            'success': False,
+            'errors': [error_msg],
+            'warnings': [],
+            'autofilled_audio_path': None,
+            'autofilled_output_path': None
+        }), 500
 
 
 # --- Function to Run Flask in a Thread ---
