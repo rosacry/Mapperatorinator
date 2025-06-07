@@ -13,17 +13,6 @@
 <div class="container">
     <main>
         <form id="inferenceForm" method="POST" class="card form-card">
-            <!-- Config Section -->
-            <fieldset>
-                <legend>Config</legend>
-                <div style="display: flex; gap: 10px; flex-wrap: wrap;">
-                    <button type="button" id="export-config-btn" class="browse-button">Export</button>
-                    <input type="file" id="import-config-input" accept=".json" style="display: none;" />
-                    <button type="button" id="import-config-btn" class="browse-button">Import</button>
-                    <button type="button" id="reset-config-btn" class="browse-button">Clear</button>
-                </div>
-                <div id="config-status" style="margin-top: 10px; font-size: 14px;"></div>
-            </fieldset>
 
             <!-- Paths Section -->
             <fieldset>
@@ -293,6 +282,17 @@
                     </div>
                 </div>
             </div>
+            <!-- Config Section -->
+            <fieldset>
+                <legend>Config</legend>
+                <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                    <button type="button" id="export-config-btn" class="browse-button">Export</button>
+                    <input type="file" id="import-config-input" accept=".json" style="display: none;" />
+                    <button type="button" id="import-config-btn" class="browse-button">Import</button>
+                    <button type="button" id="reset-config-btn" class="browse-button">Clear</button>
+                </div>
+                <div id="config-status" style="margin-top: 10px; font-size: 14px;"></div>
+            </fieldset>
 
             <button type="submit">Run Inference</button>
         </form>
