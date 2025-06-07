@@ -51,6 +51,16 @@ app.secret_key = os.urandom(24)  # Set a secret key for Flask
 # --- pywebview API Class ---
 class Api:
     # No __init__ needed as we get the window dynamically
+    def save_file(self, filename):
+        """Opens a save file dialog and returns the selected file path."""
+        # Get the window dynamically from the global list
+        if not webview.windows:
+            print("Error: No pywebview window found.")
+            return None
+        current_window = webview.windows[0]
+        result = current_window.create_file_dialog(webview.SAVE_DIALOG, save_filename=filename)
+        print(f"File dialog result: {result}")  # Debugging
+        return result
 
     def browse_file(self):
         """Opens a file dialog and returns the selected file path."""
@@ -453,6 +463,32 @@ def open_log_file():
     except Exception as e:
         print(f"Error opening log file '{abs_log_path}': {e}")
         return jsonify({"status": "error", "message": f"Could not open log file: {e}"}), 500
+
+
+@app.route('/save_config', methods=['POST'])
+def save_config():
+    try:
+        file_path = request.form.get('file_path')
+        config_data = request.form.get('config_data')
+
+        if not file_path or not config_data:
+            return jsonify({'success': False, 'error': 'Missing required parameters'})
+
+        # Write the configuration file
+        with open(file_path, 'w', encoding='utf-8') as f:
+            f.write(config_data)
+
+        return jsonify({
+            'success': True,
+            'file_path': file_path,
+            'message': 'Configuration saved successfully'
+        })
+
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': f'Failed to save configuration: {str(e)}'
+        })
 
 
 # --- Function to Run Flask in a Thread ---
