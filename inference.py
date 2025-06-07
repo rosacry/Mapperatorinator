@@ -78,19 +78,19 @@ def autofill_paths(args: InferenceConfig):
 
     # Validate all paths
     valid_audio_extensions = {'.mp3', '.wav', '.ogg', '.m4a', '.flac'}
-    if audio_path.exists():
-        errors.append(f"Audio file not found: {args.audio_path}")
+    if not audio_path or not audio_path.exists():
+        errors.append(f"Audio file not found: {audio_path}")
     elif audio_path.suffix.lower() not in valid_audio_extensions:
-        errors.append(f"Audio file must have one of the following extensions: {', '.join(valid_audio_extensions)}: {args.audio_path}")
+        errors.append(f"Audio file must have one of the following extensions: {', '.join(valid_audio_extensions)}: {audio_path}")
 
-    if output_path and (not output_path.exists() or not output_path.is_dir()):
-        errors.append(f"Output directory does not exist: {args.output_path}")
+    if not output_path or not output_path.exists() or not output_path.is_dir():
+        errors.append(f"Output directory does not exist: {output_path}")
 
-    if args.beatmap_path:
-        if not Path(args.beatmap_path).exists():
-            errors.append(f"Beatmap file not found: {args.beatmap_path}")
-        elif not is_valid_beatmap_file(Path(args.beatmap_path)):
-            errors.append(f"Beatmap file must have .osu extension: {args.beatmap_path}")
+    if beatmap_path:
+        if not beatmap_path.exists():
+            errors.append(f"Beatmap file not found: {beatmap_path}")
+        elif not is_valid_beatmap_file(beatmap_path):
+            errors.append(f"Beatmap file must have .osu extension: {beatmap_path}")
 
     # Update args
     args.audio_path = str(audio_path) if audio_path else ""
