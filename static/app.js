@@ -175,11 +175,35 @@ $(document).ready(function() {
                 const targetId = $(this).data('target');
 
                 try {
-                    const path = browseType === 'folder' ?
-                                await window.pywebview.api.browse_folder() :
-                                await window.pywebview.api.browse_file();
+                    let path;
+
+                    if (browseType === 'folder') {
+                        path = await window.pywebview.api.browse_folder();
+                    } else {
+                        let fileTypes = null;
+
+                        if (targetId === 'beatmap_path') {
+                            fileTypes = [
+                                'Beatmap Files (*.osu)',
+                                'All files (*.*)'
+                            ];
+                        } else if (targetId === 'audio_path') {
+                            fileTypes = [
+                                // todo: add more formats if needed and implement this in backend as well + add error msgs
+                                'Audio Files (*.mp3;*.wav;*.ogg;*.m4a;*.flac)',
+                                'All files (*.*)'
+                            ];
+                        }
+
+                        path = await window.pywebview.api.browse_file(fileTypes);
+                    }
 
                     if (path) {
+                        if (targetId === 'beatmap_path' && !path.toLowerCase().endsWith('.osu')) {
+                            Utils.showFlashMessage('Please select a valid .osu file.', 'error');
+                            return;
+                        }
+
                         $(`#${targetId}`).val(path);
                         console.log(`Selected ${browseType}:`, path);
 
@@ -208,6 +232,11 @@ $(document).ready(function() {
             $('#audio_path, #beatmap_path, #output_path').on('input', (e) => {
                 this.isTyping = true;
                 this.clearPlaceholders();
+
+                if (e.target.id === 'beatmap_path') {
+                    this.validateBeatmapFileType(e.target.value.trim());
+                }
+
                 this.debouncedValidation();
             });
 
@@ -216,6 +245,14 @@ $(document).ready(function() {
                 this.isTyping = false;
                 this.debouncedValidation();
             });
+        },
+
+        validateBeatmapFileType(beatmapPath) {
+            $('.path-validation-error.file-type-error').remove();
+
+            if (beatmapPath && !beatmapPath.toLowerCase().endsWith('.osu')) {
+                this.showInlineError('#beatmap_path', 'Beatmap file must have .osu extension', 'file-type-error');
+            }
         },
 
         debouncedValidation() {
@@ -297,6 +334,8 @@ $(document).ready(function() {
                     shouldShowError = hasUserAudioPath || hasUserBeatmapPath;
                 } else if (error.includes('Beatmap file not found')) {
                     shouldShowError = hasUserBeatmapPath;
+                } else if (error.includes('Beatmap file must have .osu extension')) {
+                    shouldShowError = hasUserBeatmapPath;
                 } else if (error.includes('Output')) {
                     shouldShowError = hasUserOutputPath;
                 } else {
@@ -310,6 +349,8 @@ $(document).ready(function() {
                         this.showInlineError('#audio_path', 'Audio file not found');
                     } else if (error.includes('Beatmap file not found')) {
                         this.showInlineError('#beatmap_path', 'Beatmap file not found');
+                    } else if (error.includes('Beatmap file must have .osu extension')) {
+                        this.showInlineError('#beatmap_path', 'Must be .osu file');
                     }
                 }
             });
@@ -318,9 +359,10 @@ $(document).ready(function() {
             UIManager.updateConditionalFields();
         },
 
-        showInlineError(inputSelector, message) {
+        showInlineError(inputSelector, message, additionalClass = '') {
             const $input = $(inputSelector);
-            const $errorDiv = $(`<div class="path-validation-error" style="color: #ff4444; font-size: 12px; margin-top: 2px;">${message}</div>`);
+            const errorClass = `path-validation-error ${additionalClass}`.trim();
+            const $errorDiv = $(`<div class="${errorClass}" style="color: #ff4444; font-size: 12px; margin-top: 2px;">${message}</div>`);
 
             $input.siblings('.path-validation-error').remove();
             $input.after($errorDiv);
@@ -614,6 +656,13 @@ $(document).ready(function() {
             if (!outputPath && !beatmapPath) {
                 Utils.smoothScroll(0);
                 Utils.showFlashMessage("Either 'Output Path' or 'Beatmap Path' are required for running inference", 'error');
+                return false;
+            }
+
+            // Validate beatmap file type if beatmap path is provided
+            if (beatmapPath && !beatmapPath.toLowerCase().endsWith('.osu')) {
+                Utils.smoothScroll('#beatmap_path');
+                Utils.showFlashMessage("Beatmap file must have .osu extension", 'error');
                 return false;
             }
 

@@ -50,32 +50,44 @@ def autofill_paths(args):
     beatmap_path = Path(args.beatmap_path) if args.beatmap_path else None
     audio_path = Path(args.audio_path) if args.audio_path else None
 
+    # Helper function to validate beatmap file type
+    def is_valid_beatmap_file(path):
+        """Check if the file has a valid beatmap extension (.osu)."""
+        if not path:
+            return True  # Empty path is valid (optional)
+        return path.suffix.lower() == '.osu'
+
     # Case 1: Beatmap path is provided - autofill audio and output
     if beatmap_path and beatmap_path.exists():
-        try:
-            beatmap = Beatmap.from_path(beatmap_path)
-
-            # Autofill audio path if empty
-            if not args.audio_path or args.audio_path == '':
-                potential_audio_path = beatmap_path.parent / beatmap.audio_filename
-                if potential_audio_path.exists():
-                    autofilled_audio = str(potential_audio_path)
-                    args.audio_path = str(potential_audio_path)
-                else:
-                    error_msg = f"Audio file not found: {potential_audio_path}"
-                    errors.append(error_msg)
-            else:
-                if not Path(args.audio_path).exists():
-                    errors.append(f"Audio file not found: {args.audio_path}")
-
-            # Autofill output path if empty
-            if not args.output_path or args.output_path == '':
-                autofilled_output = str(beatmap_path.parent)
-                args.output_path = str(beatmap_path.parent)
-
-        except Exception as e:
-            error_msg = f"Error reading beatmap file: {e}"
+        # Validate beatmap file type before attempting to parse
+        if not is_valid_beatmap_file(beatmap_path):
+            error_msg = f"Beatmap file must have .osu extension: {beatmap_path}"
             errors.append(error_msg)
+        else:
+            try:
+                beatmap = Beatmap.from_path(beatmap_path)
+
+                # Autofill audio path if empty
+                if not args.audio_path or args.audio_path == '':
+                    potential_audio_path = beatmap_path.parent / beatmap.audio_filename
+                    if potential_audio_path.exists():
+                        autofilled_audio = str(potential_audio_path)
+                        args.audio_path = str(potential_audio_path)
+                    else:
+                        error_msg = f"Audio file not found: {potential_audio_path}"
+                        errors.append(error_msg)
+                else:
+                    if not Path(args.audio_path).exists():
+                        errors.append(f"Audio file not found: {args.audio_path}")
+
+                # Autofill output path if empty
+                if not args.output_path or args.output_path == '':
+                    autofilled_output = str(beatmap_path.parent)
+                    args.output_path = str(beatmap_path.parent)
+
+            except Exception as e:
+                error_msg = f"Error reading beatmap file: {e}"
+                errors.append(error_msg)
 
     # Case 2: Audio path is provided but no output path - autofill output
     elif audio_path and audio_path.exists() and (not args.output_path or args.output_path == ''):
@@ -88,9 +100,12 @@ def autofill_paths(args):
         if args.audio_path and not Path(args.audio_path).exists():
             errors.append(f"Audio file not found: {args.audio_path}")
 
-        # todo: Add beatmap *file type* validation
-        if args.beatmap_path and not Path(args.beatmap_path).exists():
-            errors.append(f"Beatmap file not found: {args.beatmap_path}")
+        # Validate beatmap file type and existence
+        if args.beatmap_path:
+            if not Path(args.beatmap_path).exists():
+                errors.append(f"Beatmap file not found: {args.beatmap_path}")
+            elif not is_valid_beatmap_file(Path(args.beatmap_path)):
+                errors.append(f"Beatmap file must have .osu extension: {args.beatmap_path}")
 
     return {
         'success': len(errors) == 0,
@@ -137,6 +152,10 @@ def get_args_from_beatmap(args: InferenceConfig, tokenizer: Tokenizer):
 
     if not beatmap_path.is_file():
         raise FileNotFoundError(f"Beatmap file {beatmap_path} not found.")
+
+    # Validate beatmap file type
+    if beatmap_path.suffix.lower() != '.osu':
+        raise ValueError(f"Beatmap file must have .osu extension: {beatmap_path}")
 
     beatmap = Beatmap.from_path(beatmap_path)
     print(f"Using metadata from beatmap: {beatmap.display_name}")
@@ -313,8 +332,13 @@ def generate(
     # Do some validation
     if not Path(audio_path).exists() or not Path(audio_path).is_file():
         raise FileNotFoundError(f"Provided audio file path does not exist: {audio_path}")
-    if beatmap_path and (not Path(beatmap_path).exists() or not Path(beatmap_path).is_file()):
-        raise FileNotFoundError(f"Provided beatmap file path does not exist: {beatmap_path}")
+    if beatmap_path:
+        beatmap_path_obj = Path(beatmap_path)
+        if not beatmap_path_obj.exists() or not beatmap_path_obj.is_file():
+            raise FileNotFoundError(f"Provided beatmap file path does not exist: {beatmap_path}")
+        # Validate beatmap file type
+        if beatmap_path_obj.suffix.lower() != '.osu':
+            raise ValueError(f"Beatmap file must have .osu extension: {beatmap_path}")
 
     preprocessor = Preprocessor(args, parallel=args.parallel)
     processor = Processor(args, model, tokenizer)
