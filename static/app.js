@@ -204,8 +204,12 @@ $(document).ready(function() {
                             return;
                         }
 
-                        $(`#${targetId}`).val(path);
+                        const $targetInput = $(`#${targetId}`);
+                        $targetInput.val(path);
                         console.log(`Selected ${browseType}:`, path);
+
+                        // Trigger input event to show clear buttons
+                        $targetInput.trigger('input');
 
                         PathManager.validateAndAutofillPaths(true);
                     }
@@ -217,7 +221,7 @@ $(document).ready(function() {
         }
     };
 
-    // Path Manager for autofill and validation
+    // Path Manager for autofill, validation and clear button support
     const PathManager = {
         debounceTimer: null,
         debounceDelay: 369, // Myb change ts?
@@ -225,6 +229,7 @@ $(document).ready(function() {
 
         init() {
             this.attachPathChangeHandlers();
+            this.attachClearButtonHandlers();
         },
 
         attachPathChangeHandlers() {
@@ -232,6 +237,7 @@ $(document).ready(function() {
             $('#audio_path, #beatmap_path, #output_path').on('input', (e) => {
                 this.isTyping = true;
                 this.clearPlaceholders();
+                this.updateClearButtonVisibility(e.target);
 
                 if (e.target.id === 'beatmap_path') {
                     this.validateBeatmapFileType(e.target.value.trim());
@@ -245,6 +251,53 @@ $(document).ready(function() {
                 this.isTyping = false;
                 this.debouncedValidation();
             });
+        },
+
+        attachClearButtonHandlers() {
+            // Show/hide clear buttons on input change
+            $('#audio_path, #beatmap_path, #output_path').on('input', (e) => {
+                this.updateClearButtonVisibility(e.target);
+            });
+
+            // Handle clear button clicks
+            $('.clear-input-btn').on('click', (e) => {
+                const targetId = $(e.target).data('target');
+                const $targetInput = $(`#${targetId}`);
+                const $inputContainer = $targetInput.closest('.input-with-clear');
+
+                // Clear the input field
+                $targetInput.val('');
+
+                // Hide the clear button
+                this.updateClearButtonVisibility($targetInput[0]);
+
+                // Clear any validation errors for this field
+                $targetInput.siblings('.path-validation-error').remove();
+                $inputContainer.siblings('.path-validation-error').remove();
+
+                // Trigger input event to reuse existing validation logic
+                $targetInput.trigger('input');
+            });
+
+            // Initial visibility check for all fields
+            $('#audio_path, #beatmap_path, #output_path').each((index, element) => {
+                this.updateClearButtonVisibility(element);
+            });
+        },
+
+        updateClearButtonVisibility(inputElement) {
+            const $input = $(inputElement);
+            const inputValue = $input.val().trim();
+            const placeholder = $input.attr('placeholder') || '';
+            const $clearBtn = $input.siblings('.clear-input-btn');
+
+            const hasManualText = inputValue !== '' && inputValue !== placeholder;
+
+            if (hasManualText) {
+                $clearBtn.show();
+            } else {
+                $clearBtn.hide();
+            }
         },
 
         validateBeatmapFileType(beatmapPath) {
@@ -361,11 +414,15 @@ $(document).ready(function() {
 
         showInlineError(inputSelector, message, additionalClass = '') {
             const $input = $(inputSelector);
+            const $inputContainer = $input.closest('.input-with-clear');
             const errorClass = `path-validation-error ${additionalClass}`.trim();
             const $errorDiv = $(`<div class="${errorClass}" style="color: #ff4444; font-size: 12px; margin-top: 2px;">${message}</div>`);
 
             $input.siblings('.path-validation-error').remove();
-            $input.after($errorDiv);
+            $inputContainer.siblings('.path-validation-error').remove();
+
+            // Place error after the input div
+            $inputContainer.after($errorDiv);
         },
 
         clearPlaceholders() {
