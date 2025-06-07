@@ -64,6 +64,8 @@ $(document).ready(function() {
 
             // Clear paths and optional fields
             $('#audio_path, #output_path, #beatmap_path, #mapper_id, #seed, #start_time, #end_time, #hold_note_ratio, #scroll_speed_ratio').val('');
+            PathManager.clearPlaceholders();
+            PathManager.validateAndAutofillPaths(false);
         }
     };
 
@@ -175,19 +177,224 @@ $(document).ready(function() {
                 const targetId = $(this).data('target');
 
                 try {
-                    const path = browseType === 'folder' ?
-                                await window.pywebview.api.browse_folder() :
-                                await window.pywebview.api.browse_file();
+                    let path;
+
+                    if (browseType === 'folder') {
+                        path = await window.pywebview.api.browse_folder();
+                    } else {
+                        let fileTypes = null;
+
+                        if (targetId === 'beatmap_path') {
+                            fileTypes = [
+                                'Beatmap Files (*.osu)',
+                                'All files (*.*)'
+                            ];
+                        } else if (targetId === 'audio_path') {
+                            fileTypes = [
+                                // todo: add more formats if needed and implement this in backend as well + add error msgs
+                                'Audio Files (*.mp3;*.wav;*.ogg;*.m4a;*.flac)',
+                                'All files (*.*)'
+                            ];
+                        }
+
+                        path = await window.pywebview.api.browse_file(fileTypes);
+                    }
 
                     if (path) {
-                        $(`#${targetId}`).val(path).trigger('input');
+                        if (targetId === 'beatmap_path' && !path.toLowerCase().endsWith('.osu')) {
+                            Utils.showFlashMessage('Please select a valid .osu file.', 'error');
+                            // Set the path and let validation handle inline error
+                        }
+
+                        const $targetInput = $(`#${targetId}`);
+                        $targetInput.val(path);
                         console.log(`Selected ${browseType}:`, path);
+
+                        // Trigger input event to update clear buttons and validate
+                        $targetInput.trigger('input');
+                        $targetInput.trigger('blur'); // Trigger blur to validate
                     }
                 } catch (error) {
                     console.error(`Error browsing for ${browseType}:`, error);
                     alert(`Could not browse for ${browseType}. Ensure the backend API is running.`);
                 }
             });
+        }
+    };
+
+    // Path Manager for autofill, validation and clear button support
+    const PathManager = {
+        init() {
+            this.attachPathChangeHandlers();
+            this.attachClearButtonHandlers();
+            $('#audio_path, #beatmap_path, #output_path').trigger('blur');
+        },
+
+        attachPathChangeHandlers() {
+            // Listen for input events (typing)
+            $('#audio_path, #beatmap_path, #output_path').on('input', (e) => {
+                this.updateClearButtonVisibility(e.target);
+            });
+
+            // Listen for blur events (leaving field) - immediate validation
+            $('#audio_path, #beatmap_path, #output_path').on('blur', (e) => {
+                this.updateClearButtonVisibility(e.target);
+                this.validateAndAutofillPaths(false);
+            });
+        },
+
+        attachClearButtonHandlers() {
+            // Handle clear button clicks
+            $('.clear-input-btn').on('click', (e) => {
+                const targetId = $(e.target).data('target');
+                const $targetInput = $(`#${targetId}`);
+
+                $targetInput.val('');
+                this.updateClearButtonVisibility($targetInput[0]);
+
+                this.validateAndAutofillPaths(false);
+            });
+
+            // Initial visibility check for all fields
+            $('#audio_path, #beatmap_path, #output_path').each((index, element) => {
+                this.updateClearButtonVisibility(element);
+            });
+        },
+
+        updateClearButtonVisibility(inputElement) {
+            const $input = $(inputElement);
+            const $clearBtn = $input.siblings('.clear-input-btn');
+            const hasValue = $input.val().trim() !== '';
+
+            if (hasValue) {
+                $clearBtn.show();
+            } else {
+                $clearBtn.hide();
+            }
+        },
+
+        validateAndAutofillPaths(showFlashMessages = false) { // isFileDialog replaced by showFlashMessages
+            const audioPath = $('#audio_path').val().trim();
+            const beatmapPath = $('#beatmap_path').val().trim();
+            const outputPath = $('#output_path').val().trim();
+
+            // Only validate if at least one path is provided
+            if (!audioPath && !beatmapPath && !outputPath) {
+                this.clearPlaceholders();
+                UIManager.updateConditionalFields();
+                return Promise.resolve(true);
+            }
+
+            // Call backend validation
+            return new Promise((resolve) => {
+                $.ajax({
+                    url: '/validate_paths',
+                    method: 'POST',
+                    data: {
+                        audio_path: audioPath,
+                        beatmap_path: beatmapPath,
+                        output_path: outputPath
+                    },
+                    success: (response) => {
+                        this.handleValidationResponse(response, showFlashMessages);
+                        resolve(response.success);
+                    },
+                    error: (xhr, status, error) => {
+                        console.error('Path validation failed:', error);
+                        if (showFlashMessages) {
+                            Utils.showFlashMessage('Error validating paths. Check console for details.', 'error');
+                        }
+                        resolve(false);
+                    }
+                });
+            });
+        },
+
+        handleValidationResponse(response, showFlashMessages = false) {
+            this.clearValidationErrors();
+            const $audioPathInput = $('#audio_path');
+            const $outputPathInput = $('#output_path');
+
+            // Show autofilled paths as placeholders
+            if (response.autofilled_audio_path && !$audioPathInput.val().trim()) {
+                $audioPathInput.attr('placeholder', response.autofilled_audio_path);
+            } else if (!$audioPathInput.val().trim()) {
+                $audioPathInput.attr('placeholder', '');
+            }
+
+            if (response.autofilled_output_path && !$outputPathInput.val().trim()) {
+                $outputPathInput.attr('placeholder', response.autofilled_output_path);
+            } else if (!$outputPathInput.val().trim()) {
+                $outputPathInput.attr('placeholder', '');
+            }
+
+            if (showFlashMessages) {
+                // Show warnings as flash messages
+                response.warnings.forEach(warning => {
+                    Utils.showFlashMessage(warning, 'error');
+                });
+
+                // Show errors as flash messages and inline indicators
+                response.errors.forEach(error => {
+                    Utils.showFlashMessage(error, 'error');
+                });
+            }
+
+            // Always show/update inline errors
+            response.errors.forEach(error => {
+                this.showInlineErrorForMessage(error);
+            });
+
+            // Update UI for conditional fields
+            UIManager.updateConditionalFields();
+        },
+
+        showInlineErrorForMessage(error) {
+            const audioPathVal = $('#audio_path').val().trim();
+            const beatmapPathVal = $('#beatmap_path').val().trim();
+
+            if (error.includes('Audio file not found') && (audioPathVal || beatmapPathVal)) {
+                this.showInlineError('#audio_path', 'Audio file not found');
+            } else if (error.includes('Beatmap file not found') && beatmapPathVal) {
+                this.showInlineError('#beatmap_path', 'Beatmap file not found');
+            } else if (error.includes('Beatmap file must have .osu extension') && beatmapPathVal) {
+                this.showInlineError('#beatmap_path', 'Must be .osu file');
+            }
+        },
+
+        showInlineError(inputSelector, message) {
+            const $input = $(inputSelector);
+            const $inputContainer = $input.closest('.input-with-clear');
+            // Prevent duplicate error messages
+            if ($input.siblings('.path-validation-error').length > 0) {
+                $input.siblings('.path-validation-error').text(message);
+            } else {
+                const $errorDiv = $(`<div class="path-validation-error" style="color: #ff4444; font-size: 12px; margin-top: 2px;">${message}</div>`);
+                $inputContainer.after($errorDiv);
+            }
+        },
+
+        clearValidationErrors() {
+            $('.path-validation-error').remove();
+        },
+
+        clearPlaceholders() {
+            $('#audio_path, #output_path').attr('placeholder', '');
+            this.clearValidationErrors();
+        },
+
+        // Apply placeholder values to form fields before submission
+        applyPlaceholderValues() {
+            const $audioPath = $('#audio_path');
+            const $outputPath = $('#output_path');
+
+            if (!$audioPath.val().trim() && $audioPath.attr('placeholder')) {
+                $audioPath.val($audioPath.attr('placeholder'));
+            }
+
+            if (!$outputPath.val().trim() && $outputPath.attr('placeholder')) {
+                $outputPath.val($outputPath.attr('placeholder'));
+            }
         }
     };
 
@@ -297,7 +504,6 @@ $(document).ready(function() {
                     return;
                 }
 
-
                 $.ajax({
                     url: "/save_config",
                     method: "POST",
@@ -340,6 +546,7 @@ $(document).ready(function() {
             if (confirm("Are you sure you want to reset all settings to default values? This cannot be undone.")) {
                 Utils.resetFormToDefaults();
                 $("#model, #gamemode, #beatmap_path").trigger('change');
+                $('#audio_path, #output_path, #beatmap_path').trigger('blur');
                 this.showConfigStatus("All settings reset to default values", "success");
             }
         },
@@ -365,9 +572,6 @@ $(document).ready(function() {
                 if (!config.version) {
                     throw new Error("Invalid configuration file format");
                 }
-
-                // Store current state
-                const currentBeatmapPath = $('#beatmap_path').val().trim();
 
                 // Import settings
                 if (config.settings) {
@@ -404,11 +608,8 @@ $(document).ready(function() {
 
                 // Trigger updates
                 $("#model, #gamemode").trigger('change');
-
-                const newBeatmapPath = $('#beatmap_path').val().trim();
-                if (newBeatmapPath !== currentBeatmapPath) {
-                    $("#beatmap_path").trigger('input');
-                }
+                $('#audio_path, #output_path, #beatmap_path').trigger('blur');
+                $('#audio_path, #output_path, #beatmap_path').trigger('input');
 
                 this.showConfigStatus(`Configuration imported successfully! (${config.timestamp || 'Unknown date'})`, "success");
 
@@ -434,16 +635,19 @@ $(document).ready(function() {
             $('#cancel-button').click(() => this.cancelInference());
         },
 
-        handleSubmit(e) {
+        async handleSubmit(e) {
             e.preventDefault();
 
-            if (!this.validateForm()) return;
+            // Apply placeholder values before validation
+            if (!await this.validateForm()) return;
 
             this.resetProgress();
             this.startInference();
         },
 
-        validateForm() {
+        async validateForm() {
+            PathManager.applyPlaceholderValues();
+
             const audioPath = $('#audio_path').val().trim();
             const beatmapPath = $('#beatmap_path').val().trim();
             const outputPath = $('#output_path').val().trim();
@@ -457,6 +661,20 @@ $(document).ready(function() {
             if (!outputPath && !beatmapPath) {
                 Utils.smoothScroll(0);
                 Utils.showFlashMessage("Either 'Output Path' or 'Beatmap Path' are required for running inference", 'error');
+                return false;
+            }
+
+            // Validate beatmap file type if beatmap path is provided
+            if (beatmapPath && !beatmapPath.toLowerCase().endsWith('.osu')) {
+                Utils.smoothScroll('#beatmap_path');
+                Utils.showFlashMessage("Beatmap file must have .osu extension", 'error');
+                PathManager.showInlineError('#beatmap_path', 'Must be .osu file');
+                return false;
+            }
+
+            const pathsAreValid = await PathManager.validateAndAutofillPaths(true);
+            if (!pathsAreValid) {
+                Utils.smoothScroll(0);
                 return false;
             }
 
@@ -506,7 +724,7 @@ $(document).ready(function() {
             positiveDescriptors.forEach(val => formData.append('descriptors', val));
             negativeDescriptors.forEach(val => formData.append('negative_descriptors', val));
 
-            // Ensure hitsounded for V30
+            // Ensure hitsounded is true for V30
             if ($("#model").val() === "v30" && !$("#option-item-hitsounded").is(':visible')) {
                 formData.set('hitsounded', 'true');
             }
@@ -527,7 +745,16 @@ $(document).ready(function() {
                 },
                 error: (jqXHR, textStatus, errorThrown) => {
                     console.error("Failed to start inference:", textStatus, errorThrown);
-                    alert("Failed to start inference process. Check backend console.");
+                    let errorMsg = "Failed to start inference process. Check backend console.";
+                    if (jqXHR.responseJSON && jqXHR.responseJSON.message) {
+                        errorMsg = jqXHR.responseJSON.message;
+                    } else if (jqXHR.responseText) {
+                        try {
+                           const parsed = JSON.parse(jqXHR.responseText);
+                           if(parsed && parsed.message) errorMsg = parsed.message;
+                        } catch(e) { /* ignore parsing error */ }
+                    }
+                    Utils.showFlashMessage(errorMsg, 'error');
                     $("button[type='submit']").prop("disabled", false);
                     $("#cancel-button").hide();
                     $("#progress_output").hide();
@@ -649,6 +876,7 @@ $(document).ready(function() {
 
             if (AppState.isCancelled) {
                 $("#progressTitle, #progressBarContainer, #beatmapLink, #errorLogLink").hide();
+                $("#progress_output").hide();
             } else if (AppState.inferenceErrorOccurred) {
                 this.handleInferenceError();
             } else {
@@ -660,8 +888,6 @@ $(document).ready(function() {
             $("button[type='submit']").prop("disabled", false);
             $("#cancel-button").hide();
             AppState.isCancelled = false;
-            AppState.inferenceErrorOccurred = false;
-            AppState.accumulatedErrorMessages = [];
         },
 
         handleInferenceError() {
@@ -705,10 +931,9 @@ $(document).ready(function() {
             $.ajax({
                 url: "/cancel_inference",
                 method: "POST",
-                success: () => {
+                success: (response) => { // Expecting JSON response
                     AppState.isCancelled = true;
-                    $("#progress_output").hide();
-                    Utils.showFlashMessage("Inference cancelled successfully.", "cancel-success");
+                    Utils.showFlashMessage(response.message || "Inference cancelled successfully.", "cancel-success");
                 },
                 error: (jqXHR) => {
                     const errorMsg = jqXHR.responseJSON?.message || "Failed to send cancel request. Unknown error.";
@@ -736,6 +961,7 @@ $(document).ready(function() {
 
         // Initialize all managers
         FileBrowser.init();
+        PathManager.init();
         DescriptorManager.init();
         ConfigManager.init();
         InferenceManager.init();
@@ -743,7 +969,6 @@ $(document).ready(function() {
         // Attach event handlers
         $("#model").on('change', () => UIManager.updateModelSettings());
         $("#gamemode").on('change', () => UIManager.updateConditionalFields());
-        $("#beatmap_path").on('input', () => UIManager.updateConditionalFields());
 
         // Initial UI updates
         UIManager.updateModelSettings();
