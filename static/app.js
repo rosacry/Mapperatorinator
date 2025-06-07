@@ -180,8 +180,10 @@ $(document).ready(function() {
                                 await window.pywebview.api.browse_file();
 
                     if (path) {
-                        $(`#${targetId}`).val(path).trigger('input');
+                        $(`#${targetId}`).val(path);
                         console.log(`Selected ${browseType}:`, path);
+
+                        PathManager.validateAndAutofillPaths(true);
                     }
                 } catch (error) {
                     console.error(`Error browsing for ${browseType}:`, error);
@@ -193,18 +195,41 @@ $(document).ready(function() {
 
     // Path Manager for autofill and validation
     const PathManager = {
+        debounceTimer: null,
+        debounceDelay: 369, // Myb change ts?
+        isTyping: false,
+
         init() {
             this.attachPathChangeHandlers();
         },
 
         attachPathChangeHandlers() {
-            // Listen for changes on path inputs
-            $('#audio_path, #beatmap_path, #output_path').on('input blur', (e) => {
-                this.validateAndAutofillPaths();
+            // Listen for input events (typing)
+            $('#audio_path, #beatmap_path, #output_path').on('input', (e) => {
+                this.isTyping = true;
+                this.clearPlaceholders();
+                this.debouncedValidation();
+            });
+
+            // Listen for blur events (leaving field)
+            $('#audio_path, #beatmap_path, #output_path').on('blur', (e) => {
+                this.isTyping = false;
+                this.debouncedValidation();
             });
         },
 
-        validateAndAutofillPaths() {
+        debouncedValidation() {
+            if (this.debounceTimer) {
+                clearTimeout(this.debounceTimer);
+            }
+
+            this.debounceTimer = setTimeout(() => {
+                this.isTyping = false;
+                this.validateAndAutofillPaths(false);
+            }, this.debounceDelay);
+        },
+
+        validateAndAutofillPaths(isFileDialog = false) {
             const audioPath = $('#audio_path').val().trim();
             const beatmapPath = $('#beatmap_path').val().trim();
             const outputPath = $('#output_path').val().trim();
@@ -224,19 +249,21 @@ $(document).ready(function() {
                     beatmap_path: beatmapPath,
                     output_path: outputPath
                 },
-                success: (response) => this.handleValidationResponse(response),
+                success: (response) => this.handleValidationResponse(response, isFileDialog),
                 error: (xhr, status, error) => {
                     console.error('Path validation failed:', error);
-                    Utils.showFlashMessage('Error validating paths. Check console for details.', 'error');
+                    // Only show error messages for non-file-dialog validations
+                    if (!isFileDialog) {
+                        Utils.showFlashMessage('Error validating paths. Check console for details.', 'error');
+                    }
                 }
             });
         },
 
-        handleValidationResponse(response) {
-            // Clear any existing path validation messages
+        handleValidationResponse(response, isFileDialog = false) {
             $('.path-validation-error').remove();
 
-            // Show autofilled paths as placeholders only if the field is empty
+            // Show autofilled paths as placeholders
             if (response.autofilled_audio_path && !$('#audio_path').val().trim()) {
                 $('#audio_path').attr('placeholder', response.autofilled_audio_path);
             }
@@ -245,19 +272,45 @@ $(document).ready(function() {
                 $('#output_path').attr('placeholder', response.autofilled_output_path);
             }
 
-            response.warnings.forEach(warning => {
-                Utils.showFlashMessage(warning, 'error');
-            });
+            const audioPath = $('#audio_path').val().trim();
+            const beatmapPath = $('#beatmap_path').val().trim();
+            const outputPath = $('#output_path').val().trim();
 
-            // Show errors and add inline indicators
+            const audioPlaceholder = $('#audio_path').attr('placeholder') || '';
+            const outputPlaceholder = $('#output_path').attr('placeholder') || '';
+
+            const hasUserAudioPath = audioPath !== '' && audioPath !== audioPlaceholder;
+            const hasUserBeatmapPath = beatmapPath !== '';
+            const hasUserOutputPath = outputPath !== '' && outputPath !== outputPlaceholder;
+
+            if (!isFileDialog) {
+                response.warnings.forEach(warning => {
+                    Utils.showFlashMessage(warning, 'error');
+                });
+            }
+
+            // Show errors and inline indicators
             response.errors.forEach(error => {
-                Utils.showFlashMessage(error, 'error');
+                let shouldShowError = false;
 
-                // Add error indicators
                 if (error.includes('Audio file not found')) {
-                    this.showInlineError('#audio_path', 'Audio file not found');
+                    shouldShowError = hasUserAudioPath || hasUserBeatmapPath;
                 } else if (error.includes('Beatmap file not found')) {
-                    this.showInlineError('#beatmap_path', 'Beatmap file not found');
+                    shouldShowError = hasUserBeatmapPath;
+                } else if (error.includes('Output')) {
+                    shouldShowError = hasUserOutputPath;
+                } else {
+                    shouldShowError = !isFileDialog;
+                }
+
+                if (shouldShowError) {
+                    Utils.showFlashMessage(error, 'error');
+
+                    if (error.includes('Audio file not found')) {
+                        this.showInlineError('#audio_path', 'Audio file not found');
+                    } else if (error.includes('Beatmap file not found')) {
+                        this.showInlineError('#beatmap_path', 'Beatmap file not found');
+                    }
                 }
             });
 

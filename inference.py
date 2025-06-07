@@ -64,6 +64,9 @@ def autofill_paths(args):
                 else:
                     error_msg = f"Audio file not found: {potential_audio_path}"
                     errors.append(error_msg)
+            else:
+                if not Path(args.audio_path).exists():
+                    errors.append(f"Audio file not found: {args.audio_path}")
 
             # Autofill output path if empty
             if not args.output_path or args.output_path == '':
@@ -81,11 +84,11 @@ def autofill_paths(args):
 
     # Case 3: Only validate paths
     else:
-        # Check if provided audio path exists
+        # todo: Add audio *file type* validation
         if args.audio_path and not Path(args.audio_path).exists():
             errors.append(f"Audio file not found: {args.audio_path}")
 
-        # Check if provided beatmap path exists
+        # todo: Add beatmap *file type* validation
         if args.beatmap_path and not Path(args.beatmap_path).exists():
             errors.append(f"Beatmap file not found: {args.beatmap_path}")
 
