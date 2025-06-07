@@ -64,16 +64,27 @@ class Api:
         print(f"File dialog result: {result}")  # Debugging
         return result
 
-    def browse_file(self):
+    def browse_file(self, file_types=None):
         """Opens a file dialog and returns the selected file path."""
         # Get the window dynamically from the global list
         if not webview.windows:
             print("Error: No pywebview window found.")
             return None
+
         current_window = webview.windows[0]
-        result = current_window.create_file_dialog(webview.OPEN_DIALOG)
-        print(f"File dialog result: {result}")  # Debugging
-        # pywebview returns a tuple, even for single file selection
+
+        # File type filter
+        try:
+            if file_types and isinstance(file_types, list):
+                file_types = tuple(file_types)
+
+            result = current_window.create_file_dialog(
+                webview.OPEN_DIALOG,
+                file_types=file_types
+            )
+        except Exception:
+            result = current_window.create_file_dialog(webview.OPEN_DIALOG)
+
         return result[0] if result else None
 
     def browse_folder(self):
