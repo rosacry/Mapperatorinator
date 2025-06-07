@@ -624,20 +624,19 @@
             });
 
             // Use folder browser to let user choose save location
-            if (window.pywebview && window.pywebview.api && window.pywebview.api.browse_folder) {
-                window.pywebview.api.browse_folder()
-                    .then(function(folderPath) {
-                        if (folderPath) {
+            const filename = `mapperatorinator-config-${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.json`;
+            if (window.pywebview && window.pywebview.api && window.pywebview.api.save_file) {
+                window.pywebview.api.save_file(filename)
+                    .then(function(filePath) {
+                        if (filePath) {
                             const configJson = JSON.stringify(config, null, 2);
-                            const filename = `mapperatorinator-config-${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.json`;
 
                             // Save config to selected folder via Flask endpoint
                             $.ajax({
                                 url: "/save_config",
                                 method: "POST",
                                 data: {
-                                    folder_path: folderPath,
-                                    filename: filename,
+                                    file_path: filePath,
                                     config_data: configJson
                                 },
                                 success: function(response) {
