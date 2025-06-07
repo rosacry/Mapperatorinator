@@ -13,6 +13,9 @@ import webview
 import werkzeug.serving
 from flask import Flask, render_template, request, Response, jsonify
 
+from config import InferenceConfig
+from inference import autofill_paths
+
 script_dir = os.path.dirname(os.path.abspath(__file__))
 template_folder = os.path.join(script_dir, 'template')
 static_folder = os.path.join(script_dir, 'static')
@@ -62,16 +65,27 @@ class Api:
         print(f"File dialog result: {result}")  # Debugging
         return result
 
-    def browse_file(self):
+    def browse_file(self, file_types=None):
         """Opens a file dialog and returns the selected file path."""
         # Get the window dynamically from the global list
         if not webview.windows:
             print("Error: No pywebview window found.")
             return None
+
         current_window = webview.windows[0]
-        result = current_window.create_file_dialog(webview.OPEN_DIALOG)
-        print(f"File dialog result: {result}")  # Debugging
-        # pywebview returns a tuple, even for single file selection
+
+        # File type filter
+        try:
+            if file_types and isinstance(file_types, list):
+                file_types = tuple(file_types)
+
+            result = current_window.create_file_dialog(
+                webview.OPEN_DIALOG,
+                file_types=file_types
+            )
+        except Exception:
+            result = current_window.create_file_dialog(webview.OPEN_DIALOG)
+
         return result[0] if result else None
 
     def browse_folder(self):
@@ -352,6 +366,9 @@ def stream_output():
 def cancel_inference():
     """Attempts to terminate the currently running inference process."""
     global current_process
+    message = ""
+    success = False
+    status_code = 500
 
     with process_lock:
         if current_process and current_process.poll() is None:
@@ -370,23 +387,25 @@ def cancel_inference():
                     # You could consider current_process.kill() here if terminate isn't enough
 
                 success = True
+                status_code = 200
                 # DO NOT set current_process = None here. Let the stream generator handle it.
             except Exception as e:
                 print(f"Error terminating process: {e}")
                 message = f"Error occurred during cancellation: {e}"
                 success = False
+                status_code = 500
         elif current_process:
             message = "Process already finished."
             success = False  # Or True if you consider it 'cancelled' as it's done
+            status_code = 409
         else:
             message = "No process is currently running."
             success = False
+            status_code = 404
 
     if success:
-        return jsonify({"status": "success", "message": message}), 200
+        return jsonify({"status": "success", "message": message}), status_code
     else:
-        # Use 409 Conflict if already finished, 404 if never started, 500 for error
-        status_code = 500 if "Error occurred" in message else (409 if "already finished" in message else 404)
         return jsonify({"status": "error", "message": message}), status_code
 
 
@@ -396,7 +415,7 @@ def open_folder():
     folder_path = request.args.get('folder')
     print(f"Request received to open folder: {folder_path}")
     if not folder_path:
-         return jsonify({"status": "error", "message": "No folder path specified"}), 400
+        return jsonify({"status": "error", "message": "No folder path specified"}), 400
 
     # Resolve to absolute path for checks
     abs_folder_path = os.path.abspath(folder_path)
@@ -489,6 +508,43 @@ def save_config():
             'success': False,
             'error': f'Failed to save configuration: {str(e)}'
         })
+
+
+@app.route('/validate_paths', methods=['POST'])
+def validate_paths():
+    """Validates and autofills missing paths."""
+    try:
+        # Get paths
+        audio_path = request.form.get('audio_path', '').strip()
+        beatmap_path = request.form.get('beatmap_path', '').strip()
+        output_path = request.form.get('output_path', '').strip()
+
+        inference_args = InferenceConfig()
+        inference_args.audio_path = audio_path
+        inference_args.beatmap_path = beatmap_path
+        inference_args.output_path = output_path
+
+        result = autofill_paths(inference_args)
+
+        # Return the results
+        response_data = {
+            'success': result['success'],
+            'autofilled_audio_path': inference_args.audio_path,
+            'autofilled_output_path': inference_args.output_path,
+            'errors': result['errors']
+        }
+
+        return jsonify(response_data), 200
+
+    except Exception as e:
+        error_msg = f"Error during path validation: {str(e)}"
+        print(f"Path validation error: {error_msg}")
+        return jsonify({
+            'success': False,
+            'errors': [error_msg],
+            'autofilled_audio_path': None,
+            'autofilled_output_path': None
+        }), 500
 
 
 # --- Function to Run Flask in a Thread ---
