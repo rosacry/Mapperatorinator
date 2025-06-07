@@ -365,6 +365,9 @@ def stream_output():
 def cancel_inference():
     """Attempts to terminate the currently running inference process."""
     global current_process
+    message = ""
+    success = False
+    status_code = 500
 
     with process_lock:
         if current_process and current_process.poll() is None:
@@ -383,23 +386,25 @@ def cancel_inference():
                     # You could consider current_process.kill() here if terminate isn't enough
 
                 success = True
+                status_code = 200
                 # DO NOT set current_process = None here. Let the stream generator handle it.
             except Exception as e:
                 print(f"Error terminating process: {e}")
                 message = f"Error occurred during cancellation: {e}"
                 success = False
+                status_code = 500
         elif current_process:
             message = "Process already finished."
             success = False  # Or True if you consider it 'cancelled' as it's done
+            status_code = 409
         else:
             message = "No process is currently running."
             success = False
+            status_code = 404
 
     if success:
-        return jsonify({"status": "success", "message": message}), 200
+        return jsonify({"status": "success", "message": message}), status_code
     else:
-        # Use 409 Conflict if already finished, 404 if never started, 500 for error
-        status_code = 500 if "Error occurred" in message else (409 if "already finished" in message else 404)
         return jsonify({"status": "error", "message": message}), status_code
 
 
@@ -513,14 +518,11 @@ def validate_paths():
         beatmap_path = request.form.get('beatmap_path', '').strip()
         output_path = request.form.get('output_path', '').strip()
 
-        class BeatmapArgs:
-            def __init__(self):
-                self.audio_path = audio_path
-                self.beatmap_path = beatmap_path
-                self.output_path = output_path
-
-        # Run autofill
-        result = autofill_paths(BeatmapArgs())
+        result = autofill_paths(
+            beatmap_path_str=beatmap_path if beatmap_path else None,
+            audio_path_str=audio_path if audio_path else None,
+            output_path_str=output_path if output_path else None
+        )
 
         # Return the results
         response_data = {
