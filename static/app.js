@@ -191,6 +191,108 @@ $(document).ready(function() {
         }
     };
 
+    // Path Manager for autofill and validation
+    const PathManager = {
+        init() {
+            this.attachPathChangeHandlers();
+        },
+
+        attachPathChangeHandlers() {
+            // Listen for changes on path inputs
+            $('#audio_path, #beatmap_path, #output_path').on('input blur', (e) => {
+                this.validateAndAutofillPaths();
+            });
+        },
+
+        validateAndAutofillPaths() {
+            const audioPath = $('#audio_path').val().trim();
+            const beatmapPath = $('#beatmap_path').val().trim();
+            const outputPath = $('#output_path').val().trim();
+
+            // Only bother validating if at least one path is provided
+            if (!audioPath && !beatmapPath && !outputPath) {
+                this.clearPlaceholders();
+                return;
+            }
+
+            // Ask the backend to validate and autofill paths
+            $.ajax({
+                url: '/validate_paths',
+                method: 'POST',
+                data: {
+                    audio_path: audioPath,
+                    beatmap_path: beatmapPath,
+                    output_path: outputPath
+                },
+                success: (response) => this.handleValidationResponse(response),
+                error: (xhr, status, error) => {
+                    console.error('Path validation failed:', error);
+                    Utils.showFlashMessage('Error validating paths. Check console for details.', 'error');
+                }
+            });
+        },
+
+        handleValidationResponse(response) {
+            // Clear any existing path validation messages
+            $('.path-validation-error').remove();
+
+            // Show autofilled paths as placeholders only if the field is empty
+            if (response.autofilled_audio_path && !$('#audio_path').val().trim()) {
+                $('#audio_path').attr('placeholder', response.autofilled_audio_path);
+            }
+
+            if (response.autofilled_output_path && !$('#output_path').val().trim()) {
+                $('#output_path').attr('placeholder', response.autofilled_output_path);
+            }
+
+            response.warnings.forEach(warning => {
+                Utils.showFlashMessage(warning, 'error');
+            });
+
+            // Show errors and add inline indicators
+            response.errors.forEach(error => {
+                Utils.showFlashMessage(error, 'error');
+
+                // Add error indicators
+                if (error.includes('Audio file not found')) {
+                    this.showInlineError('#audio_path', 'Audio file not found');
+                } else if (error.includes('Beatmap file not found')) {
+                    this.showInlineError('#beatmap_path', 'Beatmap file not found');
+                }
+            });
+
+            // Update UI for conditional fields since paths might have changed
+            UIManager.updateConditionalFields();
+        },
+
+        showInlineError(inputSelector, message) {
+            const $input = $(inputSelector);
+            const $errorDiv = $(`<div class="path-validation-error" style="color: #ff4444; font-size: 12px; margin-top: 2px;">${message}</div>`);
+
+            $input.siblings('.path-validation-error').remove();
+            $input.after($errorDiv);
+        },
+
+        clearPlaceholders() {
+            $('#audio_path, #output_path').attr('placeholder', '');
+            $('.path-validation-error').remove();
+        },
+
+        // Apply placeholder values to form fields
+        applyPlaceholderValues() {
+            const $audioPath = $('#audio_path');
+            const $outputPath = $('#output_path');
+
+            if (!$audioPath.val().trim() && $audioPath.attr('placeholder')) {
+                $audioPath.val($audioPath.attr('placeholder'));
+            }
+
+            if (!$outputPath.val().trim() && $outputPath.attr('placeholder')) {
+                $outputPath.val($outputPath.attr('placeholder'));
+            }
+        }
+    };
+
     // Descriptor Manager
     const DescriptorManager = {
         init() {
@@ -296,7 +398,6 @@ $(document).ready(function() {
                     this.showConfigStatus("Export cancelled by user", "error");
                     return;
                 }
-
 
                 $.ajax({
                     url: "/save_config",
@@ -437,6 +538,9 @@ $(document).ready(function() {
         handleSubmit(e) {
             e.preventDefault();
 
+            // Apply placeholder values before validation
+            PathManager.applyPlaceholderValues();
+
             if (!this.validateForm()) return;
 
             this.resetProgress();
@@ -506,7 +610,7 @@ $(document).ready(function() {
             positiveDescriptors.forEach(val => formData.append('descriptors', val));
             negativeDescriptors.forEach(val => formData.append('negative_descriptors', val));
 
-            // Ensure hitsounded for V30
+            // Ensure hitsounded is true for V30
             if ($("#model").val() === "v30" && !$("#option-item-hitsounded").is(':visible')) {
                 formData.set('hitsounded', 'true');
             }
@@ -736,6 +840,7 @@ $(document).ready(function() {
 
         // Initialize all managers
         FileBrowser.init();
+        PathManager.init();
         DescriptorManager.init();
         ConfigManager.init();
         InferenceManager.init();

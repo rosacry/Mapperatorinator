@@ -39,6 +39,65 @@ def prepare_args(args: FidConfig | InferenceConfig):
     set_seed(args.seed)
 
 
+def autofill_paths(args):
+    """Autofills audio_path and output_path. Can be used either in Web GUI or CLI."""
+    warnings = []
+    errors = []
+    autofilled_audio = None
+    autofilled_output = None
+
+    # Convert paths to Path objects for easier manipulation
+    beatmap_path = Path(args.beatmap_path) if args.beatmap_path else None
+    audio_path = Path(args.audio_path) if args.audio_path else None
+
+    # Case 1: Beatmap path is provided - autofill audio and output
+    if beatmap_path and beatmap_path.exists():
+        try:
+            beatmap = Beatmap.from_path(beatmap_path)
+
+            # Autofill audio path if empty
+            if not args.audio_path or args.audio_path == '':
+                potential_audio_path = beatmap_path.parent / beatmap.audio_filename
+                if potential_audio_path.exists():
+                    autofilled_audio = str(potential_audio_path)
+                    args.audio_path = str(potential_audio_path)
+                else:
+                    error_msg = f"Audio file not found: {potential_audio_path}"
+                    errors.append(error_msg)
+
+            # Autofill output path if empty
+            if not args.output_path or args.output_path == '':
+                autofilled_output = str(beatmap_path.parent)
+                args.output_path = str(beatmap_path.parent)
+
+        except Exception as e:
+            error_msg = f"Error reading beatmap file: {e}"
+            errors.append(error_msg)
+
+    # Case 2: Audio path is provided but no output path - autofill output
+    elif audio_path and audio_path.exists() and (not args.output_path or args.output_path == ''):
+        autofilled_output = str(audio_path.parent)
+        args.output_path = str(audio_path.parent)
+
+    # Case 3: Only validate paths
+    else:
+        # Check if provided audio path exists
+        if args.audio_path and not Path(args.audio_path).exists():
+            errors.append(f"Audio file not found: {args.audio_path}")
+
+        # Check if provided beatmap path exists
+        if args.beatmap_path and not Path(args.beatmap_path).exists():
+            errors.append(f"Beatmap file not found: {args.beatmap_path}")
+
+    return {
+        'success': len(errors) == 0,
+        'audio_path': autofilled_audio,
+        'output_path': autofilled_output,
+        'warnings': warnings,
+        'errors': errors
+    }
+
+
 def get_args_from_beatmap(args: InferenceConfig, tokenizer: Tokenizer):
     if args.beatmap_path is None or args.beatmap_path == "":
         # populate fair defaults for any inherited args that need to be filled
@@ -78,11 +137,6 @@ def get_args_from_beatmap(args: InferenceConfig, tokenizer: Tokenizer):
 
     beatmap = Beatmap.from_path(beatmap_path)
     print(f"Using metadata from beatmap: {beatmap.display_name}")
-
-    if args.audio_path == '':
-        args.audio_path = beatmap_path.parent / beatmap.audio_filename
-    if args.output_path == '':
-        args.output_path = beatmap_path.parent
 
     generation_config = generation_config_from_beatmap(beatmap, tokenizer)
 
