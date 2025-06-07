@@ -13,6 +13,7 @@ import webview
 import werkzeug.serving
 from flask import Flask, render_template, request, Response, jsonify
 
+from config import InferenceConfig
 from inference import autofill_paths
 
 script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -518,18 +519,18 @@ def validate_paths():
         beatmap_path = request.form.get('beatmap_path', '').strip()
         output_path = request.form.get('output_path', '').strip()
 
-        result = autofill_paths(
-            beatmap_path_str=beatmap_path if beatmap_path else None,
-            audio_path_str=audio_path if audio_path else None,
-            output_path_str=output_path if output_path else None
-        )
+        inference_args = InferenceConfig()
+        inference_args.audio_path = audio_path
+        inference_args.beatmap_path = beatmap_path
+        inference_args.output_path = output_path
+
+        result = autofill_paths(inference_args)
 
         # Return the results
         response_data = {
             'success': result['success'],
-            'autofilled_audio_path': result['audio_path'],
-            'autofilled_output_path': result['output_path'],
-            'warnings': result['warnings'],
+            'autofilled_audio_path': inference_args.audio_path,
+            'autofilled_output_path': inference_args.output_path,
             'errors': result['errors']
         }
 
@@ -541,7 +542,6 @@ def validate_paths():
         return jsonify({
             'success': False,
             'errors': [error_msg],
-            'warnings': [],
             'autofilled_audio_path': None,
             'autofilled_output_path': None
         }), 500
