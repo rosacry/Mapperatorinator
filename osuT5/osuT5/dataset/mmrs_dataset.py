@@ -235,8 +235,6 @@ class BeatmapDatasetIterable:
         # event_tokens[1:] + [EOS] token creates N label sequence
         self.min_pre_token_len = 4
         self.pre_token_len = args.tgt_seq_len // 2
-        self.class_dropout_prob = 1 if self.test else args.class_dropout_prob
-        self.diff_dropout_prob = 0 if self.test else args.diff_dropout_prob
         self.add_pre_tokens = args.add_pre_tokens
         self.add_empty_sequences = args.add_empty_sequences
 
@@ -303,8 +301,8 @@ class BeatmapDatasetIterable:
 
         sequences = []
         n_frames = len(frames)
-        offset = random.randint(0, min(self.frame_seq_len, 2000)) if random.random() < self.args.frame_offset_augment_prob else 0
-        gen_start_frame_x = int(round(self.args.lookback * self.frame_seq_len)) if self.lookback_allowed and random.random() < self.args.lookback_prob else 0
+        offset = random.randint(0, min(self.frame_seq_len, 2000)) if not self.test and random.random() < self.args.frame_offset_augment_prob else 0
+        gen_start_frame_x = int(round(self.args.lookback * self.frame_seq_len)) if not self.test and self.lookback_allowed and random.random() < self.args.lookback_prob else 0
         gen_end_frame_x = int(round((1 - self.args.lookahead) * self.frame_seq_len))
         last_kiai = {}
         last_sv = {}
@@ -443,19 +441,19 @@ class BeatmapDatasetIterable:
 
             if self.args.add_style_token:
                 special_tokens.append(self.tokenizer.encode_style_idx(context["beatmap_idx"])
-                                      if random.random() >= self.args.class_dropout_prob else self.tokenizer.style_unk)
+                                      if self.test or random.random() >= self.args.class_dropout_prob else self.tokenizer.style_unk)
 
             if self.args.add_diff_token:
                 special_tokens.append(self.tokenizer.encode_diff(context["difficulty"])
-                                      if random.random() >= self.args.diff_dropout_prob else self.tokenizer.diff_unk)
+                                      if self.test or random.random() >= self.args.diff_dropout_prob else self.tokenizer.diff_unk)
 
             if self.args.add_mapper_token:
                 special_tokens.append(self.tokenizer.encode_mapper(context["beatmap_id"])
-                                      if random.random() >= self.args.mapper_dropout_prob else self.tokenizer.mapper_unk)
+                                      if self.test or random.random() >= self.args.mapper_dropout_prob else self.tokenizer.mapper_unk)
 
             if self.args.add_year_token:
                 special_tokens.append(self.tokenizer.encode_year(context["year"])
-                                      if random.random() >= self.args.year_dropout_prob else self.tokenizer.year_unk)
+                                      if self.test or random.random() >= self.args.year_dropout_prob else self.tokenizer.year_unk)
 
             if self.args.add_hitsounded_token:
                 special_tokens.append(self.tokenizer.encode(Event(EventType.HITSOUNDED, int(context["hitsounded"]))))
@@ -468,22 +466,22 @@ class BeatmapDatasetIterable:
 
             if self.args.add_cs_token and "circle_size" in context:
                 special_tokens.append(self.tokenizer.encode_cs(context["circle_size"])
-                                      if random.random() >= self.args.cs_dropout_prob else self.tokenizer.cs_unk)
+                                      if self.test or random.random() >= self.args.cs_dropout_prob else self.tokenizer.cs_unk)
 
             if self.args.add_keycount_token and "keycount" in context:
                 special_tokens.append(self.tokenizer.encode(Event(EventType.MANIA_KEYCOUNT, context["keycount"])))
 
             if self.args.add_hold_note_ratio_token and "hold_note_ratio" in context:
                 special_tokens.append(self.tokenizer.encode_hold_note_ratio(context["hold_note_ratio"])
-                                      if random.random() >= self.args.hold_note_ratio_dropout_prob else self.tokenizer.hold_note_ratio_unk)
+                                      if self.test or random.random() >= self.args.hold_note_ratio_dropout_prob else self.tokenizer.hold_note_ratio_unk)
 
             if self.args.add_scroll_speed_ratio_token and "scroll_speed_ratio" in context:
                 special_tokens.append(self.tokenizer.encode_scroll_speed_ratio(context["scroll_speed_ratio"])
-                                      if random.random() >= self.args.scroll_speed_ratio_dropout_prob else self.tokenizer.scroll_speed_ratio_unk)
+                                      if self.test or random.random() >= self.args.scroll_speed_ratio_dropout_prob else self.tokenizer.scroll_speed_ratio_unk)
 
             if self.args.add_descriptors:
                 special_tokens.extend(self.tokenizer.encode_descriptor(context["beatmap_id"])
-                                      if random.random() >= self.args.descriptor_dropout_prob else [
+                                      if self.test or random.random() >= self.args.descriptor_dropout_prob else [
                     self.tokenizer.descriptor_unk])
 
             if self.args.add_kiai_special_token and "last_kiai" in context:
@@ -705,11 +703,14 @@ class BeatmapDatasetIterable:
         return np.interp(speed, speed_ratios, star_ratings)  # type: ignore
 
     def _get_speed_augment(self):
+        if self.test or random.random() > self.args.dt_augment_prob:
+            return 1.0
+
         mi, ma = self.args.dt_augment_range
         base = random.random()
         if self.args.dt_augment_sqrt:
             base = np.power(base, 0.5)
-        return mi + (ma - mi) * base if random.random() < self.args.dt_augment_prob else 1.0
+        return mi + (ma - mi) * base
 
     def _get_next_tracks(self) -> dict:
         for beatmapset_id in self.subset_ids:
@@ -809,9 +810,9 @@ class BeatmapDatasetIterable:
 
         extra_data = {
             "beatmap_idx": torch.tensor(beatmap_metadata["BeatmapIdx"]
-                                        if random.random() >= self.args.class_dropout_prob else self.tokenizer.num_classes, dtype=torch.long),
+                                        if self.test or random.random() >= self.args.class_dropout_prob else self.tokenizer.num_classes, dtype=torch.long),
             "mapper_idx": torch.tensor(self.tokenizer.get_mapper_idx(beatmap_metadata["UserId"])
-                                       if random.random() >= self.args.mapper_dropout_prob else self.tokenizer.num_mapper_classes, dtype=torch.long),
+                                       if self.test or random.random() >= self.args.mapper_dropout_prob else self.tokenizer.num_mapper_classes, dtype=torch.long),
             "difficulty": torch.tensor(self._get_difficulty(beatmap_metadata, speed), dtype=torch.float32),
             "special": {},
         }
