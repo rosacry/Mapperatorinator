@@ -28,9 +28,28 @@ from osu_diffusion.config import DiffusionTrainConfig
 
 
 def prepare_args(args: FidConfig | InferenceConfig):
-    if not torch.cuda.is_available() and args.device == "cuda":
-        print("CUDA is not available, using CPU instead.")
-        args.device = "cpu"
+    if args.device == "auto":
+        if torch.cuda.is_available():
+            print("Using CUDA for inference (auto-selected).")
+            args.device = "cuda"
+        elif torch.backends.mps.is_available():
+            print("Using MPS for inference (auto-selected).")
+            args.device = "mps"
+        else:
+            print("Using CPU for inference (auto-selected fallback).")
+            args.device = "cpu"
+    elif args.device != "cpu":
+        if args.device == "cuda" and not torch.cuda.is_available():
+            print("CUDA is not available. Falling back to CPU.")
+            args.device = "cpu"
+        elif args.device == "mps" and not torch.backends.mps.is_available():
+            print("MPS is not available. Falling back to CPU.")
+            args.device = "cpu"
+        else:
+            print(
+                f"Requested device '{args.device}' not available. Falling back to CPU."
+            )
+            args.device = "cpu"
     torch.set_grad_enabled(False)
     torch.set_float32_matmul_precision('high')
     if args.seed is None:
