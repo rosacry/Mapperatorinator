@@ -624,21 +624,24 @@ class BeatmapDatasetIterable:
 
         # Randomize some input tokens
         def randomize_tokens(tokens):
-            if random.random() > self.args.timing_random_offset_prob:
-                return tokens
+            offset_tokens = tokens.clone()
 
-            offset = torch.randint(low=-self.args.timing_random_offset, high=self.args.timing_random_offset + 1,
-                                   size=tokens.shape)
-            offset2 = torch.randint(low=-self.args.timing_random_offset_2, high=self.args.timing_random_offset_2 + 1,
-                                    size=(1,))
+            if random.random() < self.args.timing_random_offset_prob:
+                offset_tokens += torch.randint(low=-self.args.timing_random_offset, high=self.args.timing_random_offset + 1,
+                                               size=tokens.shape)
+
+            if random.random() < self.args.timing_random_offset_prob:
+                offset_tokens += torch.randint(low=-self.args.timing_random_offset_2, high=self.args.timing_random_offset_2 + 1,
+                                               size=(1,))
+
             return torch.where((self.tokenizer.event_start[EventType.TIME_SHIFT] <= tokens) & (
                     tokens < self.tokenizer.event_end[EventType.TIME_SHIFT]),
-                               torch.clamp(tokens + offset + offset2,
+                               torch.clamp(offset_tokens,
                                            self.tokenizer.event_start[EventType.TIME_SHIFT],
                                            self.tokenizer.event_end[EventType.TIME_SHIFT] - 1),
                                tokens)
 
-        if self.args.timing_random_offset > 0:
+        if self.args.timing_random_offset > 0 or self.args.timing_random_offset_2 > 0:
             input_tokens[start_random_index:end_index] = randomize_tokens(input_tokens[start_random_index:end_index])
         # input_tokens = torch.where((self.tokenizer.event_start[EventType.DISTANCE] <= input_tokens) & (input_tokens < self.tokenizer.event_end[EventType.DISTANCE]),
         #                               torch.clamp(input_tokens + torch.randint_like(input_tokens, -10, 10), self.tokenizer.event_start[EventType.DISTANCE], self.tokenizer.event_end[EventType.DISTANCE] - 1),
