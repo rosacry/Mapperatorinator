@@ -711,7 +711,7 @@ class BeatmapDatasetIterable:
         return np.interp(speed, speed_ratios, star_ratings)  # type: ignore
 
     def _get_speed_augment(self):
-        if self.test or random.random() > self.args.dt_augment_prob:
+        if self.test or random.random() >= self.args.dt_augment_prob:
             return 1.0
 
         mi, ma = self.args.dt_augment_range
