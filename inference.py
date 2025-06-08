@@ -39,12 +39,14 @@ def prepare_args(args: FidConfig | InferenceConfig):
             print("Using CPU for inference (auto-selected fallback).")
             args.device = "cpu"
     elif args.device != "cpu":
-        if args.device == "cuda" and not torch.cuda.is_available():
-            print("CUDA is not available. Falling back to CPU.")
-            args.device = "cpu"
-        elif args.device == "mps" and not torch.mps.is_available():
-            print("MPS is not available. Falling back to CPU.")
-            args.device = "cpu"
+        if args.device == "cuda":
+            if not torch.cuda.is_available():
+                print("CUDA is not available. Falling back to CPU.")
+                args.device = "cpu"
+        elif args.device == "mps":
+            if not torch.mps.is_available():
+                print("MPS is not available. Falling back to CPU.")
+                args.device = "cpu"
         else:
             print(
                 f"Requested device '{args.device}' not available. Falling back to CPU."
