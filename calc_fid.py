@@ -185,8 +185,8 @@ def get_rhythm(beatmap, passive=False):
 
 
 def worker(beatmap_paths, fid_args: FidConfig, return_dict, idx):
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     prepare_args(fid_args)
+    device = fid_args.device
     args = fid_args.inference
 
     model, tokenizer, diff_model, diff_tokenizer, refine_model = None, None, None, None, None
