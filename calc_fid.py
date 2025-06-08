@@ -186,8 +186,8 @@ def get_rhythm(beatmap, passive=False):
 
 def worker(beatmap_paths, fid_args: FidConfig, return_dict, idx):
     prepare_args(fid_args)
-    device = fid_args.device
     args = fid_args.inference
+    args.device = fid_args.device
 
     model, tokenizer, diff_model, diff_tokenizer, refine_model = None, None, None, None, None
     if not fid_args.skip_generation:
@@ -266,12 +266,12 @@ def worker(beatmap_paths, fid_args: FidConfig, return_dict, idx):
                 sample_rate = classifier_args.data.sample_rate
                 audio = load_audio_file(audio_path, sample_rate)
 
-                for example in DataLoader(ExampleDataset(beatmap, audio, classifier_args, classifier_tokenizer, device), batch_size=fid_args.classifier_batch_size):
+                for example in DataLoader(ExampleDataset(beatmap, audio, classifier_args, classifier_tokenizer, args.device), batch_size=fid_args.classifier_batch_size):
                     classifier_result: OsuClassifierOutput = classifier_model(**example)
                     features = classifier_result.feature_vector
                     real_features.append(features.cpu().numpy())
 
-                for example in DataLoader(ExampleDataset(generated_beatmap, audio, classifier_args, classifier_tokenizer, device), batch_size=fid_args.classifier_batch_size):
+                for example in DataLoader(ExampleDataset(generated_beatmap, audio, classifier_args, classifier_tokenizer, args.device), batch_size=fid_args.classifier_batch_size):
                     classifier_result: OsuClassifierOutput = classifier_model(**example)
                     features = classifier_result.feature_vector
                     generated_features.append(features.cpu().numpy())
