@@ -329,11 +329,6 @@ $(document).ready(function() {
             }
 
             if (showFlashMessages) {
-                // Show warnings as flash messages
-                response.warnings.forEach(warning => {
-                    Utils.showFlashMessage(warning, 'error');
-                });
-
                 // Show errors as flash messages and inline indicators
                 response.errors.forEach(error => {
                     Utils.showFlashMessage(error, 'error');
