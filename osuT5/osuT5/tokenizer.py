@@ -404,8 +404,10 @@ class Tokenizer(PushToHubMixin):
         """Gets the unknown hold note ratio value token id."""
         return self.encode(Event(type=EventType.HOLD_NOTE_RATIO, value=12))
 
-    def encode_hold_note_ratio(self, hold_note_ratio: float) -> int:
+    def encode_hold_note_ratio(self, hold_note_ratio: Optional[float]) -> int:
         """Converts hold note ratio into token id."""
+        if hold_note_ratio is None:
+            return self.hold_note_ratio_unk
         value = self.ratio_to_value(hold_note_ratio, 10)
         return self.encode(Event(type=EventType.HOLD_NOTE_RATIO, value=value))
 
@@ -414,8 +416,10 @@ class Tokenizer(PushToHubMixin):
         """Gets the unknown scroll speed ratio value token id."""
         return self.encode(Event(type=EventType.SCROLL_SPEED_RATIO, value=12))
 
-    def encode_scroll_speed_ratio(self, scroll_speed_ratio: float) -> int:
+    def encode_scroll_speed_ratio(self, scroll_speed_ratio: Optional[float]) -> int:
         """Converts scroll speed ratio into token id."""
+        if scroll_speed_ratio is None:
+            return self.scroll_speed_ratio_unk
         value = self.ratio_to_value(scroll_speed_ratio, 10)
         return self.encode(Event(type=EventType.SCROLL_SPEED_RATIO, value=value))
 

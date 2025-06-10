@@ -351,8 +351,12 @@ def get_groups(
     return groups, group_indices
 
 
-def get_hold_note_ratio(beatmap: Beatmap) -> float:
+def get_hold_note_ratio(beatmap: Beatmap) -> Optional[float]:
     notes = beatmap.hit_objects(stacking=False)
+
+    if len(notes) == 0:
+        return None
+
     hold_note_count = 0
     for note in notes:
         if isinstance(note, HoldNote):
@@ -360,9 +364,13 @@ def get_hold_note_ratio(beatmap: Beatmap) -> float:
     return hold_note_count / len(notes)
 
 
-def get_scroll_speed_ratio(beatmap: Beatmap) -> float:
+def get_scroll_speed_ratio(beatmap: Beatmap) -> Optional[float]:
     # Number of scroll speed changes divided by number of distinct hit object times
     notes = beatmap.hit_objects(stacking=False)
+
+    if len(notes) == 0:
+        return None
+
     last_time = -1
     num_note_times = 0
     for note in notes:
