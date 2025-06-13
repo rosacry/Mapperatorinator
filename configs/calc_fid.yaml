@@ -11,14 +11,15 @@ skip_generation: false
 fid: true
 rhythm_stats: true
 
-dataset_path: /workspace/datasets/ORS16291
-dataset_start: 16200
-dataset_end: 16291
-
 classifier_ckpt: 'OliBomby/osu-classifier'
 classifier_batch_size: 4
 
 training_set_ids_path: null
+
+dataset_type: "mmrs"
+dataset_path: /workspace/datasets/MMRS2025
+dataset_start: 0
+dataset_end: 477
 
 inference:
   super_timing: false

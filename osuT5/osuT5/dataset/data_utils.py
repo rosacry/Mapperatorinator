@@ -1,8 +1,11 @@
 import dataclasses
+from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
 import numpy as np
+import pandas as pd
+from pandas import DataFrame
 from pydub import AudioSegment
 
 import numpy.typing as npt
@@ -93,6 +96,65 @@ def load_audio_file(file: str, sample_rate: int, speed: float = 1.0, normalize: 
     if normalize:
         samples *= 1.0 / np.max(np.abs(samples))
     return samples
+
+
+def load_mmrs_metadata(path) -> DataFrame:
+    # Loads the metadata parquet from the dataset path
+    df = pd.read_parquet(path / "metadata.parquet")
+    df["BeatmapIdx"] = df.index
+    df.set_index(["BeatmapSetId", "Id"], inplace=True)
+    df.sort_index(inplace=True)
+    return df
+
+
+def filter_mmrs_metadata(
+        df: DataFrame,
+        *,
+        start: Optional[int] = None,
+        end: Optional[int] = None,
+        subset_ids: Optional[list[int]] = None,
+        gamemodes: Optional[list[int]] = None,
+        min_year: Optional[int] = None,
+        min_difficulty: Optional[float] = None,
+        max_difficulty: Optional[float] = None,
+) -> DataFrame:
+    """Filter the MMRs metadata DataFrame based on the given criteria.
+
+    Args:
+        df: DataFrame containing the metadata.
+        start: Start split index.
+        end: End split index.
+        subset_ids: List of beatmap IDs to filter by.
+        gamemodes: List of gamemodes to filter by.
+        min_year: Minimum year to filter by.
+        min_difficulty: Minimum difficulty star rating to filter by.
+        max_difficulty: Maximum difficulty star rating to filter by.
+
+    Returns:
+        Filtered DataFrame.
+    """
+    if start is not None and end is not None:
+        first_level_labels = df.index.get_level_values(0).unique()
+        start_label = first_level_labels[start]
+        end_label = first_level_labels[end - 1]
+        df = df.loc[start_label:end_label]
+
+    if subset_ids is not None:
+        df = df.loc[subset_ids]
+
+    if gamemodes is not None:
+        df = df[df["ModeInt"].isin(gamemodes)]
+
+    if min_year is not None:
+        df = df[df["RankedDate"] >= datetime(min_year, 1, 1)]
+
+    if min_difficulty is not None:
+        df = df[df["DifficultyRating"] >= min_difficulty]
+
+    if max_difficulty is not None:
+        df = df[df["DifficultyRating"] <= max_difficulty]
+
+    return df
 
 
 def update_event_times(
