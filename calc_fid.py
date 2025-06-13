@@ -19,29 +19,32 @@ from classifier.libs.model.model import OsuClassifierOutput
 from classifier.libs.utils import load_ckpt
 from config import FidConfig
 from inference import prepare_args, load_diff_model, generate, load_model
-from osuT5.osuT5.dataset.data_utils import load_audio_file
+from osuT5.osuT5.dataset.data_utils import load_audio_file, load_mmrs_metadata, filter_mmrs_metadata
 from osuT5.osuT5.inference import generation_config_from_beatmap, beatmap_config_from_beatmap
 from osuT5.osuT5.tokenizer import ContextType
 from multiprocessing import Manager, Process
 
 
 def get_beatmap_paths(args: FidConfig) -> list[Path]:
-    beatmap_files = []
-    track_names = ["Track" + str(i).zfill(5) for i in range(args.dataset_start, args.dataset_end)]
-    for track_name in track_names:
-        for beatmap_file in os.listdir(
-                os.path.join(args.dataset_path, track_name, "beatmaps"),
-        ):
-            beatmap_files.append(
-                Path(
-                    os.path.join(
-                        args.dataset_path,
-                        track_name,
-                        "beatmaps",
-                        beatmap_file,
-                    )
-                ),
-            )
+    """Get all beatmap paths (.osu) from the dataset directory."""
+    dataset_path = Path(args.dataset_path)
+
+    if args.dataset_type == "mmrs":
+        metadata = load_mmrs_metadata(dataset_path)
+        filtered_metadata = filter_mmrs_metadata(
+            metadata,
+            start=args.dataset_start,
+            end=args.dataset_end,
+        )
+        beatmap_files = [dataset_path / "data" / item["BeatmapSetFolder"] / item["BeatmapFile"] for _, item in filtered_metadata.iterrows()]
+    elif args.dataset_type == "ors":
+        beatmap_files = []
+        track_names = ["Track" + str(i).zfill(5) for i in range(args.dataset_start, args.dataset_end)]
+        for track_name in track_names:
+            for beatmap_file in (dataset_path / track_name / "beatmaps").iterdir():
+                beatmap_files.append(dataset_path / track_name / "beatmaps" / beatmap_file.name)
+    else:
+        raise ValueError(f"Unknown dataset type: {args.dataset_type}")
 
     return beatmap_files
 

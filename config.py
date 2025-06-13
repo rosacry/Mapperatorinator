@@ -111,6 +111,7 @@ class FidConfig:
     fid: bool = True
     rhythm_stats: bool = True
 
+    dataset_type: str = 'ors'
     dataset_path: str = '/workspace/datasets/ORS16291'
     dataset_start: int = 16200
     dataset_end: int = 16291

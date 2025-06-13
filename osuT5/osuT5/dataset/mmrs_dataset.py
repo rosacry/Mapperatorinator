@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import os
 import random
-from datetime import datetime
 from multiprocessing.managers import Namespace
 from typing import Optional, Callable
 from pathlib import Path
@@ -16,7 +15,7 @@ from slider import Beatmap
 from torch.utils.data import IterableDataset
 
 from .data_utils import load_audio_file, remove_events_of_type, get_hold_note_ratio, get_scroll_speed_ratio, \
-    get_hitsounded_status, get_song_length
+    get_hitsounded_status, get_song_length, load_mmrs_metadata, filter_mmrs_metadata
 from .osu_parser import OsuParser
 from ..tokenizer import Event, EventType, Tokenizer, ContextType
 from ..config import DataConfig
@@ -71,7 +70,7 @@ class MmrsDataset(IterableDataset):
         self.path = Path(args.test_dataset_path if test else args.train_dataset_path)
         self.start = args.test_dataset_start if test else args.train_dataset_start
         self.end = args.test_dataset_end if test else args.train_dataset_end
-        self.metadata = self._load_metadata()
+        self.metadata = load_mmrs_metadata(self.path)
         self.subset_ids = subset_ids
         self.sample_weights = self._get_sample_weights(args.sample_weights_path)
 
@@ -81,40 +80,18 @@ class MmrsDataset(IterableDataset):
         if args.only_last_beatmap:
             raise ValueError("MMRS dataset does not support only_last_beatmap")
 
-    def _load_metadata(self):
-        # Loads the metadata parquet from the dataset path
-        df = pd.read_parquet(self.path / "metadata.parquet")
-        df["BeatmapIdx"] = df.index
-        df.set_index(["BeatmapSetId", "Id"], inplace=True)
-        df.sort_index(inplace=True)
-        return df
-
     def _get_subset_ids(self):
         """Get the subset IDs for the dataset with all filtering applied."""
-        df = self.metadata
-
-        if self.start is not None and self.end is not None:
-            first_level_labels = df.index.get_level_values(0).unique()
-            start_label = first_level_labels[self.start]
-            end_label = first_level_labels[self.end]
-            df = df.loc[start_label:end_label]
-
-        if self.subset_ids is not None:
-            df = df.loc[self.subset_ids]
-
-        if self.args.gamemodes is not None:
-            df = df[df["ModeInt"].isin(self.args.gamemodes)]
-
-        if self.args.min_year is not None:
-            df = df[df["RankedDate"] >= datetime(self.args.min_year, 1, 1)]
-
-        if self.args.min_difficulty is not None:
-            df = df[df["DifficultyRating"] >= self.args.min_difficulty]
-
-        if self.args.max_difficulty is not None:
-            df = df[df["DifficultyRating"] <= self.args.max_difficulty]
-
-        return df.index.get_level_values(0).unique().tolist()
+        return filter_mmrs_metadata(
+            self.metadata,
+            start= self.start,
+            end=self.end,
+            subset_ids=self.subset_ids,
+            gamemodes=self.args.gamemodes,
+            min_year=self.args.min_year,
+            min_difficulty=self.args.min_difficulty,
+            max_difficulty=self.args.max_difficulty,
+        ).index.get_level_values(0).unique().tolist()
 
     @staticmethod
     def _get_sample_weights(sample_weights_path):
