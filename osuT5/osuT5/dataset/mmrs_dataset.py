@@ -72,12 +72,7 @@ class MmrsDataset(IterableDataset):
         self.start = args.test_dataset_start if test else args.train_dataset_start
         self.end = args.test_dataset_end if test else args.train_dataset_end
         self.metadata = self._load_metadata()
-        if subset_ids is not None:
-            self.subset_ids = subset_ids
-            self.start = 0
-            self.end = len(subset_ids)
-        else:
-            self.subset_ids = self._beatmap_set_ids_from_metadata()
+        self.subset_ids = subset_ids
         self.sample_weights = self._get_sample_weights(args.sample_weights_path)
 
     def _validate_args(self, args: DataConfig):
@@ -92,13 +87,34 @@ class MmrsDataset(IterableDataset):
         df["BeatmapIdx"] = df.index
         df.set_index(["BeatmapSetId", "Id"], inplace=True)
         df.sort_index(inplace=True)
-        df = df[df["ModeInt"].isin(self.args.gamemodes)]
-        if self.args.min_year:
-            df = df[df["RankedDate"] >= datetime(self.args.min_year, 1, 1)]
         return df
 
-    def _beatmap_set_ids_from_metadata(self):
-        return self.metadata.index.to_frame()["BeatmapSetId"].unique().tolist()
+    def _get_subset_ids(self):
+        """Get the subset IDs for the dataset with all filtering applied."""
+        df = self.metadata
+
+        if self.start is not None and self.end is not None:
+            first_level_labels = df.index.get_level_values(0).unique()
+            start_label = first_level_labels[self.start]
+            end_label = first_level_labels[self.end]
+            df = df.loc[start_label:end_label]
+
+        if self.subset_ids is not None:
+            df = df.loc[self.subset_ids]
+
+        if self.args.gamemodes is not None:
+            df = df[df["ModeInt"].isin(self.args.gamemodes)]
+
+        if self.args.min_year is not None:
+            df = df[df["RankedDate"] >= datetime(self.args.min_year, 1, 1)]
+
+        if self.args.min_difficulty is not None:
+            df = df[df["DifficultyRating"] >= self.args.min_difficulty]
+
+        if self.args.max_difficulty is not None:
+            df = df[df["DifficultyRating"] <= self.args.max_difficulty]
+
+        return df.index.get_level_values(0).unique().tolist()
 
     @staticmethod
     def _get_sample_weights(sample_weights_path):
@@ -116,7 +132,7 @@ class MmrsDataset(IterableDataset):
         return sample_weights
 
     def __iter__(self):
-        subset_ids = self.subset_ids[self.start:self.end].copy()
+        subset_ids = self._get_subset_ids()
 
         if not self.test:
             random.shuffle(subset_ids)
@@ -727,10 +743,6 @@ class BeatmapDatasetIterable:
             if self.args.add_gd_context and len(metadata) <= 1:
                 continue
 
-            if all(beatmap_metadata["DifficultyRating"] < self.args.min_difficulty or
-                   beatmap_metadata["DifficultyRating"] > self.args.max_difficulty for _, beatmap_metadata in metadata.iterrows()):
-                continue
-
             speed = self._get_speed_augment()
             track_path = self.path / "data" / metadata.iloc[0]["BeatmapSetFolder"]
             audio_path = track_path / metadata.iloc[0]["AudioFile"]
@@ -742,10 +754,6 @@ class BeatmapDatasetIterable:
                 continue
 
             for i, beatmap_metadata in metadata.iterrows():
-                if (beatmap_metadata["DifficultyRating"] < self.args.min_difficulty or
-                        beatmap_metadata["DifficultyRating"] > self.args.max_difficulty):
-                    continue
-
                 for sample in self._get_next_beatmap(audio_samples, i, beatmap_metadata, metadata, speed):
                     yield sample
 
