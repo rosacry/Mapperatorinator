@@ -19,7 +19,8 @@ training_set_ids_path: null
 dataset_type: "mmrs"
 dataset_path: /workspace/datasets/MMRS2025
 dataset_start: 0
-dataset_end: 477
+dataset_end: 106  # Contains 324 std beatmaps
+gamemodes: [0]  # List of gamemodes to include in the dataset
 
 inference:
   super_timing: false

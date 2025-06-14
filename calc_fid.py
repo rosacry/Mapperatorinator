@@ -35,6 +35,7 @@ def get_beatmap_paths(args: FidConfig) -> list[Path]:
             metadata,
             start=args.dataset_start,
             end=args.dataset_end,
+            gamemodes=args.gamemodes,
         )
         beatmap_files = [dataset_path / "data" / item["BeatmapSetFolder"] / item["BeatmapFile"] for _, item in filtered_metadata.iterrows()]
     elif args.dataset_type == "ors":

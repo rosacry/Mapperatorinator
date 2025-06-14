@@ -115,6 +115,7 @@ class FidConfig:
     dataset_path: str = '/workspace/datasets/ORS16291'
     dataset_start: int = 16200
     dataset_end: int = 16291
+    gamemodes: list[int] = field(default_factory=lambda: [0])  # List of gamemodes to include in the dataset
 
     classifier_ckpt: str = 'OliBomby/osu-classifier'
     classifier_batch_size: int = 16
