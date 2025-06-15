@@ -1,3 +1,4 @@
+import _pickle
 import os
 import time
 import threading
@@ -18,6 +19,8 @@ SOCKET_PATH = r'\\.\pipe\Mapperatorinator'
 
 MILISECONDS_PER_SECOND = 1000
 MILISECONDS_PER_STEP = 10
+
+RETRY_SIGNAL = "RETRY_SIGNAL"
 
 
 def get_eos_token_id(tokenizer, lookback_time: float = 0, lookahead_time: float = 0):
@@ -94,7 +97,7 @@ class InferenceServer:
             tokenizer,
             max_batch_size=8,
             batch_timeout=0.2,
-            idle_timeout=2,
+            idle_timeout=20,
             socket_path=SOCKET_PATH
     ):
         """
@@ -150,6 +153,12 @@ class InferenceServer:
             while True:
                 try:
                     model_kwargs, generate_kwargs = conn.recv()
+                except _pickle.UnpicklingError:
+                    print("UnpicklingError detected! Requesting a retry from the client.")
+                    # Tell the client to try again
+                    conn.send(RETRY_SIGNAL)
+                    # Loop back to conn.recv() to wait for the resent data
+                    continue
                 except EOFError:
                     break
 
@@ -265,7 +274,7 @@ class InferenceClient:
             tokenizer_loader,
             max_batch_size=8,
             batch_timeout=0.2,
-            idle_timeout=2,
+            idle_timeout=20,
             socket_path=SOCKET_PATH,
     ):
         """
@@ -318,10 +327,21 @@ class InferenceClient:
         while not server.shutdown_flag.is_set():
             time.sleep(1)
 
-    def generate(self, model_kwargs, generate_kwargs):
-        # Send request and wait for response
-        self.conn.send((model_kwargs, generate_kwargs))
-        return self.conn.recv()
+    def generate(self, model_kwargs, generate_kwargs, max_retries=3):
+        attempts = 0
+        while attempts < max_retries:
+            # Send request and wait for response
+            self.conn.send((model_kwargs, generate_kwargs))
+            result = self.conn.recv()
+
+            if result == RETRY_SIGNAL:
+                print("Retrying request due to UnpicklingError.")
+                attempts += 1
+                continue
+            else:
+                return result
+
+        raise RuntimeError(f"Failed to get a valid response after {max_retries} attempts.")
 
 
 if __name__ == "__main__":
