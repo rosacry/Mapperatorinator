@@ -7,3 +7,4 @@ defaults:
 
 version: 'Mapperatorinator V26'        # Beatmap version
 diff_ckpt: 'OliBomby/osu-diffusion-v2'
+max_batch_size: 8
