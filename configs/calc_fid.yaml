@@ -1,6 +1,6 @@
 defaults:
   - base_fid
-  - inference_tiny_dist7@inference
+  - inference: inference_tiny_dist7
   - _self_
 
 compile: false
@@ -17,7 +17,7 @@ classifier_batch_size: 4
 training_set_ids_path: null
 
 dataset_type: "mmrs"
-dataset_path: /workspace/datasets/MMRS2025
+dataset_path: C:/Users/Olivier/Documents/Collections/Beatmap ML Datasets/MMRS2025
 dataset_start: 0
 dataset_end: 106  # Contains 324 std beatmaps
 gamemodes: [0]  # List of gamemodes to include in the dataset
@@ -35,4 +35,7 @@ hydra:
     chdir: True
   run:
 #    dir: ./logs_fid/${now:%Y-%m-%d}/${now:%H-%M-%S}
-    dir: ./logs_fid/tiny-dist7
+    dir: ./logs_fid/test
+  sweep:
+    dir: ./logs_fid/sweeps/test_1
+    subdir: ${hydra.job.override_dirname}

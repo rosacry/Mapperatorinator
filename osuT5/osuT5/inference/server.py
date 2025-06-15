@@ -93,7 +93,7 @@ class InferenceServer:
             model,
             tokenizer,
             max_batch_size=8,
-            batch_timeout=0.1,
+            batch_timeout=0.2,
             idle_timeout=2,
             socket_path=SOCKET_PATH
     ):
@@ -122,7 +122,7 @@ class InferenceServer:
         # Remove stale socket
         try:
             os.unlink(self.socket_path)
-        except FileNotFoundError:
+        except (FileNotFoundError, OSError):
             pass
 
         # Start IPC listener
@@ -223,6 +223,7 @@ class InferenceServer:
                 model_kwargs[k] = torch.cat(kwargses, dim=0)
 
             outputs = model_generate(self.model, self.tokenizer, model_kwargs, generate_kwargs)
+            torch.cuda.empty_cache()  # Clear any cached memory, otherwise will definitely run out of memory if multiple batch sizes are used
 
             # Split and dispatch results
             batch_i = 0
@@ -263,7 +264,7 @@ class InferenceClient:
             model_loader,
             tokenizer_loader,
             max_batch_size=8,
-            batch_timeout=0.1,
+            batch_timeout=0.2,
             idle_timeout=2,
             socket_path=SOCKET_PATH,
     ):
@@ -304,7 +305,6 @@ class InferenceClient:
         # Load model inside server process
         model = model_loader()
         tokenizer = tokenizer_loader()
-        print(f"Model loaded: {model.name_or_path} on device {model.device}")
         server = InferenceServer(
             model,
             tokenizer,
