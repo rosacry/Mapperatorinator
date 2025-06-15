@@ -1,13 +1,13 @@
 defaults:
   - base_inference
   - inference
-  - osut5: train_tiny_dist
+  - osut5: train_tiny_dist8
   - diffusion: v1
   - _self_
 
-model_path: '../../../test/tiny-dist/'  # Path to trained model
+model_path: './test/tiny-dist8/'  # Path to trained model
 diff_ckpt: 'OliBomby/osu-diffusion-v2'
-version: 'Mapperatorinator tiny dist'        # Beatmap version
+version: 'Mapperatorinator tiny dist8'
 in_context: []
 output_type: [MAP]    # Output type (map, timing)
 temperature: 0.9        # Sampling temperature

@@ -1,9 +1,9 @@
+import logging
 import os
 import random
 import traceback
 from datetime import timedelta
 from pathlib import Path
-from threading import Thread
 from typing import Optional
 
 import hydra
@@ -23,6 +23,8 @@ from osuT5.osuT5.dataset.data_utils import load_audio_file, load_mmrs_metadata, 
 from osuT5.osuT5.inference import generation_config_from_beatmap, beatmap_config_from_beatmap
 from osuT5.osuT5.tokenizer import ContextType
 from multiprocessing import Manager, Process
+
+logger = logging.getLogger(__name__)
 
 
 def get_beatmap_paths(args: FidConfig) -> list[Path]:
@@ -94,7 +96,7 @@ def calculate_frechet_distance(mu1, sigma1, mu2, sigma2, eps=1e-6):
             "fid calculation produces singular product; "
             "adding %s to diagonal of cov estimates"
         ) % eps
-        print(msg)
+        logger.warning(msg)
         offset = np.eye(sigma1.shape[0]) * eps
         covmean = linalg.sqrtm((sigma1 + offset).dot(sigma2 + offset))
 
@@ -190,9 +192,10 @@ def get_rhythm(beatmap, passive=False):
 
 
 def worker(beatmap_paths, fid_args: FidConfig, return_dict, idx):
-    prepare_args(fid_args)
     args = fid_args.inference
     args.device = fid_args.device
+    torch.set_grad_enabled(False)
+    torch.set_float32_matmul_precision('high')
 
     model, tokenizer, diff_model, diff_tokenizer, refine_model = None, None, None, None, None
     if not fid_args.skip_generation:
@@ -224,10 +227,13 @@ def worker(beatmap_paths, fid_args: FidConfig, return_dict, idx):
 
     for beatmap_path in tqdm(beatmap_paths, desc=f"Process {idx}"):
         try:
-            audio_path = beatmap_path.parents[1] / list(beatmap_path.parents[1].glob('audio.*'))[0]
             beatmap = Beatmap.from_path(beatmap_path)
-
             output_path = Path("generated") / beatmap_path.stem
+
+            if fid_args.dataset_type == "ors":
+                audio_path = beatmap_path.parents[1] / list(beatmap_path.parents[1].glob('audio.*'))[0]
+            else:
+                audio_path = beatmap_path.parent / beatmap.audio_filename
 
             if fid_args.skip_generation or (output_path.exists() and len(list(output_path.glob("*.osu"))) > 0):
                 if not output_path.exists() or len(list(output_path.glob("*.osu"))) == 0:
@@ -309,7 +315,7 @@ def test_training_set_overlap(beatmap_paths: list[Path], training_set_ids_path: 
         return
 
     if not os.path.exists(training_set_ids_path):
-        print(f"Training set IDs file {training_set_ids_path} does not exist.")
+        logger.error(f"Training set IDs file {training_set_ids_path} does not exist.")
         return
 
     with open(training_set_ids_path, "r") as f:
@@ -323,11 +329,17 @@ def test_training_set_overlap(beatmap_paths: list[Path], training_set_ids_path: 
             in_set += 1
         else:
             out_set += 1
-    print(f"In training set: {in_set}, Not in training set: {out_set}, Total: {len(beatmap_paths)}, Ratio: {in_set / (in_set + out_set):.2f}")
+    logger.info(f"In training set: {in_set}, Not in training set: {out_set}, Total: {len(beatmap_paths)}, Ratio: {in_set / (in_set + out_set):.2f}")
 
 
 @hydra.main(config_path="configs", config_name="calc_fid", version_base="1.1")
 def main(args: FidConfig):
+    prepare_args(args)
+
+    # Fix inference model path
+    if args.inference.model_path.startswith("./"):
+        args.inference.model_path = os.path.join(Path(__file__).parent, args.inference.model_path[2:])
+
     beatmap_paths = get_beatmap_paths(args)
     num_processes = args.num_processes
 
@@ -356,7 +368,7 @@ def main(args: FidConfig):
     passive_rhythm_stats = {}
     for i in range(num_processes):
         if i not in return_dict:
-            print(f"Process {i} did not return results!")
+            logger.error(f"Process {i} did not return results!")
             continue
         real_features.extend(return_dict[i]["real_features"])
         generated_features.extend(return_dict[i]["generated_features"])
@@ -371,7 +383,7 @@ def main(args: FidConfig):
         m2, s2 = np.mean(generated_features, axis=0), np.cov(generated_features, rowvar=False)
         fid = calculate_frechet_distance(m1, s1, m2, s2)
 
-        print(f"FID: {fid}")
+        logger.info(f"FID: {fid}")
 
     if args.rhythm_stats:
         # Calculate rhythm precision, recall, and F1 score
@@ -381,12 +393,12 @@ def main(args: FidConfig):
         passive_precision = calculate_precision(passive_rhythm_stats)
         passive_recall = calculate_recall(passive_rhythm_stats)
         passive_f1 = calculate_f1(passive_rhythm_stats)
-        print(f"Active Rhythm Precision: {active_precision}")
-        print(f"Active Rhythm Recall: {active_recall}")
-        print(f"Active Rhythm F1: {active_f1}")
-        print(f"Passive Rhythm Precision: {passive_precision}")
-        print(f"Passive Rhythm Recall: {passive_recall}")
-        print(f"Passive Rhythm F1: {passive_f1}")
+        logger.info(f"Active Rhythm Precision: {active_precision}")
+        logger.info(f"Active Rhythm Recall: {active_recall}")
+        logger.info(f"Active Rhythm F1: {active_f1}")
+        logger.info(f"Passive Rhythm Precision: {passive_precision}")
+        logger.info(f"Passive Rhythm Recall: {passive_recall}")
+        logger.info(f"Passive Rhythm F1: {passive_f1}")
 
 
 if __name__ == "__main__":

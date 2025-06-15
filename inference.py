@@ -476,6 +476,7 @@ def load_model(
 
         model.eval()
         model.to(device)
+        print(f"Model loaded: {ckpt_path_str} on device {device}")
         return model
 
     return InferenceClient(
