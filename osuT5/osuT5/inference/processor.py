@@ -261,13 +261,13 @@ class Processor(object):
             if generation_config.difficulty is not None:
                 model_kwargs["difficulty"] = torch.tensor([generation_config.difficulty], dtype=torch.float32)
             else:
-                print("WARNING: Difficulty not provided. Selecting 5.0 for difficulty.")
+                # print("WARNING: Difficulty not provided. Selecting 5.0 for difficulty.")
                 model_kwargs["difficulty"] = torch.tensor([5.0], dtype=torch.float32)
         if self.do_mapper_embed:
             if generation_config.mapper_id is not None:
                 model_kwargs["mapper_idx"] = torch.tensor([self.tokenizer.get_mapper_idx(generation_config.mapper_id)], dtype=torch.long)
             else:
-                print("WARNING: Mapper ID not provided. Selecting default mapper.")
+                # print("WARNING: Mapper ID not provided. Selecting default mapper.")
                 model_kwargs["mapper_idx"] = torch.tensor([-1], dtype=torch.long)
 
         # Start generation
