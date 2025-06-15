@@ -28,7 +28,7 @@ inference:
   top_p: 0.9              # Top-p sampling threshold
   lookback: 0.5             # Fraction of audio sequence to fill with tokens from previous inference window
   lookahead: 0.4            # Fraction of audio sequence to skip at the end of the audio window
-  year: 2022
+  year: 2023
 
 hydra:
   job:
