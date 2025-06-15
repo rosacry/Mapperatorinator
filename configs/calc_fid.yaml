@@ -12,7 +12,7 @@ fid: true
 rhythm_stats: true
 
 classifier_ckpt: 'OliBomby/osu-classifier'
-classifier_batch_size: 4
+classifier_batch_size: 32
 
 training_set_ids_path: null
 
