@@ -4,7 +4,7 @@ defaults:
   - _self_
 
 compile: false
-num_processes: 16
+num_processes: ${inference.max_batch_size}
 seed: 0
 
 skip_generation: false
