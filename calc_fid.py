@@ -237,6 +237,7 @@ def generate_beatmaps(beatmap_paths, fid_args: FidConfig, return_dict, idx):
 
                 generation_config = generation_config_from_beatmap(beatmap, tokenizer)
                 beatmap_config = beatmap_config_from_beatmap(beatmap)
+                beatmap_config.version = args.version
 
                 if args.year is not None:
                     generation_config.year = args.year
