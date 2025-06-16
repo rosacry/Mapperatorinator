@@ -251,15 +251,24 @@ fi
 # 3. Basic Settings
 print_header "Basic Settings"
 
-# Game Mode
-gamemode_options=("osu! (0)" "Taiko (1)" "Catch (2)" "Mania (3)")
-prompt_choice "Game mode:" gamemode_choice "${gamemode_options[@]}"
-case $gamemode_choice in
-    "osu! (0)") gamemode=0 ;;
-    "Taiko (1)") gamemode=1 ;;
-    "Catch (2)") gamemode=2 ;;
-    "Mania (3)") gamemode=3 ;;
-esac
+# Game Mode (MODIFIED BLOCK)
+gamemode_options=("osu!" "Taiko" "Catch" "Mania")
+while true; do
+    print_color $GREEN "Game mode:"
+    for i in "${!gamemode_options[@]}"; do
+        echo "  $i) ${gamemode_options[$i]}"
+    done
+    read -p "$(print_color $GREEN "Select option (0-3)") [default: 0]: " gamemode_input
+    # Set default value to 0 if input is empty
+    gamemode=${gamemode_input:-0}
+
+    if [[ "$gamemode" =~ ^[0-3]$ ]]; then
+        break
+    else
+        print_color $RED "Invalid choice. Please select a number between 0 and 3."
+        echo # Add a blank line for spacing before re-prompting
+    fi
+done
 
 # Difficulty
 prompt_input "Difficulty (1.0-10.0)" "5.5" difficulty
