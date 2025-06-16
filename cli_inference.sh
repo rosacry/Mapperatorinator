@@ -267,46 +267,39 @@ prompt_input "Difficulty (1.0-10.0)" "5.5" difficulty
 # Year
 # default is 2023, and 2007-2023 are valid years
 prompt_input "Year" "2023" year
-# Validate year input
-if ! [[ "$year" =~ ^(20[0-2][0-9]|2007)$ ]]; then
+if ! [[ "$year" =~ ^(200[7-9]|201[0-9]|202[0-3])$ ]]; then
     print_color $RED "Invalid year! Year must be between 2007 and 2023. Defaulting to 2023."
     year=2023
 fi
 
 # 4. Advanced Settings (Optional)
 print_header "Advanced Settings (Optional - Press Enter to skip)"
-
 print_color $BLUE "Difficulty Settings:"
 prompt_input "HP Drain Rate (0-10)" "" hp_drain_rate
 prompt_input "Circle Size (0-10)" "" circle_size
 prompt_input "Overall Difficulty (0-10)" "" overall_difficulty
 prompt_input "Approach Rate (0-10)" "" approach_rate
-
 print_color $BLUE "Slider Settings:"
 prompt_input "Slider Multiplier" "" slider_multiplier
 prompt_input "Slider Tick Rate" "" slider_tick_rate
-
 if [ "$gamemode" -eq 3 ]; then
     print_color $BLUE "Mania Settings:"
     prompt_input "Key Count" "" keycount
     prompt_input "Hold Note Ratio (0-1)" "" hold_note_ratio
     prompt_input "Scroll Speed Ratio" "" scroll_speed_ratio
 fi
-
 print_color $BLUE "Generation Settings:"
 prompt_input "CFG Scale (1-20)" "" cfg_scale
 prompt_input "Temperature (0-2)" "" temperature
 prompt_input "Top P (0-1)" "" top_p
 prompt_input "Seed (random if empty)" "" seed
 prompt_input "Mapper ID" "" mapper_id
-
 print_color $BLUE "Timing Settings:"
 prompt_input "Start Time (seconds)" "" start_time
 prompt_input "End Time (seconds)" "" end_time
 
 # 5. Boolean Options
 print_header "Export & Processing Options"
-
 prompt_yn "Export as .osz file?" "n" export_osz
 prompt_yn "Add to existing beatmap?" "n" add_to_beatmap
 prompt_yn "Add hitsounds?" "n" hitsounded
@@ -325,16 +318,16 @@ prompt_multiselect "Negative descriptors (styles to avoid):" negative_descriptor
 # In-context options (only if beatmap is provided)
 if [ -n "$beatmap_path" ]; then
     print_header "In-Context Learning Options"
-    # This remains a text input for now, but could be converted to prompt_multiselect if needed
     context_options_list=("timing" "patterns" "structure" "style")
     prompt_multiselect "In-context learning aspects:" in_context_options "${context_options_list[@]}"
 fi
+
 
 # 7. Build and Execute Command
 print_header "Command Generation"
 
 # Start building the command
-cmd_args=()
+cmd_args=("$python_executable" "inference.py") 
 
 # Helper function to add argument. Wraps value in single quotes.
 add_arg() {
@@ -343,7 +336,7 @@ add_arg() {
     if [ -n "$value" ]; then
         # This format 'key=value' is robust for Hydra, even with complex values
         # like lists represented as strings: descriptors='["item1", "item2"]'
-        cmd_args+=("${key}='${value}'")
+        cmd_args+=("${key}=${value}") # Removed extra quotes for direct execution
     fi
 }
 
@@ -359,9 +352,9 @@ add_bool_arg() {
 }
 
 # Add all arguments
-add_arg "audio_path" "$audio_path"
-add_arg "output_path" "$output_path"
-add_arg "beatmap_path" "$beatmap_path"
+add_arg "audio_path" "'$audio_path'"
+add_arg "output_path" "'$output_path'"
+add_arg "beatmap_path" "'$beatmap_path'"
 add_arg "gamemode" "$gamemode"
 add_arg "difficulty" "$difficulty"
 add_arg "year" "$year"
@@ -412,8 +405,8 @@ if [ "$execute_cmd" = "true" ]; then
     print_color $GREEN "Starting inference process..."
     echo
     
-    # Execute the command
-    eval "${cmd_args[@]}"
+    # Execute the command by expanding the array. No need for eval.
+    "${cmd_args[@]}"
     
     exit_code=$?
     echo
