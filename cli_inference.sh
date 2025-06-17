@@ -309,7 +309,7 @@ prompt_input "End Time (seconds)" "" end_time
 
 # 5. Boolean Options
 print_header "Export & Processing Options"
-prompt_yn "Export as .osz file?" "n" export_osz
+prompt_yn "Export as .osz file?" "Y" export_osz
 prompt_yn "Add to existing beatmap?" "n" add_to_beatmap
 prompt_yn "Add hitsounds?" "n" hitsounded
 prompt_yn "Use super timing analysis?" "n" super_timing
