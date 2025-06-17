@@ -213,7 +213,6 @@ validate_file() {
 }
 
 # Main script starts here
-clear
 print_color $PURPLE "╔═══════════════════════════════════════════╗"
 print_color $PURPLE "║            Mapperatorinator CLI           ║"
 print_color $PURPLE "║        Interactive Inference Setup        ║"
@@ -239,7 +238,7 @@ while true; do
 done
 
 # Output Path
-prompt_input "Output directory path" "$(dirname "$audio_path")/output" output_path
+prompt_input "Output directory path" "$(dirname "$audio_path")" output_path
 
 # Beatmap Path (Optional)
 prompt_input "Beatmap file path (optional, for in-context learning)" "" beatmap_path
@@ -309,7 +308,7 @@ prompt_input "End Time (seconds)" "" end_time
 
 # 5. Boolean Options
 print_header "Export & Processing Options"
-prompt_yn "Export as .osz file?" "Y" export_osz
+prompt_yn "Export as .osz file?" "y" export_osz
 prompt_yn "Add to existing beatmap?" "n" add_to_beatmap
 prompt_yn "Add hitsounds?" "n" hitsounded
 prompt_yn "Use super timing analysis?" "n" super_timing
