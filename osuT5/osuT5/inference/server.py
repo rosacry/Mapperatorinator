@@ -37,6 +37,7 @@ def model_generate(model, tokenizer, model_kwargs, generate_kwargs):
     # To device
     model_kwargs = {k: v.to(model.device) if isinstance(v, torch.Tensor) else v for k, v in model_kwargs.items()}
     batch_size = model_kwargs['inputs'].shape[0]
+    # print(f"[Model Generate] Batch size: {batch_size}, Model device: {model.device}")
 
     cfg_scale = generate_kwargs.pop('cfg_scale', 1.0)
     timeshift_bias = generate_kwargs.pop('timeshift_bias', 0)
