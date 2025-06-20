@@ -150,40 +150,42 @@ class InferenceServer:
     def _client_handler(self, conn):
         with self.lock:
             self.connections += 1
-        with conn:
-            while True:
-                try:
-                    model_kwargs, generate_kwargs = conn.recv()
-                except _pickle.UnpicklingError:
-                    print("UnpicklingError detected! Requesting a retry from the client.")
-                    # Tell the client to try again
-                    conn.send(RETRY_SIGNAL)
-                    # Loop back to conn.recv() to wait for the resent data
-                    continue
-                except EOFError:
-                    break
+        try:
+            with conn:
+                while True:
+                    try:
+                        model_kwargs, generate_kwargs = conn.recv()
+                    except _pickle.UnpicklingError:
+                        print("UnpicklingError detected! Requesting a retry from the client.")
+                        # Tell the client to try again
+                        conn.send(RETRY_SIGNAL)
+                        # Loop back to conn.recv() to wait for the resent data
+                        continue
+                    except (EOFError, OSError):
+                        break
 
-                generate_kwargs_set = frozenset(generate_kwargs.items())
+                    generate_kwargs_set = frozenset(generate_kwargs.items())
 
-                # Prepare a response event
-                response_event = threading.Event()
-                batch_size = model_kwargs['inputs'].shape[0]
-                record = {'model_kwargs': model_kwargs, 'total_work': batch_size, 'work_done': 0, 'conn': conn, 'event': response_event, 'result': None}
+                    # Prepare a response event
+                    response_event = threading.Event()
+                    batch_size = model_kwargs['inputs'].shape[0]
+                    record = {'model_kwargs': model_kwargs, 'total_work': batch_size, 'work_done': 0, 'conn': conn, 'event': response_event, 'result': None}
 
-                # Enqueue request
-                with self.lock:
-                    if generate_kwargs_set in self.grouped_requests:
-                        self.grouped_requests[generate_kwargs_set].append(record)
-                    else:
-                        self.grouped_requests[generate_kwargs_set] = [record]
+                    # Enqueue request
+                    with self.lock:
+                        if generate_kwargs_set in self.grouped_requests:
+                            self.grouped_requests[generate_kwargs_set].append(record)
+                        else:
+                            self.grouped_requests[generate_kwargs_set] = [record]
 
-                # Wait until batch thread processes it
-                response_event.wait()
+                    # Wait until batch thread processes it
+                    response_event.wait()
 
-                # Send back result
-                conn.send(record['result'])
-        with self.lock:
-            self.connections -= 1
+                    # Send back result
+                    conn.send(record['result'])
+        finally:  # Ensure we always close the connection
+            with self.lock:
+                self.connections -= 1
 
     def _batch_thread(self):
         while not self.shutdown_flag.is_set():
@@ -296,6 +298,10 @@ class InferenceClient:
         self.conn = None
 
     def __enter__(self):
+        self._reconnect()
+        return self
+
+    def _reconnect(self):
         try:
             self.conn = Client(self.socket_path)
         except FileNotFoundError:
@@ -305,7 +311,6 @@ class InferenceClient:
             while not os.path.exists(self.socket_path):
                 time.sleep(0.1)
             self.conn = Client(self.socket_path)
-        return self
 
     def __exit__(self, exception_type, exception_value, exception_traceback):
         if self.conn:
@@ -332,8 +337,14 @@ class InferenceClient:
         attempts = 0
         while attempts < max_retries:
             # Send request and wait for response
-            self.conn.send((model_kwargs, generate_kwargs))
-            result = self.conn.recv()
+            try:
+                self.conn.send((model_kwargs, generate_kwargs))
+                result = self.conn.recv()
+            except (EOFError, OSError):
+                print("Connection error, attempting to reconnect...")
+                self._reconnect()
+                attempts += 1
+                continue
 
             if result == RETRY_SIGNAL:
                 print("Retrying request due to UnpicklingError.")
