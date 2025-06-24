@@ -269,7 +269,7 @@ def get_config(args: InferenceConfig):
     # Create tags that describes args
     tags = get_tags_dict(args)
     # Filter to all non-default values
-    defaults = get_tags_dict(OmegaConf.load("configs/inference.yaml"))
+    defaults = get_tags_dict(OmegaConf.load("configs/inference/inference.yaml"))
     tags = {k: v for k, v in tags.items() if v != defaults[k]}
     # To string separated by spaces
     tags = " ".join(f"{k}={v}" for k, v in tags.items())
@@ -528,7 +528,7 @@ def load_diff_model(
     return model, tokenizer
 
 
-@hydra.main(config_path="configs", config_name="inference_v30", version_base="1.1")
+@hydra.main(config_path="configs/inference", config_name="inference_v30", version_base="1.1")
 def main(args: InferenceConfig):
     prepare_args(args)
 

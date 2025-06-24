@@ -129,3 +129,4 @@ class FidConfig:
 cs = ConfigStore.instance()
 cs.store(name="base_fid", node=FidConfig)
 cs.store(group="inference", name="base_inference", node=InferenceConfig)
+cs.store(name="base_inference", node=InferenceConfig)

@@ -95,3 +95,4 @@ class DiffusionTrainConfig:
 
 cs = ConfigStore.instance()
 cs.store(group="inference/diffusion", name="base_train", node=DiffusionTrainConfig)
+cs.store(group="diffusion", name="base_train", node=DiffusionTrainConfig)
