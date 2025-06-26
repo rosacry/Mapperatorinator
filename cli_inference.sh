@@ -37,12 +37,12 @@ prompt_input() {
     local var_name=$3
     
     if [ -n "$default" ]; then
-        read -p "$(print_color $GREEN "$prompt") [default: $default]: " input
+        read -e -p "$(print_color $GREEN "$prompt") [default: $default]: " input
         if [ -z "$input" ]; then
             input="$default"
         fi
     else
-        read -p "$(print_color $GREEN "$prompt"): " input
+        read -e -p "$(print_color $GREEN "$prompt"): " input
     fi
     
     eval "$var_name='$input'"
