@@ -198,7 +198,7 @@ def generate_beatmaps(beatmap_paths, fid_args: FidConfig, return_dict, idx):
     torch.set_float32_matmul_precision('high')
 
     model, tokenizer, diff_model, diff_tokenizer, refine_model = None, None, None, None, None
-    model, tokenizer = load_model(args.model_path, args.osut5, args.device, args.max_batch_size, True)
+    model, tokenizer = load_model(args.model_path, args.train, args.device, args.max_batch_size, True)
 
     if args.compile:
         model.transformer.forward = torch.compile(model.transformer.forward, mode="reduce-overhead", fullgraph=True)
@@ -300,7 +300,7 @@ def calculate_metrics(args: FidConfig, beatmap_paths: list[Path]):
             if args.fid:
                 # Calculate feature vectors for real and generated beatmaps
                 sample_rate = classifier_args.data.sample_rate
-                audio = load_audio_file(audio_path, sample_rate, normalize=args.inference.osut5.data.normalize_audio)
+                audio = load_audio_file(audio_path, sample_rate, normalize=args.inference.train.data.normalize_audio)
 
                 for example in DataLoader(
                         ExampleDataset(beatmap, audio, classifier_args, classifier_tokenizer, args.device),

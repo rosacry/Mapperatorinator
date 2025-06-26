@@ -269,7 +269,7 @@ def get_config(args: InferenceConfig):
     # Create tags that describes args
     tags = get_tags_dict(args)
     # Filter to all non-default values
-    defaults = get_tags_dict(OmegaConf.load("configs/inference/inference.yaml"))
+    defaults = get_tags_dict(OmegaConf.load("configs/inference/default.yaml"))
     tags = {k: v for k, v in tags.items() if v != defaults[k]}
     # To string separated by spaces
     tags = " ".join(f"{k}={v}" for k, v in tags.items())
@@ -365,7 +365,7 @@ def generate(
         if ContextType.TIMING in output_type:
             output_type.remove(ContextType.TIMING)
     elif (ContextType.NONE in args.in_context and ContextType.MAP in output_type and
-          not any((ContextType.NONE in ctx["in"] or len(ctx["in"]) == 0) and ContextType.MAP in ctx["out"] for ctx in args.osut5.data.context_types)):
+          not any((ContextType.NONE in ctx["in"] or len(ctx["in"]) == 0) and ContextType.MAP in ctx["out"] for ctx in args.train.data.context_types)):
         # Generate timing and convert in_context to timing context
         timing_events, timing_times = processor.generate(
             sequences=sequences,
@@ -380,7 +380,7 @@ def generate(
         if ContextType.TIMING in output_type:
             output_type.remove(ContextType.TIMING)
     elif ContextType.TIMING in args.in_context or (
-            args.osut5.data.add_timing and any(t in args.in_context for t in [ContextType.GD, ContextType.NO_HS])):
+            args.train.data.add_timing and any(t in args.in_context for t in [ContextType.GD, ContextType.NO_HS])):
         # Exact timing is provided in the other beatmap, so we don't need to generate it
         timing = [tp for tp in Beatmap.from_path(Path(beatmap_path)).timing_points if tp.parent is None]
 
@@ -398,7 +398,7 @@ def generate(
 
         events, _ = reduce(merge_events, result)
 
-        if timing is None and (ContextType.TIMING in args.output_type or args.osut5.data.add_timing):
+        if timing is None and (ContextType.TIMING in args.output_type or args.train.data.add_timing):
             timing = postprocessor.generate_timing(events)
 
         # Resnap timing events
@@ -528,11 +528,11 @@ def load_diff_model(
     return model, tokenizer
 
 
-@hydra.main(config_path="configs/inference", config_name="inference_v30", version_base="1.1")
+@hydra.main(config_path="configs/inference", config_name="v30", version_base="1.1")
 def main(args: InferenceConfig):
     prepare_args(args)
 
-    model, tokenizer = load_model(args.model_path, args.osut5, args.device, args.max_batch_size, args.use_server)
+    model, tokenizer = load_model(args.model_path, args.train, args.device, args.max_batch_size, args.use_server)
 
     diff_model, diff_tokenizer, refine_model = None, None, None
     if args.generate_positions:

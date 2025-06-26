@@ -95,7 +95,7 @@ class InferenceConfig:
     overlap_buffer: int = 128  # Buffer zone at start and end of sequence to avoid edge effects (should be less than half of max_seq_len)
 
     # Training settings
-    osut5: TrainConfig = field(default_factory=TrainConfig)  # Training settings for osuT5 model
+    train: TrainConfig = field(default_factory=TrainConfig)  # Training settings for osuT5 model
     diffusion: DiffusionTrainConfig = field(default_factory=DiffusionTrainConfig)  # Training settings for diffusion model
     hydra: Any = MISSING
 
@@ -128,5 +128,4 @@ class FidConfig:
 
 cs = ConfigStore.instance()
 cs.store(name="base_fid", node=FidConfig)
-cs.store(group="inference", name="base_inference", node=InferenceConfig)
-cs.store(name="base_inference", node=InferenceConfig)
+cs.store(group="inference", name="base", node=InferenceConfig)

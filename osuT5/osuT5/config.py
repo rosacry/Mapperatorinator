@@ -213,5 +213,5 @@ class TrainConfig:
 
 OmegaConf.register_new_resolver("context_type", lambda x: ContextType(x.lower()))
 cs = ConfigStore.instance()
-cs.store(group="osut5", name="base_train", node=TrainConfig)
+cs.store(group="train", name="base", node=TrainConfig)
 
