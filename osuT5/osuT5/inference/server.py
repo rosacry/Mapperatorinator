@@ -1,3 +1,4 @@
+import _pickle
 import os
 import time
 import threading
@@ -19,6 +20,8 @@ SOCKET_PATH = r'\\.\pipe\Mapperatorinator'
 MILISECONDS_PER_SECOND = 1000
 MILISECONDS_PER_STEP = 10
 
+RETRY_SIGNAL = "RETRY_SIGNAL"
+
 
 def get_eos_token_id(tokenizer, lookback_time: float = 0, lookahead_time: float = 0):
     eos_token_id = [tokenizer.eos_id]
@@ -34,6 +37,7 @@ def model_generate(model, tokenizer, model_kwargs, generate_kwargs):
     # To device
     model_kwargs = {k: v.to(model.device) if isinstance(v, torch.Tensor) else v for k, v in model_kwargs.items()}
     batch_size = model_kwargs['inputs'].shape[0]
+    # print(f"[Model Generate] Batch size: {batch_size}, Model device: {model.device}")
 
     cfg_scale = generate_kwargs.pop('cfg_scale', 1.0)
     timeshift_bias = generate_kwargs.pop('timeshift_bias', 0)
@@ -93,8 +97,8 @@ class InferenceServer:
             model,
             tokenizer,
             max_batch_size=8,
-            batch_timeout=0.1,
-            idle_timeout=2,
+            batch_timeout=0.2,
+            idle_timeout=20,
             socket_path=SOCKET_PATH
     ):
         """
@@ -122,7 +126,7 @@ class InferenceServer:
         # Remove stale socket
         try:
             os.unlink(self.socket_path)
-        except FileNotFoundError:
+        except (FileNotFoundError, OSError):
             pass
 
         # Start IPC listener
@@ -146,34 +150,42 @@ class InferenceServer:
     def _client_handler(self, conn):
         with self.lock:
             self.connections += 1
-        with conn:
-            while True:
-                try:
-                    model_kwargs, generate_kwargs = conn.recv()
-                except EOFError:
-                    break
+        try:
+            with conn:
+                while True:
+                    try:
+                        model_kwargs, generate_kwargs = conn.recv()
+                    except _pickle.UnpicklingError:
+                        print("UnpicklingError detected! Requesting a retry from the client.")
+                        # Tell the client to try again
+                        conn.send(RETRY_SIGNAL)
+                        # Loop back to conn.recv() to wait for the resent data
+                        continue
+                    except (EOFError, OSError):
+                        break
 
-                generate_kwargs_set = frozenset(generate_kwargs.items())
+                    generate_kwargs_set = frozenset(generate_kwargs.items())
 
-                # Prepare a response event
-                response_event = threading.Event()
-                batch_size = model_kwargs['inputs'].shape[0]
-                record = {'model_kwargs': model_kwargs, 'total_work': batch_size, 'work_done': 0, 'conn': conn, 'event': response_event, 'result': None}
+                    # Prepare a response event
+                    response_event = threading.Event()
+                    batch_size = model_kwargs['inputs'].shape[0]
+                    record = {'model_kwargs': model_kwargs, 'total_work': batch_size, 'work_done': 0, 'conn': conn, 'event': response_event, 'result': None}
 
-                # Enqueue request
-                with self.lock:
-                    if generate_kwargs_set in self.grouped_requests:
-                        self.grouped_requests[generate_kwargs_set].append(record)
-                    else:
-                        self.grouped_requests[generate_kwargs_set] = [record]
+                    # Enqueue request
+                    with self.lock:
+                        if generate_kwargs_set in self.grouped_requests:
+                            self.grouped_requests[generate_kwargs_set].append(record)
+                        else:
+                            self.grouped_requests[generate_kwargs_set] = [record]
 
-                # Wait until batch thread processes it
-                response_event.wait()
+                    # Wait until batch thread processes it
+                    response_event.wait()
 
-                # Send back result
-                conn.send(record['result'])
-        with self.lock:
-            self.connections -= 1
+                    # Send back result
+                    conn.send(record['result'])
+        finally:  # Ensure we always close the connection
+            with self.lock:
+                self.connections -= 1
 
     def _batch_thread(self):
         while not self.shutdown_flag.is_set():
@@ -223,6 +235,7 @@ class InferenceServer:
                 model_kwargs[k] = torch.cat(kwargses, dim=0)
 
             outputs = model_generate(self.model, self.tokenizer, model_kwargs, generate_kwargs)
+            torch.cuda.empty_cache()  # Clear any cached memory, otherwise will definitely run out of memory if multiple batch sizes are used
 
             # Split and dispatch results
             batch_i = 0
@@ -263,8 +276,8 @@ class InferenceClient:
             model_loader,
             tokenizer_loader,
             max_batch_size=8,
-            batch_timeout=0.1,
-            idle_timeout=2,
+            batch_timeout=0.2,
+            idle_timeout=20,
             socket_path=SOCKET_PATH,
     ):
         """
@@ -285,6 +298,10 @@ class InferenceClient:
         self.conn = None
 
     def __enter__(self):
+        self._reconnect()
+        return self
+
+    def _reconnect(self):
         try:
             self.conn = Client(self.socket_path)
         except FileNotFoundError:
@@ -294,7 +311,6 @@ class InferenceClient:
             while not os.path.exists(self.socket_path):
                 time.sleep(0.1)
             self.conn = Client(self.socket_path)
-        return self
 
     def __exit__(self, exception_type, exception_value, exception_traceback):
         if self.conn:
@@ -304,7 +320,6 @@ class InferenceClient:
         # Load model inside server process
         model = model_loader()
         tokenizer = tokenizer_loader()
-        print(f"Model loaded: {model.name_or_path} on device {model.device}")
         server = InferenceServer(
             model,
             tokenizer,
@@ -318,10 +333,27 @@ class InferenceClient:
         while not server.shutdown_flag.is_set():
             time.sleep(1)
 
-    def generate(self, model_kwargs, generate_kwargs):
-        # Send request and wait for response
-        self.conn.send((model_kwargs, generate_kwargs))
-        return self.conn.recv()
+    def generate(self, model_kwargs, generate_kwargs, max_retries=3):
+        attempts = 0
+        while attempts < max_retries:
+            # Send request and wait for response
+            try:
+                self.conn.send((model_kwargs, generate_kwargs))
+                result = self.conn.recv()
+            except (EOFError, OSError):
+                print("Connection error, attempting to reconnect...")
+                self._reconnect()
+                attempts += 1
+                continue
+
+            if result == RETRY_SIGNAL:
+                print("Retrying request due to UnpicklingError.")
+                attempts += 1
+                continue
+            else:
+                return result
+
+        raise RuntimeError(f"Failed to get a valid response after {max_retries} attempts.")
 
 
 if __name__ == "__main__":
