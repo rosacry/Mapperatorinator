@@ -108,7 +108,7 @@ prompt_multiselect() {
     local current_idx=0
 
     # Hide cursor for a cleaner UI
-    tput civis
+    tput civis 2>/dev/null || true
     # Ensure cursor is shown again on exit
     trap 'tput cnorm; return' EXIT
 
@@ -167,7 +167,7 @@ prompt_multiselect() {
     done
 
     # Show cursor again and clear the trap
-    tput cnorm
+    tput cnorm 2>/dev/null || true
     trap - EXIT
 
     # Go back to the bottom of the screen
