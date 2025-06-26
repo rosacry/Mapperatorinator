@@ -212,6 +212,28 @@ validate_file() {
     return 0
 }
 
+convert_path_if_needed() {
+    local input_path="$1"
+
+    # Return immediately if the path is empty
+    if [[ -z "$input_path" ]]; then
+        echo ""
+        return
+    fi
+
+    local uname_out
+    uname_out="$(uname -s)"
+
+    case "$uname_out" in
+        CYGWIN*|MINGW*|MSYS*)
+            cygpath -w "$input_path"
+            ;;
+        *)
+            echo "$input_path"
+            ;;
+    esac
+}
+
 # Main script starts here
 print_color $PURPLE "╔═══════════════════════════════════════════╗"
 print_color $PURPLE "║            Mapperatorinator CLI           ║"
@@ -246,6 +268,11 @@ if [ -n "$beatmap_path" ] && ! validate_file "$beatmap_path"; then
     print_color $YELLOW "Warning: Beatmap file not found, continuing without it"
     beatmap_path=""
 fi
+
+# Convert paths to Windows format if needed (for Cygwin/MinGW)
+audio_path=$(convert_path_if_needed "$audio_path")
+output_path=$(convert_path_if_needed "$output_path")
+beatmap_path=$(convert_path_if_needed "$beatmap_path")
 
 # 3. Basic Settings
 print_header "Basic Settings"
