@@ -119,12 +119,12 @@ Navigate to the cloned directory. You may need to make the script executable fir
 
 ```sh
 # Make the script executable (only needs to be done once)
-chmod +x cli.sh
+chmod +x cli_inference.sh
 ```
 
 ```sh
 # Run the script
-./cli.sh
+./cli_inference.sh
 ```
 
 ### Using the CLI
