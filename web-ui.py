@@ -163,7 +163,7 @@ def start_inference():
 
         # Get the model name from the form
         model_name = request.form.get('model')
-        config_name = "inference_" + model_name
+        config_name = model_name
         cmd.append(config_name)  # Add the config name to the command
 
         # Helper to quote values for Hydra's command-line parser
