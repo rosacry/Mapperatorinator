@@ -1,6 +1,6 @@
 defaults:
   - base_fid
-  - inference: inference_tiny_dist7
+  - inference: tiny_dist7
   - _self_
 
 compile: false
