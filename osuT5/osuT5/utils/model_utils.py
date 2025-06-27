@@ -216,8 +216,8 @@ def get_dataloaders(tokenizer: Tokenizer, args: TrainConfig, shared: Namespace) 
             dataset[split],
             batch_size=batch_size,
             num_workers=args.dataloader.num_workers,
-            pin_memory=True,
-            drop_last=False,
+            pin_memory=args.dataloader.pin_memory,
+            drop_last=args.dataloader.drop_last,
             persistent_workers=args.dataloader.num_workers > 0,
             worker_init_fn=worker_init_fn,
         )
