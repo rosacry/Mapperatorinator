@@ -46,7 +46,7 @@ def parse_log_files(root_dir):
         str: A string containing the formatted HTML table.
     """
     results = []
-    dir_pattern = re.compile(r"inference=inference_([a-zA-Z0-9_-]+)")
+    dir_pattern = re.compile(r"inference=(inference_)?([a-zA-Z0-9_-]+)")
     metric_patterns = {
         'FID': re.compile(r"FID: ([\d.]+)"),
         'AR Pr.': re.compile(r"Active Rhythm Precision: ([\d.]+)"),
@@ -63,7 +63,7 @@ def parse_log_files(root_dir):
                 dir_match = dir_pattern.match(dirname)
                 if not dir_match:
                     continue
-                model_name = dir_match.group(1)
+                model_name = dir_match.group(2)
                 log_file_path = os.path.join(dirpath, dirname, 'calc_fid.log')
 
                 if not os.path.exists(log_file_path):
