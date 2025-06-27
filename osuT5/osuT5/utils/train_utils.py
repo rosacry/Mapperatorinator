@@ -35,6 +35,8 @@ def forward_eval(model: Mapperatorinator, batch):
 
 
 def add_prefix(prefix: str, stats: dict[str, float]):
+    if prefix == "":
+        return stats
     return {f"{prefix}/{k}": v for k, v in stats.items()}
 
 
