@@ -127,9 +127,7 @@ def test(args: TrainConfig, accelerator: Accelerator, model, tokenizer, preprefi
             def gather_metrics(loss, preds, labels, rhythm_complexity=None, prefix=''):
                 # Calculate accuracy metrics
                 stats = get_stats(loss, preds, labels, tokenizer, args)
-
-                if prefix != '':
-                    stats = add_prefix(prefix, stats)
+                stats = add_prefix(prefix, stats)
 
                 averager.update(stats)
 
