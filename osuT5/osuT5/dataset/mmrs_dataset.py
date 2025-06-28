@@ -8,7 +8,6 @@ from pathlib import Path
 
 import numpy as np
 import numpy.typing as npt
-import pandas as pd
 import torch
 from pandas import Series, DataFrame
 from slider import Beatmap
@@ -80,7 +79,7 @@ class MmrsDataset(IterableDataset):
         if args.only_last_beatmap:
             raise ValueError("MMRS dataset does not support only_last_beatmap")
 
-    def _get_subset_ids(self):
+    def _get_filtered_metadata(self):
         """Get the subset IDs for the dataset with all filtering applied."""
         return filter_mmrs_metadata(
             self.metadata,
@@ -92,7 +91,7 @@ class MmrsDataset(IterableDataset):
             max_year=self.args.max_year,
             min_difficulty=self.args.min_difficulty,
             max_difficulty=self.args.max_difficulty,
-        ).index.get_level_values(0).unique().tolist()
+        )
 
     @staticmethod
     def _get_sample_weights(sample_weights_path):
@@ -110,26 +109,27 @@ class MmrsDataset(IterableDataset):
         return sample_weights
 
     def __iter__(self):
-        subset_ids = self._get_subset_ids()
+        filtered_metadata = self._get_filtered_metadata()
 
         if not self.test:
-            random.shuffle(subset_ids)
+            subset_ids = filtered_metadata.index.get_level_values(0).unique().to_numpy()
+            np.random.shuffle(subset_ids)
+            filtered_metadata = filtered_metadata.loc[subset_ids]
 
         if self.args.cycle_length > 1 and not self.test:
             return InterleavingBeatmapDatasetIterable(
-                subset_ids,
+                filtered_metadata,
                 self._iterable_factory,
                 self.args.cycle_length,
             )
 
-        return self._iterable_factory(subset_ids).__iter__()
+        return self._iterable_factory(filtered_metadata).__iter__()
 
-    def _iterable_factory(self, subset_ids: list[int]):
+    def _iterable_factory(self, metadata: DataFrame) -> BeatmapDatasetIterable:
         return BeatmapDatasetIterable(
-            subset_ids,
+            metadata,
             self.args,
             self.path,
-            self.metadata,
             self.parser,
             self.tokenizer,
             self.test,
@@ -143,16 +143,13 @@ class InterleavingBeatmapDatasetIterable:
 
     def __init__(
             self,
-            subset_ids: list[int],
+            metadata: DataFrame,
             iterable_factory: Callable,
             cycle_length: int,
     ):
-        per_worker = int(np.ceil(len(subset_ids) / float(cycle_length)))
         self.workers = [
-            iterable_factory(
-                subset_ids[i * per_worker: min(len(subset_ids), (i + 1) * per_worker)]
-            ).__iter__()
-            for i in range(cycle_length)
+            iterable_factory(df).__iter__()
+            for df in np.array_split(metadata, cycle_length)
         ]
         self.cycle_length = cycle_length
         self.index = 0
@@ -198,17 +195,15 @@ class BeatmapDatasetIterable:
 
     def __init__(
             self,
-            subset_ids: list[int],
+            metadata: DataFrame,
             args: DataConfig,
             path: Path,
-            metadata: pd.DataFrame,
             parser: OsuParser,
             tokenizer: Tokenizer,
             test: bool,
             shared: Namespace,
             sample_weights: dict[int, float] = None,
     ):
-        self.subset_ids = subset_ids
         self.args = args
         self.path = path
         self.metadata = metadata
@@ -715,7 +710,7 @@ class BeatmapDatasetIterable:
         return mi + (ma - mi) * base
 
     def _get_next_tracks(self) -> dict:
-        for beatmapset_id in self.subset_ids:
+        for beatmapset_id in self.metadata.index.get_level_values(0).unique():
             metadata = self.metadata.loc[beatmapset_id]
 
             if self.args.add_gd_context and len(metadata) <= 1:
