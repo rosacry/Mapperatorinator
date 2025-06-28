@@ -72,6 +72,7 @@ data:                  # Data settings
   max_difficulty: 100   # Maximum difficulty to consider including in the dataset
   sample_weights_path: ''    # Path to sample weights
   rhythm_weight: 1.0    # Weight of rhythm tokens in the loss calculation
+  label_smoothing: 0.0  # Label smoothing for the loss calculation
   lookback: 0             # Fraction of audio sequence to fill with tokens from previous inference window
   lookahead: 0            # Fraction of audio sequence to skip at the end of the audio window
   lookback_prob: 0.0  # Probability of using the lookback augmentation for a beatmap in the dataset
@@ -100,6 +101,7 @@ data:                  # Data settings
   add_sv: false  # Model slider velocity in std and ctb
   add_mania_sv: false  # Add mania scroll velocity in map context
   min_year: null  # Minimum year of the beatmap to include in the dataset
+  max_year: null  # Maximum year of the beatmap to include in the dataset
   frame_offset_augment_prob: 1.0  # Probability of augmenting beatmap sequences with frame offset
   normalize_audio: true  # Normalize audio data
 
@@ -116,6 +118,7 @@ optim:                  # Optimizer settings
   batch_size: 129       # This is the batch size per GPU
   total_steps: 65536
   warmup_steps: 10000
+  sustain_steps: 0      # Steps to sustain the learning rate after warmup
   lr_scheduler: cosine
   weight_decay: 0.0
   grad_clip: 1.0

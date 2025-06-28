@@ -105,6 +105,7 @@ class DataConfig:
     max_difficulty: float = 100  # Maximum difficulty to consider including in the dataset
     sample_weights_path: str = ''  # Path to sample weights
     rhythm_weight: float = 3.0  # Weight of rhythm tokens in the loss calculation
+    label_smoothing: float = 0.0  # Label smoothing for the loss calculation
     lookback: float = 0  # Fraction of audio sequence to fill with tokens from previous inference window
     lookahead: float = 0  # Fraction of audio sequence to skip at the end of the audio window
     lookback_prob: float = 0.0  # Probability of using the lookback augmentation for a beatmap in the dataset
@@ -135,6 +136,7 @@ class DataConfig:
     add_sv: bool = True  # Model slider velocity in std and ctb
     add_mania_sv: bool = False  # Add mania scroll velocity in map context
     min_year: Optional[int] = None  # Minimum year of the beatmap to include in the dataset
+    max_year: Optional[int] = None  # Maximum year of the beatmap to include in the dataset
     frame_offset_augment_prob: float = 1.0  # Probability of augmenting beatmap sequences with frame offset
     normalize_audio: bool = True  # Normalize audio data
 
@@ -154,6 +156,7 @@ class OptimizerConfig:  # Optimizer settings
     batch_size: int = 128  # Batch size per GPU
     total_steps: int = 65536
     warmup_steps: int = 10000
+    sustain_steps: int = 0  # Steps to sustain the learning rate after warmup
     lr_scheduler: str = "cosine"
     weight_decay: float = 0.0
     grad_clip: float = 1.0

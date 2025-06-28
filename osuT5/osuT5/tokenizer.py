@@ -10,6 +10,7 @@ from pandas import DataFrame
 from tqdm import tqdm
 from transformers.utils import PushToHubMixin, cached_file
 
+from .dataset.data_utils import load_mmrs_metadata, filter_mmrs_metadata
 from .event import Event, EventType, EventRange, ContextType
 from .config import TrainConfig
 
@@ -79,8 +80,11 @@ class Tokenizer(PushToHubMixin):
                 if isinstance(cts, str):
                     add_context_type(cts)
                 else:
-                    for ctss in cts["in"] + cts["out"]:
+                    for ctss in cts["in"]:
                         add_context_type(ctss)
+                    if args.data.add_out_context_types:
+                        for ctss in cts["out"]:
+                            add_context_type(ctss)
 
             miliseconds_per_sequence = ((args.data.src_seq_len - 1) * args.model.spectrogram.hop_length *
                                         MILISECONDS_PER_SECOND / args.model.spectrogram.sample_rate)
@@ -491,15 +495,16 @@ class Tokenizer(PushToHubMixin):
         self.beatmap_idx = self.metadata.reset_index().set_index(["Id"])["BeatmapIdx"].to_dict()
 
     def _get_metadata(self, args: TrainConfig) -> DataFrame:
-        df = pd.read_parquet(Path(args.data.train_dataset_path) / "metadata.parquet")
-        df["BeatmapIdx"] = df.index
-        df.set_index(["BeatmapSetId", "Id"], inplace=True)
-        df.sort_index(inplace=True)
-
-        sets = df.index.to_frame()["BeatmapSetId"].unique().tolist()
-        sets = sets[args.data.train_dataset_start:args.data.train_dataset_end]
-
-        return df.loc[sets]
+        return filter_mmrs_metadata(
+            load_mmrs_metadata(args.data.train_dataset_path),
+            start=args.data.train_dataset_start,
+            end=args.data.train_dataset_end,
+            gamemodes=args.data.gamemodes,
+            min_year=args.data.min_year,
+            max_year=args.data.max_year,
+            min_difficulty=args.data.min_difficulty,
+            max_difficulty=args.data.max_difficulty,
+        )
 
     def _init_mapper_idx(self, args):
         """Indexes beatmap mappers and mapper idx."""
