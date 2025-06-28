@@ -11,7 +11,7 @@ from pydub import AudioSegment
 import numpy.typing as npt
 from slider import Beatmap, HoldNote, TimingPoint
 
-from ..tokenizer import Event, EventType
+from ..event import Event, EventType
 
 MILISECONDS_PER_SECOND = 1000
 BEAT_TYPES = [
@@ -100,7 +100,7 @@ def load_audio_file(file: str, sample_rate: int, speed: float = 1.0, normalize: 
 
 def load_mmrs_metadata(path) -> DataFrame:
     # Loads the metadata parquet from the dataset path
-    df = pd.read_parquet(path / "metadata.parquet")
+    df = pd.read_parquet(Path(path) / "metadata.parquet")
     df["BeatmapIdx"] = df.index
     df.set_index(["BeatmapSetId", "Id"], inplace=True)
     df.sort_index(inplace=True)
@@ -115,6 +115,7 @@ def filter_mmrs_metadata(
         subset_ids: Optional[list[int]] = None,
         gamemodes: Optional[list[int]] = None,
         min_year: Optional[int] = None,
+        max_year: Optional[int] = None,
         min_difficulty: Optional[float] = None,
         max_difficulty: Optional[float] = None,
 ) -> DataFrame:
@@ -127,6 +128,7 @@ def filter_mmrs_metadata(
         subset_ids: List of beatmap IDs to filter by.
         gamemodes: List of gamemodes to filter by.
         min_year: Minimum year to filter by.
+        max_year: Maximum year to filter by.
         min_difficulty: Minimum difficulty star rating to filter by.
         max_difficulty: Maximum difficulty star rating to filter by.
 
@@ -147,6 +149,9 @@ def filter_mmrs_metadata(
 
     if min_year is not None:
         df = df[df["RankedDate"] >= datetime(min_year, 1, 1)]
+
+    if max_year is not None:
+        df = df[df["RankedDate"] < datetime(max_year + 1, 1, 1)]
 
     if min_difficulty is not None:
         df = df[df["DifficultyRating"] >= min_difficulty]

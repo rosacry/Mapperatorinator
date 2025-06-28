@@ -84,11 +84,12 @@ class MmrsDataset(IterableDataset):
         """Get the subset IDs for the dataset with all filtering applied."""
         return filter_mmrs_metadata(
             self.metadata,
-            start= self.start,
+            start=self.start,
             end=self.end,
             subset_ids=self.subset_ids,
             gamemodes=self.args.gamemodes,
             min_year=self.args.min_year,
+            max_year=self.args.max_year,
             min_difficulty=self.args.min_difficulty,
             max_difficulty=self.args.max_difficulty,
         ).index.get_level_values(0).unique().tolist()
