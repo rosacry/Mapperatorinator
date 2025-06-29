@@ -91,3 +91,6 @@ optim:                  # Optimizer settings
   lr_scheduler: linear
   final_cosine: 0
 
+checkpoint:             # Checkpoint settings
+  every_steps: 2500
+
