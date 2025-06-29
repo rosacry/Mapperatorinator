@@ -15,7 +15,7 @@ from osu_diffusion import repeat_type
 from osu_diffusion import create_diffusion
 from osu_diffusion import DiT
 from osuT5.osuT5.inference import GenerationConfig, SliderPath
-from osuT5.osuT5.dataset import update_event_times
+from osuT5.osuT5.dataset.data_utils import update_event_times
 from osuT5.osuT5.tokenizer import Event, EventType
 from osuT5.osuT5.dataset.data_utils import get_groups
 
