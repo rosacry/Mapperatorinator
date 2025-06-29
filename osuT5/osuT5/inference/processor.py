@@ -12,7 +12,7 @@ from tqdm import tqdm
 
 from config import InferenceConfig
 from .server import InferenceClient, model_generate
-from ..dataset import OsuParser
+from ..dataset.osu_parser import OsuParser
 from ..dataset.data_utils import (update_event_times, remove_events_of_type, get_hold_note_ratio,
                                   get_scroll_speed_ratio, get_hitsounded_status)
 from ..model import Mapperatorinator

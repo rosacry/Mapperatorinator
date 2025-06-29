@@ -13,7 +13,8 @@ from torch.optim.lr_scheduler import (
     CosineAnnealingLR, ConstantLR,
 )
 
-from ..dataset import OrsDataset, OsuParser
+from ..dataset.ors_dataset import OrsDataset
+from ..dataset.osu_parser import OsuParser
 from ..dataset.mmrs_dataset import MmrsDataset
 from ..event import EventType
 from ..model.configuration_mapperatorinator import MapperatorinatorConfig
