@@ -11,6 +11,7 @@ model:
   do_difficulty_embed: false
   do_mapper_embed: false
   do_song_position_embed: false
+  cond_size: 0
 
 data:                  # Data settings
   dataset_type: "mmrs"
