@@ -215,9 +215,6 @@ class BeatmapDatasetIterable:
         # let N = |src_seq_len|
         # N-1 frames creates N mel-spectrogram frames
         self.frame_seq_len = args.src_seq_len - 1
-        self.lookback_allowed = all(len(c["out"]) == 1 for c in args.context_types)
-        if not self.lookback_allowed and args.lookback > 0 and args.lookback_prob > 0:
-            raise ValueError("Lookback is currently not supported for multiple output contexts.")
         # let N = |tgt_seq_len|
         # [SOS] token + event_tokens + [EOS] token creates N+1 tokens
         # [SOS] token + event_tokens[:-1] creates N target sequence
@@ -291,7 +288,7 @@ class BeatmapDatasetIterable:
         sequences = []
         n_frames = len(frames)
         offset = random.randint(0, min(self.frame_seq_len, 2000)) if not self.test and random.random() < self.args.frame_offset_augment_prob else 0
-        gen_start_frame_x = int(round(self.args.lookback * self.frame_seq_len)) if not self.test and self.lookback_allowed and random.random() < self.args.lookback_prob else 0
+        gen_start_frame_x = int(round(self.args.lookback * self.frame_seq_len)) if not self.test and random.random() < self.args.lookback_prob else 0
         gen_end_frame_x = int(round((1 - self.args.lookahead) * self.frame_seq_len))
         last_kiai = {}
         last_sv = {}
@@ -302,10 +299,6 @@ class BeatmapDatasetIterable:
 
             gen_start_frame = min(frame_start_idx + gen_start_frame_x, n_frames - 1)
             gen_end_frame = min(frame_start_idx + gen_end_frame_x, n_frames)
-
-            # Assumes only one output context since
-            event_start_idx = start_indices[out_context[0]["extra"]["id"]][frame_start_idx]
-            gen_start_idx = start_indices[out_context[0]["extra"]["id"]][gen_start_frame]
 
             frame_pre_idx = max(frame_start_idx - self.frame_seq_len, 0)
 
@@ -320,12 +313,12 @@ class BeatmapDatasetIterable:
             def slice_context(context, frame_start_idx, frame_end_idx):
                 result = {"events": slice_events(context, frame_start_idx, frame_end_idx)} | context["extra"]
                 result["time"] = frame_times[frame_start_idx]
+                result["labels_offset"] = start_indices[context["extra"]["id"]][gen_start_frame] - start_indices[context["extra"]["id"]][frame_start_idx]
                 return result
 
             # Create the sequence
             sequence: dict[str, str | int | list[Event] | dict] = {
                            "frames": frames[frame_start_idx:frame_end_idx],
-                           "labels_offset": gen_start_idx - event_start_idx,
                            "out_context": [slice_context(context, frame_start_idx, gen_end_frame) for context in
                                            out_context],
                            "in_context": [slice_context(context, frame_start_idx, frame_end_idx) for context in
@@ -572,11 +565,14 @@ class BeatmapDatasetIterable:
                 si += 1
             return si
 
-        def add_context(context, si, max_tokens):
+        def add_context(context, si, max_tokens, add_labels=False):
             if context["add_type"]:
                 input_tokens[si] = self.tokenizer.context_sos[context["context_type"]]
+                if add_labels:
+                    label_tokens[si - 1] = self.tokenizer.context_sos[context["context_type"]]
                 si += 1
 
+            start_label_index = si + context["labels_offset"]
             si = add_special_tokens(context["special_tokens"], si)
 
             num_other_tokens_to_add = min(len(context["tokens"]), max_tokens)
@@ -587,6 +583,9 @@ class BeatmapDatasetIterable:
             if context["add_type"]:
                 input_tokens[si] = self.tokenizer.context_eos[context["context_type"]]
                 si += 1
+
+            if add_labels:
+                label_tokens[start_label_index - 1:si - 1] = input_tokens[start_label_index:si]
 
             return si, max_tokens
 
@@ -602,13 +601,10 @@ class BeatmapDatasetIterable:
 
         input_tokens[si] = self.tokenizer.sos_id
         si += 1
-        start_label_index = si
         for context in sequence["out_context"]:
-            si, n = add_context(context, si, n)
+            si, n = add_context(context, si, n, True)
         end_index = si
 
-        labels_offset = sequence["labels_offset"]
-        label_tokens[start_label_index + labels_offset - 1:end_index - 1] = input_tokens[start_label_index + labels_offset:end_index]
         label_tokens[end_index - 1] = self.tokenizer.eos_id
 
         # Randomize some input tokens
@@ -642,7 +638,6 @@ class BeatmapDatasetIterable:
 
         del sequence["out_context"]
         del sequence["in_context"]
-        del sequence["labels_offset"]
         del sequence["special_tokens"]
         del sequence["special"]
         if "pre_tokens" in sequence:
