@@ -7,7 +7,7 @@ from multiprocessing.connection import Listener, Client
 
 from transformers import LogitsProcessorList, ClassifierFreeGuidanceLogitsProcessor, TemperatureLogitsWarper
 
-from ..event import EventType
+from ..event import EventType, ContextType
 from .logit_processors import ConditionalTemperatureLogitsWarper, get_beat_type_tokens, \
     get_mania_type_tokens, get_scroll_speed_tokens, TimeshiftBias, LookbackBiasLogitsWarper
 from .cache_utils import get_cache
@@ -23,9 +23,10 @@ MILISECONDS_PER_STEP = 10
 RETRY_SIGNAL = "RETRY_SIGNAL"
 
 
-def get_eos_token_id(tokenizer, lookback_time: float = 0, lookahead_time: float = 0):
+def get_eos_token_id(tokenizer, lookback_time: float = 0, lookahead_time: float = 0, context_type: ContextType = None):
     eos_token_id = [tokenizer.eos_id]
-    eos_token_id.extend(tokenizer.context_eos.values())
+    if context_type is not None:
+        eos_token_id.append(tokenizer.context_eos[context_type])
     if lookback_time > 0:
         eos_token_id.extend(range(tokenizer.event_start[EventType.TIME_SHIFT], tokenizer.event_start[EventType.TIME_SHIFT] + int(lookback_time / MILISECONDS_PER_STEP)))
     if lookahead_time > 0:
@@ -48,6 +49,9 @@ def model_generate(model, tokenizer, model_kwargs, generate_kwargs):
     taiko_hit_temperature = generate_kwargs.pop('taiko_hit_temperature', temperature)
     lookback_time = generate_kwargs.pop('lookback_time', 0.0)
     lookahead_time = generate_kwargs.pop('lookahead_time', 0.0)
+    context_type = generate_kwargs.pop('context_type', None)
+    if context_type is not None:
+        context_type = ContextType(context_type)  # Convert to ContextType enum
 
     # Create the logits processors
     logits_processor_list = LogitsProcessorList()
@@ -87,7 +91,7 @@ def model_generate(model, tokenizer, model_kwargs, generate_kwargs):
         use_cache=True,
         past_key_values=cache,
         logits_processor=logits_processor_list,
-        eos_token_id=get_eos_token_id(tokenizer, lookback_time=lookback_time, lookahead_time=lookahead_time),
+        eos_token_id=get_eos_token_id(tokenizer, lookback_time=lookback_time, lookahead_time=lookahead_time, context_type=context_type),
     ).cpu()
 
 
