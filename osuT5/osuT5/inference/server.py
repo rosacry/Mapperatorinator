@@ -25,7 +25,7 @@ RETRY_SIGNAL = "RETRY_SIGNAL"
 
 def get_eos_token_id(tokenizer, lookback_time: float = 0, lookahead_time: float = 0, context_type: ContextType = None):
     eos_token_id = [tokenizer.eos_id]
-    if context_type is not None:
+    if context_type is not None and context_type in tokenizer.context_eos:
         eos_token_id.append(tokenizer.context_eos[context_type])
     if lookback_time > 0:
         eos_token_id.extend(range(tokenizer.event_start[EventType.TIME_SHIFT], tokenizer.event_start[EventType.TIME_SHIFT] + int(lookback_time / MILISECONDS_PER_STEP)))
