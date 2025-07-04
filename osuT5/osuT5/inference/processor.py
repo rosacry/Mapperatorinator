@@ -388,6 +388,7 @@ class Processor(object):
                     ),
                     lookback_time=self.lookback_time if trim_lookback else 0,
                     lookahead_time=self.lookahead_time if trim_lookahead else 0,
+                    context_type=context["context_type"].value,
                 )
 
                 # Only support batch size 1
