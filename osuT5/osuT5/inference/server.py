@@ -58,6 +58,9 @@ def model_generate(model, tokenizer, model_kwargs, generate_kwargs):
     logits_processor_list = LogitsProcessorList()
     if cfg_scale > 1.0:
         logits_processor_list.append(ClassifierFreeGuidanceLogitsProcessor(cfg_scale))
+
+    logits_processor_list.append(MonotonicTimeShiftLogitsProcessor(tokenizer))
+
     if timeshift_bias != 0:
         logits_processor_list.append(
             TimeshiftBias(
@@ -81,7 +84,6 @@ def model_generate(model, tokenizer, model_kwargs, generate_kwargs):
         logits_processor_list.append(TemperatureLogitsWarper(temperature))
     if lookback_time > 0:
         logits_processor_list.append(LookbackBiasLogitsWarper(lookback_time, tokenizer, types_first, model.device))
-    logits_processor_list.append(MonotonicTimeShiftLogitsProcessor(tokenizer))
 
     # Prepare cache
     cache = get_cache(model, batch_size, generate_kwargs.get('num_beams', 1), cfg_scale)
