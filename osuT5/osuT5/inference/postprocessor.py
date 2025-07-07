@@ -290,7 +290,12 @@ class Postprocessor(object):
                 last_x, last_y = 256, 192
 
             elif hit_type == EventType.SLIDER_HEAD:
+                if slider_head is not None:
+                    print(f"Warning: Incomplete slider at {int(round(slider_head.time))}")
+
                 slider_head = group
+                last_anchor = None
+                anchor_info = []
 
             elif hit_type == EventType.BEZIER_ANCHOR:
                 anchor_info.append(('B', group.x, group.y))
@@ -317,6 +322,9 @@ class Postprocessor(object):
 
                 if total_duration <= 0 or span_duration <= 0:
                     print(f"Warning: Invalid slider duration at {slider_start_time}")
+                    slider_head = None
+                    last_anchor = None
+                    anchor_info = []
                     continue
 
                 slides = max(int(round(total_duration / span_duration)), 1)
