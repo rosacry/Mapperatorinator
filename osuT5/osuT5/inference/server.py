@@ -2,6 +2,7 @@ import _pickle
 import os
 import time
 import threading
+import traceback
 import torch
 from multiprocessing.connection import Listener, Client
 
@@ -228,34 +229,43 @@ class InferenceServer:
                 if not self.grouped_requests[generate_kwargs_set]:
                     del self.grouped_requests[generate_kwargs_set]
 
-            # Collate inputs
-            keys = [k for k in batch_requests[0][0].keys() if batch_requests[0][0][k] is not None]
-            model_kwargs = {}
-            paddings = [0 for _ in range(len(batch_requests))]  # For padding left
-            for k in keys:
-                kwargses = [b[0][k] for b in batch_requests]
-                # Pad left if necessary
-                if kwargses[0].dim() > 1:
-                    max_len = max(tensor.size(-1) for tensor in kwargses)
-                    if k == 'decoder_input_ids':
-                        paddings = [max_len - tensor.size(-1) for tensor in kwargses]
-                    kwargses = [torch.nn.functional.pad(tensor, (max_len - tensor.size(-1), 0)) for tensor in kwargses]
-                model_kwargs[k] = torch.cat(kwargses, dim=0)
+            try:
+                # Collate inputs
+                keys = [k for k in batch_requests[0][0].keys() if batch_requests[0][0][k] is not None]
+                model_kwargs = {}
+                paddings = [0 for _ in range(len(batch_requests))]  # For padding left
+                for k in keys:
+                    kwargses = [b[0][k] for b in batch_requests]
+                    # Pad left if necessary
+                    if kwargses[0].dim() > 1:
+                        max_len = max(tensor.size(-1) for tensor in kwargses)
+                        if k == 'decoder_input_ids':
+                            paddings = [max_len - tensor.size(-1) for tensor in kwargses]
+                        kwargses = [torch.nn.functional.pad(tensor, (max_len - tensor.size(-1), 0)) for tensor in kwargses]
+                    model_kwargs[k] = torch.cat(kwargses, dim=0)
 
-            outputs = model_generate(self.model, self.tokenizer, model_kwargs, generate_kwargs)
-            torch.cuda.empty_cache()  # Clear any cached memory, otherwise will definitely run out of memory if multiple batch sizes are used
+                outputs = model_generate(self.model, self.tokenizer, model_kwargs, generate_kwargs)
 
-            # Split and dispatch results
-            batch_i = 0
-            for i, (_, request, work_done) in enumerate(batch_requests):
-                padding = paddings[i]
-                out = outputs[batch_i:batch_i + work_done, padding:]  # Remove padding from the left
-                batch_i += work_done
-                request['result'] = out if request['result'] is None else torch.cat((request['result'], out), dim=0)
-                request['work_done'] += work_done
-                if request['work_done'] >= request['total_work']:
-                    # All work done for this record, signal completion
-                    request['event'].set()
+                # Split and dispatch results
+                batch_i = 0
+                for i, (_, request, work_done) in enumerate(batch_requests):
+                    padding = paddings[i]
+                    out = outputs[batch_i:batch_i + work_done, padding:]  # Remove padding from the left
+                    batch_i += work_done
+                    request['result'] = out if request['result'] is None else torch.cat((request['result'], out), dim=0)
+                    request['work_done'] += work_done
+                    if request['work_done'] >= request['total_work']:
+                        # All work done for this record, signal completion
+                        request['event'].set()
+            except Exception as e:
+                print(f"[Batch Thread] Error processing batch: {e}")
+                traceback.print_exc()
+                # Signal all requests in this batch to retry
+                for _, request, _ in batch_requests:
+                    request['result'] = RETRY_SIGNAL
+                    request['event'].set()  # Signal completion
+            finally:
+                torch.cuda.empty_cache()  # Clear any cached memory, otherwise will definitely run out of memory if multiple batch sizes are used
 
     def _cut_model_kwargs(self, model_kwargs, start, length):
         """Cuts the model_kwargs tensors to the specified range."""
@@ -355,7 +365,7 @@ class InferenceClient:
                 continue
 
             if result == RETRY_SIGNAL:
-                print("Retrying request due to UnpicklingError.")
+                print("Retrying request due to Error.")
                 attempts += 1
                 continue
             else:
