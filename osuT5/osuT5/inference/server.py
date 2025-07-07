@@ -9,7 +9,8 @@ from transformers import LogitsProcessorList, ClassifierFreeGuidanceLogitsProces
 
 from ..event import EventType, ContextType
 from .logit_processors import ConditionalTemperatureLogitsWarper, get_beat_type_tokens, \
-    get_mania_type_tokens, get_scroll_speed_tokens, TimeshiftBias, LookbackBiasLogitsWarper
+    get_mania_type_tokens, get_scroll_speed_tokens, TimeshiftBias, LookbackBiasLogitsWarper, \
+    MonotonicTimeShiftLogitsProcessor
 from .cache_utils import get_cache
 from ..model import Mapperatorinator
 from ..tokenizer import Tokenizer
@@ -80,6 +81,7 @@ def model_generate(model, tokenizer, model_kwargs, generate_kwargs):
         logits_processor_list.append(TemperatureLogitsWarper(temperature))
     if lookback_time > 0:
         logits_processor_list.append(LookbackBiasLogitsWarper(lookback_time, tokenizer, types_first, model.device))
+    logits_processor_list.append(MonotonicTimeShiftLogitsProcessor(tokenizer))
 
     # Prepare cache
     cache = get_cache(model, batch_size, generate_kwargs.get('num_beams', 1), cfg_scale)
