@@ -34,6 +34,7 @@ class OsuParser:
             dist_range = tokenizer.event_range[EventType.DISTANCE]
             self.dist_min = dist_range.min_value
             self.dist_max = dist_range.max_value
+        self.slider_version = args.data.slider_version
 
     def parse(self, beatmap: Beatmap, speed: float = 1.0) -> tuple[list[Event], list[int]]:
         # noinspection PyUnresolvedReferences
@@ -452,7 +453,7 @@ class OsuParser:
         def add_anchor(event_type: EventType, i: int, last_pos: npt.NDArray) -> npt.NDArray:
             return self._add_group(
                 event_type,
-                slider.time + i / (control_point_count - 1) * duration,
+                slider.time + i / (control_point_count - 1) * duration if self.slider_version == 1 else slider.time,
                 events,
                 event_times,
                 beatmap,
@@ -473,6 +474,18 @@ class OsuParser:
                 elif slider.curve.points[i] != slider.curve.points[i - 1]:
                     last_pos = add_anchor(EventType.BEZIER_ANCHOR, i, last_pos)
 
+        if self.slider_version == 2:
+            # Add last control point without time
+            last_pos = self._add_group(
+                EventType.LAST_ANCHOR,
+                slider.time,
+                events,
+                event_times,
+                beatmap,
+                pos=np.array(slider.curve.points[-1]),
+                last_pos=last_pos,
+            )
+
         # Add body hitsounds and remaining edge hitsounds
         last_pos = self._add_group(
             EventType.LAST_ANCHOR,
@@ -481,7 +494,7 @@ class OsuParser:
             event_times,
             beatmap,
             time_event=True,
-            pos=np.array(slider.curve.points[-1]),
+            pos=np.array(slider.curve.points[-1]) if self.slider_version == 1 else None,
             last_pos=last_pos,
             hitsound_ref_times=[slider.time + timedelta(milliseconds=1)] + [slider.time + i * duration for i in range(1, slider.repeat)],
             hitsounds=[slider.hitsound] + [slider.edge_sounds[i] if len(slider.edge_sounds) > i else 0 for i in range(1, slider.repeat)],

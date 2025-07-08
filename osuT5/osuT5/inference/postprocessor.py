@@ -311,7 +311,8 @@ class Postprocessor(object):
                 anchor_info.append(('B', group.x, group.y))
 
             elif hit_type == EventType.LAST_ANCHOR:
-                anchor_info.append(('B', group.x, group.y))
+                if group.x is not None and group.y is not None:
+                    anchor_info.append(('B', group.x, group.y))
                 last_anchor = group
 
             elif hit_type == EventType.SLIDER_END and slider_head is not None and last_anchor is not None:

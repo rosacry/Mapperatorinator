@@ -104,6 +104,7 @@ data:                  # Data settings
   max_year: null  # Maximum year of the beatmap to include in the dataset
   frame_offset_augment_prob: 1.0  # Probability of augmenting beatmap sequences with frame offset
   normalize_audio: true  # Normalize audio data
+  slider_version: 1  # Slider version to use (1 or 2)
 
 
 dataloader:             # Dataloader settings
