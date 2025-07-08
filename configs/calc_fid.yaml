@@ -37,5 +37,5 @@ hydra:
 #    dir: ./logs_fid/${now:%Y-%m-%d}/${now:%H-%M-%S}
     dir: ./logs_fid/test
   sweep:
-    dir: ./logs_fid/sweeps/test_1
+    dir: ./logs_fid/sweeps/test_2
     subdir: ${hydra.job.override_dirname}
