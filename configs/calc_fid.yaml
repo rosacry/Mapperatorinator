@@ -29,6 +29,8 @@ inference:
   lookback: 0.5             # Fraction of audio sequence to fill with tokens from previous inference window
   lookahead: 0.4            # Fraction of audio sequence to skip at the end of the audio window
   year: 2023
+  resnap_events: true
+  use_server: true
 
 hydra:
   job:
