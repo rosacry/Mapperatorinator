@@ -198,7 +198,7 @@ def generate_beatmaps(beatmap_paths, fid_args: FidConfig, return_dict, idx):
     torch.set_float32_matmul_precision('high')
 
     model, tokenizer, diff_model, diff_tokenizer, refine_model = None, None, None, None, None
-    model, tokenizer = load_model(args.model_path, args.train, args.device, args.max_batch_size, True)
+    model, tokenizer = load_model(args.model_path, args.train, args.device, args.max_batch_size, args.use_server)
 
     if args.compile:
         model.transformer.forward = torch.compile(model.transformer.forward, mode="reduce-overhead", fullgraph=True)
