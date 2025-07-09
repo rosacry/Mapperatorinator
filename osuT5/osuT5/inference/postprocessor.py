@@ -311,7 +311,7 @@ class Postprocessor(object):
                 anchor_info.append(('B', group.x, group.y))
 
             elif hit_type == EventType.LAST_ANCHOR:
-                if group.x is not None and group.y is not None:
+                if last_anchor is None:  # First occurrence for position, last occurrence for time and hs
                     anchor_info.append(('B', group.x, group.y))
                 last_anchor = group
 
