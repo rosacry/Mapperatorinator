@@ -402,7 +402,7 @@ def generate(
             timing = postprocessor.generate_timing(events)
 
         # Resnap timing events
-        if timing is not None:
+        if args.resnap_events and timing is not None:
             events = postprocessor.resnap_events(events, timing)
     else:
         events = timing_events

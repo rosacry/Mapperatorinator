@@ -69,6 +69,7 @@ class InferenceConfig:
     timer_iterations: int = 20  # Number of iterations for timer
     use_server: bool = True  # Use server for optimized multiprocess inference
     max_batch_size: int = 16  # Maximum batch size for inference (only used for parallel sampling or super timing)
+    resnap_events: bool = True  # Resnap notes to the timing after generation
 
     # Metadata settings
     bpm: int = 120  # Beats per minute of input audio
