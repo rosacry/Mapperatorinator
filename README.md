@@ -15,7 +15,7 @@ The instruction below allows you to generate beatmaps on your local machine, alt
 ### 1. Clone the repository
 
 ```sh
-git clone https://github.com/OliBomby/Mapperatorinator.git
+git clone https://github.com/chrig/Mapperatorinator.git
 cd Mapperatorinator
 ```
 
