@@ -1,7 +1,7 @@
 # NEW ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
-from backend.mapper_api import lookup_username
-from backend.tag_reader import read_artist_title
-from backend.filename_utils import rename_output
+from mapper_api import lookup_username
+from tag_reader import read_artist_title
+from filename_utils import rename_output
 # End NEW ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 
 import functools
