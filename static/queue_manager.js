@@ -118,13 +118,9 @@ document.getElementById("add-mapper-btn").onclick = () => {
 
 document.getElementById("add-to-queue-btn").onclick = () => {
     const mappers = MapperManager.gatherSelected();
-    if (mappers.length === 0) {
-        alert("Select at least one mapper (checkbox) first.");
-        return;
-    }
-    // collect form -> plain object
-    const fd = new FormData(document.getElementById("inference-form"));
-    mappers.forEach(mp => {
+    const fd = new FormData(document.getElementById("inferenceForm"));
+    // if no mapper checked we still enqueue one task with mapper_id blank
+    (mappers.length ? mappers : [{ id: "", name: "", n: 1 }]).forEach(mp => {
         for (let i = 0; i < mp.n; i++) {
             const t = Object.fromEntries(fd.entries());
             t.mapper_id = mp.id;
@@ -133,6 +129,7 @@ document.getElementById("add-to-queue-btn").onclick = () => {
         }
     });
 };
+
 
 document.getElementById("start-queue-btn").onclick = () => {
     QueueManager.start();

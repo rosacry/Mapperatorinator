@@ -175,34 +175,7 @@
                     <input type="number" id="end_time" name="end_time" min="0" />
                 </fieldset>
 
-                <!-- Options -->
-                <fieldset>
-                    <legend>Options</legend>
-                    <div class="option-item">
-                        <input type="checkbox" id="export_osz" name="export_osz" value="false" />
-                        <label for="export_osz"
-                            title="Whether to export a .osz file containing the generated beatmap and audio file">Export
-                            .osz</label>
-                    </div>
 
-                    <div class="option-item conditional-field" id="add-to-beatmap-option" style="display: none;">
-                        <input type="checkbox" id="add_to_beatmap" name="add_to_beatmap" value="false" />
-                        <label for="add_to_beatmap"
-                            title="Whether to add generated content to the reference beatmap instead of making a new beatmap">Add
-                            to Beatmap</label>
-                    </div>
-
-                    <div class="option-item conditional-field" id="option-item-hitsounded" data-hide-for-model="v30">
-                        <input type="checkbox" id="hitsounded" name="hitsounded" value="true" checked />
-                        <label for="hitsounded">Add Hitsounds</label>
-                    </div>
-
-                    <div class="option-item">
-                        <input type="checkbox" id="super_timing" name="super_timing" value="false" />
-                        <label for="super_timing"
-                            title="Whether to use slow accurate variable BPM timing generator">Super Timing</label>
-                    </div>
-                </fieldset>
 
                 <!-- Descriptors -->
                 <div class="custom-dropdown-descriptors conditional-field" data-hide-for-model="v30">
@@ -332,6 +305,87 @@
                         </div>
                     </div>
                 </div>
+
+                <!-- Mapper Style Samples -->
+                <fieldset>
+                    <legend>Mapper Style Samples</legend>
+
+                    <div style="display:flex;gap:6px;margin-bottom:6px">
+                        <input id="new_mapper_id" type="text" placeholder="Add Mapper ID…" style="flex:1">
+                        <button type="button" id="add-mapper-btn" class="browse-button">Add</button>
+                    </div>
+
+                    <div id="mappers-list"></div> <!-- mapper-item divs are injected here -->
+                </fieldset>
+
+
+                <!-- ::::::::::::: NEW – Song Metadata inputs ::::::::::::: -->
+                <fieldset class="mt-3 border p-2">
+                    <legend class="fs-6">Song Metadata</legend>
+                    <div style="display:flex; flex-wrap:wrap; gap:10px;">
+                        <div style="flex:1 1 200px;">
+                            <div class="song-metadata">
+                                <label for="song_artist" class="form-label mb-0">Artist</label>
+                                <input id="song_artist" type="text" name="artist" placeholder="">
+                            </div>
+                            <div style="flex:1 1 200px;">
+                                <label for="song_title" class="form-label mb-0">Title</label>
+                                <input id="song_title" type="text" name="title" placeholder="">
+                            </div>
+                            <div style="flex:1 1 200px;">
+                                <label for="custom_mapper_name" class="form-label mb-0">Mapper&nbsp;Name</label>
+                                <input id="custom_mapper_name" type="text" name="mapper_name" placeholder="">
+                            </div>
+                            <div style="flex:1 1 240px;">
+                                <label for="custom_diff_name" class="form-label mb-0">Difficulty&nbsp;Name</label>
+                                <input id="custom_diff_name" type="text" name="difficulty_name" placeholder="">
+                            </div>
+                        </div>
+                    </div>
+                </fieldset>
+
+                <!-- Options -->
+                <fieldset>
+                    <legend>Options</legend>
+                    <div class="option-item">
+                        <input type="checkbox" id="export_osz" name="export_osz" value="false" />
+                        <label for="export_osz"
+                            title="Whether to export a .osz file containing the generated beatmap and audio file">Export
+                            .osz</label>
+                    </div>
+
+                    <div class="option-item conditional-field" id="add-to-beatmap-option" style="display: none;">
+                        <input type="checkbox" id="add_to_beatmap" name="add_to_beatmap" value="false" />
+                        <label for="add_to_beatmap"
+                            title="Whether to add generated content to the reference beatmap instead of making a new beatmap">Add
+                            to Beatmap</label>
+                    </div>
+
+                    <div class="option-item conditional-field" id="option-item-hitsounded" data-hide-for-model="v30">
+                        <input type="checkbox" id="hitsounded" name="hitsounded" value="true" checked />
+                        <label for="hitsounded">Add Hitsounds</label>
+                    </div>
+
+                    <div class="option-item">
+                        <input type="checkbox" id="super_timing" name="super_timing" value="false" />
+                        <label for="super_timing"
+                            title="Whether to use slow accurate variable BPM timing generator">Super Timing</label>
+                    </div>
+
+                    <!-- ::::::::::::: NEW – Generation Queue ::::::::::::: -->
+                    <!-- <fieldset class="mt-4 border p-2"> -->
+                    <!-- <legend class="fs-6">Generation Queue</legend> -->
+
+                    <!-- queue control buttons -->
+                    <div style="display:flex; gap:10px; margin-bottom:8px; flex-wrap:wrap;">
+                        <button id="addToQueueBtn" class="add-queue-btn">Add to Queue</button>
+                        <!-- <button type="button" id="start-queue-btn" class="btn btn-sm btn-success"
+                            disabled>Start&nbsp;Queue</button> -->
+                    </div>
+                </fieldset>
+                <!-- queued task list -->
+                <ol id="queue-list" class="list-group list-group-numbered"></ol>
+                </fieldset>
                 <!-- Config Section -->
                 <fieldset>
                     <legend>Config</legend>
@@ -342,66 +396,6 @@
                         <button type="button" id="reset-config-btn" class="browse-button">Clear</button>
                     </div>
                     <div id="config-status" style="margin-top: 10px; font-size: 14px;"></div>
-                </fieldset>
-
-                <!-- ::::::::::::: NEW – Mapper Selection ::::::::::::: -->
-                <fieldset class="mt-3 border p-2">
-                    <legend class="fs-6">Mapper Style Samples</legend>
-
-                    <!-- add-mapper inline controls -->
-                    <div style="display:flex; gap:8px; align-items:center;">
-                        <input id="new_mapper_id" class="form-control form-control-sm" placeholder="Add Mapper ID…">
-                        <button type="button" id="add-mapper-btn" class="btn btn-sm btn-secondary">Add</button>
-                    </div>
-
-                    <!-- dynamic list injected by queue_manager.js -->
-                    <div id="mappers-list" class="mt-2"></div>
-                </fieldset>
-
-                <!-- ::::::::::::: NEW – Song Metadata inputs ::::::::::::: -->
-                <fieldset class="mt-3 border p-2">
-                    <legend class="fs-6">Song Metadata (optional)</legend>
-                    <div style="display:flex; flex-wrap:wrap; gap:10px;">
-                        <div style="flex:1 1 200px;">
-                            <label for="song_artist" class="form-label mb-0">Artist</label>
-                            <input id="song_artist" name="artist" class="form-control form-control-sm"
-                                placeholder="Auto-detect or enter manually">
-                        </div>
-
-                        <div style="flex:1 1 200px;">
-                            <label for="song_title" class="form-label mb-0">Title</label>
-                            <input id="song_title" name="title" class="form-control form-control-sm"
-                                placeholder="Auto-detect or enter manually">
-                        </div>
-
-                        <div style="flex:1 1 200px;">
-                            <label for="custom_mapper_name" class="form-label mb-0">Mapper&nbsp;Name</label>
-                            <input id="custom_mapper_name" name="mapper_name" class="form-control form-control-sm"
-                                placeholder="Default: Mapperatorinator">
-                        </div>
-
-                        <div style="flex:1 1 240px;">
-                            <label for="custom_diff_name" class="form-label mb-0">Difficulty&nbsp;Name</label>
-                            <input id="custom_diff_name" name="difficulty_name" class="form-control form-control-sm"
-                                placeholder="leave blank for auto">
-                        </div>
-                    </div>
-                </fieldset>
-
-                <!-- ::::::::::::: NEW – Generation Queue ::::::::::::: -->
-                <fieldset class="mt-4 border p-2">
-                    <legend class="fs-6">Generation Queue</legend>
-
-                    <!-- queue control buttons -->
-                    <div style="display:flex; gap:10px; margin-bottom:8px; flex-wrap:wrap;">
-                        <button type="button" id="add-to-queue-btn"
-                            class="btn btn-sm btn-primary">Add&nbsp;to&nbsp;Queue</button>
-                        <button type="button" id="start-queue-btn" class="btn btn-sm btn-success"
-                            disabled>Start&nbsp;Queue</button>
-                    </div>
-
-                    <!-- queued task list -->
-                    <ol id="queue-list" class="list-group list-group-numbered"></ol>
                 </fieldset>
                 <button type="submit">Run Inference</button>
             </form>

@@ -328,6 +328,14 @@ $(document).ready(function () {
                 $outputPathInput.attr('placeholder', '');
             }
 
+            // auto-fill artist & title if backend detected them
+            if (response.detected_artist && !$('#artist').val()) {
+                $('#artist').val(response.detected_artist);
+            }
+            if (response.detected_title && !$('#title').val()) {
+                $('#title').val(response.detected_title);
+            }
+
             if (showFlashMessages) {
                 // Show errors as flash messages and inline indicators
                 response.errors.forEach(error => {
