@@ -1,4 +1,4 @@
-$(document).ready(function() {
+$(document).ready(function () {
     // Application state and configuration
     const AppState = {
         evtSource: null,
@@ -26,8 +26,8 @@ $(document).ready(function() {
         showFlashMessage(message, type = 'success') {
             const flashContainer = $('#flash-container');
             const alertClass = type === 'success' ? 'alert success' :
-                             type === 'cancel-success' ? 'alert alert-cancel-success' :
-                             'alert error';
+                type === 'cancel-success' ? 'alert alert-cancel-success' :
+                    'alert error';
             const messageDiv = $(`<div class="${alertClass}">${message}</div>`);
             flashContainer.append(messageDiv);
             setTimeout(() => messageDiv.remove(), 5000);
@@ -77,7 +77,7 @@ $(document).ready(function() {
             const beatmapPath = $('#beatmap_path').val().trim();
 
             // Handle gamemode-based visibility
-            $('.conditional-field[data-show-for-gamemode]').each(function() {
+            $('.conditional-field[data-show-for-gamemode]').each(function () {
                 const $field = $(this);
                 const supportedModes = $field.data('show-for-gamemode').toString().split(',');
                 const shouldShow = supportedModes.includes(selectedGamemode);
@@ -90,7 +90,7 @@ $(document).ready(function() {
             });
 
             // Handle model-based visibility
-            $('.conditional-field[data-hide-for-model]').each(function() {
+            $('.conditional-field[data-hide-for-model]').each(function () {
                 const $field = $(this);
                 const hiddenModels = $field.data('hide-for-model').toString().split(',');
                 const shouldHide = hiddenModels.includes(selectedModel);
@@ -125,7 +125,7 @@ $(document).ready(function() {
             const $gamemodeSelect = $("#gamemode");
             if (selectedModel === "v30") {
                 $gamemodeSelect.val('0').prop('disabled', true);
-                $gamemodeSelect.find("option").each(function() {
+                $gamemodeSelect.find("option").each(function () {
                     $(this).prop('disabled', $(this).val() !== '0');
                 });
             } else {
@@ -135,9 +135,9 @@ $(document).ready(function() {
 
             // Handle in-context options
             const supportedContext = capabilities.supportedInContextOptions ||
-                                   ['NONE', 'TIMING', 'KIAI', 'MAP', 'GD', 'NO_HS'];
+                ['NONE', 'TIMING', 'KIAI', 'MAP', 'GD', 'NO_HS'];
 
-            $('input[name="in_context_options"]').each(function() {
+            $('input[name="in_context_options"]').each(function () {
                 const $checkbox = $(this);
                 const value = $checkbox.val();
                 const $item = $checkbox.closest('.context-option-item');
@@ -172,7 +172,7 @@ $(document).ready(function() {
         },
 
         attachBrowseHandlers() {
-            $('.browse-button[data-browse-type]').click(async function() {
+            $('.browse-button[data-browse-type]').click(async function () {
                 const browseType = $(this).data('browse-type');
                 const targetId = $(this).data('target');
 
@@ -401,7 +401,7 @@ $(document).ready(function() {
         },
 
         attachDropdownHandler() {
-            $('.custom-dropdown-descriptors .dropdown-header').click(function() {
+            $('.custom-dropdown-descriptors .dropdown-header').click(function () {
                 const $dropdown = $(this).parent();
                 $dropdown.toggleClass('open');
                 if ($dropdown.hasClass('open')) {
@@ -411,7 +411,7 @@ $(document).ready(function() {
         },
 
         attachDescriptorClickHandlers() {
-            $('.descriptors-container').on('click', 'input[name="descriptors"]', function(e) {
+            $('.descriptors-container').on('click', 'input[name="descriptors"]', function (e) {
                 e.preventDefault();
                 const $checkbox = $(this);
 
@@ -460,7 +460,7 @@ $(document).ready(function() {
             };
 
             // Export form fields
-            $('#inferenceForm').find('input, select, textarea').each(function() {
+            $('#inferenceForm').find('input, select, textarea').each(function () {
                 const $field = $(this);
                 const name = $field.attr('name');
                 const type = $field.attr('type');
@@ -471,7 +471,7 @@ $(document).ready(function() {
             });
 
             // Export descriptors
-            $('input[name="descriptors"]').each(function() {
+            $('input[name="descriptors"]').each(function () {
                 const $checkbox = $(this);
                 const value = $checkbox.val();
                 if ($checkbox.hasClass('positive-check')) {
@@ -482,7 +482,7 @@ $(document).ready(function() {
             });
 
             // Export in-context options
-            $('input[name="in_context_options"]:checked').each(function() {
+            $('input[name="in_context_options"]:checked').each(function () {
                 config.inContextOptions.push($(this).val());
             });
 
@@ -617,8 +617,8 @@ $(document).ready(function() {
         showConfigStatus(message, type) {
             const $status = $("#config-status");
             $status.text(message)
-                   .css('color', type === 'success' ? '#28a745' : '#dc3545')
-                   .fadeIn();
+                .css('color', type === 'success' ? '#28a745' : '#dc3545')
+                .fadeIn();
             setTimeout(() => $status.fadeOut(), 5000);
         }
     };
@@ -707,7 +707,7 @@ $(document).ready(function() {
             const positiveDescriptors = [];
             const negativeDescriptors = [];
 
-            $('input[name="descriptors"]').each(function() {
+            $('input[name="descriptors"]').each(function () {
                 const $cb = $(this);
                 if ($cb.hasClass('positive-check')) {
                     positiveDescriptors.push($cb.val());
@@ -745,9 +745,9 @@ $(document).ready(function() {
                         errorMsg = jqXHR.responseJSON.message;
                     } else if (jqXHR.responseText) {
                         try {
-                           const parsed = JSON.parse(jqXHR.responseText);
-                           if(parsed && parsed.message) errorMsg = parsed.message;
-                        } catch(e) { /* ignore parsing error */ }
+                            const parsed = JSON.parse(jqXHR.responseText);
+                            if (parsed && parsed.message) errorMsg = parsed.message;
+                        } catch (e) { /* ignore parsing error */ }
                     }
                     Utils.showFlashMessage(errorMsg, 'error');
                     $("button[type='submit']").prop("disabled", false);
@@ -883,6 +883,13 @@ $(document).ready(function() {
             $("button[type='submit']").prop("disabled", false);
             $("#cancel-button").hide();
             AppState.isCancelled = false;
+            /* ────────────────────────────────────────────────────────────────
+   NEW: notify queue_manager.js that this map is finished
+---------------------------------------------------------------- */
+            if (window._queueResolver) {
+                window._queueResolver();   // resolve the Promise the queue is awaiting
+                window._queueResolver = null;
+            }
         },
 
         handleInferenceError() {
@@ -971,4 +978,25 @@ $(document).ready(function() {
 
     // Start the application
     initializeApp();
+    window.startInferenceWithFormData = function (formDataObj) {
+        return new Promise((resolve, reject) => {
+            // 1. shove the supplied values into the DOM form fields
+            //    (this lets all your existing validation & Ajax code run untouched)
+            Object.entries(formDataObj).forEach(([k, v]) => {
+                const $field = $('[name="' + k + '"]');
+                if (!$field.length) return;
+                if ($field.attr('type') === 'checkbox') {
+                    $field.prop('checked', !!v);
+                } else {
+                    $field.val(v);
+                }
+            });
+
+            // 2. save the resolver so handleSSEEnd can call it
+            window._queueResolver = resolve;
+
+            // 3. submit the form exactly as the normal UI does
+            $('#inferenceForm').trigger('submit');
+        });
+    };
 });

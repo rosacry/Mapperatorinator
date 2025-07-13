@@ -1,3 +1,9 @@
+# NEW ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+from backend.mapper_api import lookup_username
+from backend.tag_reader import read_artist_title
+from backend.filename_utils import rename_output
+# End NEW ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+
 import functools
 import os
 import platform
@@ -48,7 +54,21 @@ werkzeug.serving._ansi_style = _ansi_style_supressor(werkzeug.serving._ansi_styl
 # --- End Patch ---
 
 app = Flask(__name__, template_folder=template_folder, static_folder=static_folder)
+
+
 app.secret_key = os.urandom(24)  # Set a secret key for Flask
+
+# ── hard-coded osu! API credentials ───────────────────────
+OSU_CLIENT_ID     = "42371"
+OSU_CLIENT_SECRET = "wNDRUcvRGjzk39LpT9zR5LNKlA8fFRREoUo3eh8T"
+
+app.config["OSU_CLIENT_ID"]     = OSU_CLIENT_ID
+app.config["OSU_CLIENT_SECRET"] = OSU_CLIENT_SECRET
+
+# also mirror them into os.environ so any helper modules that
+# still use os.getenv(...) will find the same values
+os.environ["OSU_CLIENT_ID"]     = OSU_CLIENT_ID
+os.environ["OSU_CLIENT_SECRET"] = OSU_CLIENT_SECRET
 
 
 # --- pywebview API Class ---
@@ -320,7 +340,25 @@ def stream_output():
                 if return_code != 0:
                     error_occurred = True
                     print(f"Non-zero exit code ({return_code}) detected for PID {process_to_stream.pid}. Marking as error.")
+                if not error_occurred:
+                    osu_path = None
+                    for line in reversed(full_output_lines):
+                        if "Saved beatmap to:" in line:
+                            osu_path = line.split("Saved beatmap to:")[1].strip()
+                            break
 
+                    if osu_path and os.path.isfile(osu_path):
+                        artist, title = read_artist_title(osu_path.replace(".osu", ".mp3"))
+                        creator    = "Mapperatorinator"
+                        difficulty = "Auto"
+
+                        if artist and title:
+                            try:
+                                new_path = rename_output(osu_path, artist, title, creator, difficulty)
+                                yield f"event: renamed\ndata: {new_path.replace(os.sep, '/')}\n\n"
+                                print("Renamed output:", new_path)
+                            except Exception as rerr:
+                                print("Rename failed:", rerr)
             except Exception as e:
                 print(f"Error during streaming for PID {process_to_stream.pid}: {e}")
                 error_occurred = True
@@ -509,42 +547,66 @@ def save_config():
             'error': f'Failed to save configuration: {str(e)}'
         })
 
+# NEW ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+@app.route("/lookup_mapper_name", methods=["POST"])
+def api_lookup_mapper():
+    mapper_id = request.json.get("mapper_id")
+    if not mapper_id:
+        return jsonify({"error": "mapper_id required"}), 400
+    name = lookup_username(mapper_id)
+    if not name:
+        return jsonify({"error": "not found"}), 404
+    return jsonify({"username": name})
+# End NEW ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+
 
 @app.route('/validate_paths', methods=['POST'])
 def validate_paths():
-    """Validates and autofills missing paths."""
+    """Validates paths, autofills folders, and (optionally) extracts Artist/Title tags."""
     try:
-        # Get paths
-        audio_path = request.form.get('audio_path', '').strip()
+        # ─── read raw form values ───────────────────────────────────────────
+        audio_path   = request.form.get('audio_path',   '').strip()
         beatmap_path = request.form.get('beatmap_path', '').strip()
-        output_path = request.form.get('output_path', '').strip()
+        output_path  = request.form.get('output_path',  '').strip()
 
-        inference_args = InferenceConfig()
-        inference_args.audio_path = audio_path
-        inference_args.beatmap_path = beatmap_path
-        inference_args.output_path = output_path
+        # ─── run the existing autofill helper ───────────────────────────────
+        inference_args               = InferenceConfig()
+        inference_args.audio_path    = audio_path
+        inference_args.beatmap_path  = beatmap_path
+        inference_args.output_path   = output_path
 
-        result = autofill_paths(inference_args)
+        result = autofill_paths(inference_args)     # existing helper
 
-        # Return the results
+        # ─── attempt offline tag detection (Mutagen) ────────────────────────
+        detected_artist = None
+        detected_title  = None
+        if inference_args.audio_path and os.path.isfile(inference_args.audio_path):
+            detected_artist, detected_title = read_artist_title(inference_args.audio_path)
+
+        # ─── assemble response payload ──────────────────────────────────────
         response_data = {
-            'success': result['success'],
-            'autofilled_audio_path': inference_args.audio_path,
-            'autofilled_output_path': inference_args.output_path,
-            'errors': result['errors']
+            "success":               result["success"],
+            "autofilled_audio_path": inference_args.audio_path,
+            "autofilled_output_path": inference_args.output_path,
+            "errors":                result["errors"],
         }
+        if detected_artist:
+            response_data["detected_artist"] = detected_artist
+        if detected_title:
+            response_data["detected_title"]  = detected_title
 
         return jsonify(response_data), 200
 
     except Exception as e:
-        error_msg = f"Error during path validation: {str(e)}"
-        print(f"Path validation error: {error_msg}")
+        error_msg = f"Error during path validation: {e}"
+        print(error_msg)
         return jsonify({
-            'success': False,
-            'errors': [error_msg],
-            'autofilled_audio_path': None,
-            'autofilled_output_path': None
+            "success": False,
+            "errors":  [error_msg],
+            "autofilled_audio_path": None,
+            "autofilled_output_path": None
         }), 500
+
 
 
 # --- Function to Run Flask in a Thread ---

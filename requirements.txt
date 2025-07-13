@@ -17,3 +17,6 @@ pywebview[qt]
 pyqtwebengine
 flask
 audioop-lts; python_version>='3.13'
+mutagen>=1.47
+requests>=2.32
+#python-dotenv>=1.0   # Optional: load OSU_CLIENT_ID / SECRET from .env
