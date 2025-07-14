@@ -42,3 +42,30 @@ def rename_output(old_path: str,
         counter += 1
     os.rename(old_path, new_path)
     return new_path
+
+
+def compose_diff_name(form, mapper_username: str | None):
+    """
+    Creates the difficulty string according to the spec:
+
+      • if form["difficulty_name"] is set → just return that
+      • else if mapper_username is given  →  "<mapper>/<cfg>/<temp>/<top_p>/<seed|NAN>"
+      • else                              →  "Mapperatorinator V<model>"
+
+    `form` is the dict Flask received from the POST.
+    """
+    # manual override
+    if form.get("difficulty_name"):
+        return form["difficulty_name"]
+
+    # sampled-mapper case
+    if mapper_username:
+        cfg  = form.get("cfg_scale")  or "NAN"
+        temp = form.get("temperature") or "NAN"
+        top  = form.get("top_p")       or "NAN"
+        seed = form.get("seed")        or "NAN"
+        return f"{mapper_username}/{cfg}/{temp}/{top}/{seed}".lower()
+
+    # plain model default
+    model_ver = form.get("model", "").lstrip("v").upper()
+    return f"Mapperatorinator V{model_ver}"

@@ -18,7 +18,8 @@ const QueueManager = (() => {
             if (idx === 0 && running) li.classList.add("running");
             list.appendChild(li);
         });
-        document.getElementById("add-to-queue-btn").disabled = running;
+        const btn = document.getElementById("add-to-queue-btn");
+        if (btn) btn.disabled = running;
     }
 
     function add(task) {

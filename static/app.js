@@ -335,13 +335,8 @@ $(document).ready(function () {
                 $outputPathInput.attr('placeholder', '');
             }
 
-            // auto-fill artist & title if backend detected them
-            if (response.detected_artist && !$('#song_artist').val()) {
-                $('#song_artist').val(response.detected_artist ?? '');
-            }
-            if (response.detected_title && !$('#song_title').val()) {
-                $('#song_title').val(response.detected_title ?? '');
-            }
+            $('#song_artist').val(response.detected_artist ?? '');
+            $('#song_title').val(response.detected_title ?? '');
 
             if (showFlashMessages) {
                 // Show errors as flash messages and inline indicators

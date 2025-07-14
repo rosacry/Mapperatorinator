@@ -17,9 +17,12 @@ pywebview[qt]
 pyqtwebengine
 flask
 audioop-lts; python_version>='3.13'
-mutagen>=1.47
+shazamio    # async wrapper around Shazam endpoints
+aiofiles           # shazamio requirement
 requests>=2.32
 torch==2.1.2          # or 2.3.1 - just keep both lines the same version
 torchaudio==2.1.2
-numpy<2
+numpy==1.26.4
+pyacoustid
+musicbrainzngs
 #python-dotenv>=1.0   # Optional: load OSU_CLIENT_ID / SECRET from .env

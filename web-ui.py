@@ -1,7 +1,7 @@
 # NEW ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 from mapper_api import lookup_username
-from tag_reader import read_artist_title
-from filename_utils import rename_output
+from audio_fingerprint import identify_song
+from filename_utils import rename_output, compose_diff_name
 # End NEW ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 
 import functools
@@ -125,6 +125,9 @@ class Api:
 current_process: subprocess.Popen | None = None
 process_lock = threading.Lock()  # Lock for accessing current_process safely
 
+# --- Remember the last form so we can use its values during rename ---
+last_form_data: dict[str, str] = {}
+
 
 # --- Helper Function (same as original Flask) ---
 def dq_quote(s):
@@ -176,6 +179,10 @@ def start_inference():
     with process_lock:
         if current_process and current_process.poll() is None:
             return jsonify({"status": "error", "message": "Process already running"}), 409  # Conflict
+        
+        # ─── save the form for later ───────────────────────────────
+        global last_form_data
+        last_form_data = request.form.to_dict(flat=True)
 
         # --- Construct Command List (shell=False) ---
         python_executable = sys.executable  # Get path to current Python interpreter
@@ -349,9 +356,20 @@ def stream_output():
 
                     if osu_path and os.path.isfile(osu_path):
                         artist, title = read_artist_title(osu_path.replace(".osu", ".mp3"))
-                        creator    = "Mapperatorinator"
-                        difficulty = "Auto"
-
+                        # 1) pick up artist & title using the new fingerprint helper
+                        audio_path = last_form_data.get("audio_path", "").strip()
+                        if not (artist and title) and audio_path and os.path.isfile(audio_path):
+                            from audio_fingerprint import identify_song
+                            artist, title = identify_song(audio_path)
+                        # 2) who shows up in .osu [Creator] tag
+                        creator = (last_form_data.get("mapper_name")
+                                or "Mapperatorinator")
+                        # 3) difficulty string per the spec
+                        sampled_username = None
+                        mapper_id = last_form_data.get("mapper_id")
+                        if mapper_id:
+                            sampled_username = lookup_username(mapper_id)
+                        difficulty = compose_diff_name(last_form_data, sampled_username)
                         if artist and title:
                             try:
                                 new_path = rename_output(osu_path, artist, title, creator, difficulty)
@@ -577,11 +595,11 @@ def validate_paths():
 
         result = autofill_paths(inference_args)     # existing helper
 
-        # ─── attempt offline tag detection (Mutagen) ────────────────────────
+        # ─── attempt song adetection ────────────────────────
         detected_artist = None
         detected_title  = None
         if inference_args.audio_path and os.path.isfile(inference_args.audio_path):
-            detected_artist, detected_title = read_artist_title(inference_args.audio_path)
+            detected_artist, detected_title = identify_song(inference_args.audio_path)
 
         # ─── assemble response payload ──────────────────────────────────────
         response_data = {
