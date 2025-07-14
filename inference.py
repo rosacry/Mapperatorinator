@@ -26,6 +26,20 @@ from osuT5.osuT5.utils import get_model
 from osu_diffusion import DiT_models
 from osu_diffusion.config import DiffusionTrainConfig
 
+# ── Compatibility shim for Torch < 2.3 ──────────────────────────────
+if not hasattr(torch.nn, "RMSNorm"):
+    class _RMSNorm(torch.nn.Module):
+        def __init__(self, hidden_size, eps=1e-6):
+            super().__init__()
+            self.eps = eps
+            self.weight = torch.nn.Parameter(torch.ones(hidden_size))
+        def forward(self, x):
+            var = x.pow(2).mean(dim=-1, keepdim=True)
+            x = x * torch.rsqrt(var + self.eps)
+            return self.weight * x
+    torch.nn.RMSNorm = _RMSNorm
+# ────────────────────────────────────────────────────────────────────
+
 
 def prepare_args(args: FidConfig | InferenceConfig):
     if args.device == "auto":

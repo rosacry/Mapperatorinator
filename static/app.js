@@ -468,12 +468,14 @@ $(document).ready(function () {
             };
 
             // Export form fields
+            const skip = new Set(['artist', 'title', 'mapper_name', 'difficulty_name']);
             $('#inferenceForm').find('input, select, textarea').each(function () {
                 const $field = $(this);
                 const name = $field.attr('name');
                 const type = $field.attr('type');
 
                 if (name && type !== 'file') {
+                    if (skip.has(name)) return;
                     config.settings[name] = type === 'checkbox' ? $field.prop('checked') : $field.val();
                 }
             });
