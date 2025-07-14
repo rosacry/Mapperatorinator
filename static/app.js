@@ -231,6 +231,13 @@ $(document).ready(function () {
         },
 
         attachPathChangeHandlers() {
+            let lastAudioPath = '';
+            $('#audio_path').on('change', function () {
+                if (this.value.trim() !== lastAudioPath) {
+                    $('#song_artist, #song_title').val('');
+                    lastAudioPath = this.value.trim();
+                }
+            });
             // Listen for input events (typing)
             $('#audio_path, #beatmap_path, #output_path').on('input', (e) => {
                 this.updateClearButtonVisibility(e.target);
@@ -329,11 +336,11 @@ $(document).ready(function () {
             }
 
             // auto-fill artist & title if backend detected them
-            if (response.detected_artist && !$('#artist').val()) {
-                $('#artist').val(response.detected_artist);
+            if (response.detected_artist && !$('#song_artist').val()) {
+                $('#song_artist').val(response.detected_artist ?? '');
             }
-            if (response.detected_title && !$('#title').val()) {
-                $('#title').val(response.detected_title);
+            if (response.detected_title && !$('#song_title').val()) {
+                $('#song_title').val(response.detected_title ?? '');
             }
 
             if (showFlashMessages) {
