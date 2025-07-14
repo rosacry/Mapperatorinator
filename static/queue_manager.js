@@ -18,13 +18,13 @@ const QueueManager = (() => {
             if (idx === 0 && running) li.classList.add("running");
             list.appendChild(li);
         });
-        document.getElementById("start-queue-btn").disabled = running || queue.length === 0;
         document.getElementById("add-to-queue-btn").disabled = running;
     }
 
     function add(task) {
         queue.push(task);
         render();
+        if (!running) _runNext();
     }
     function remove(i) {
         if (running && i === 0) return;      // can't remove current
@@ -49,7 +49,7 @@ const QueueManager = (() => {
 
     return {
         add, remove, hasPending,
-        start() { if (!running && queue.length) _runNext(); },
+        /* Queue now starts automatically when the first item is added. */
         markFinished() { /* called by InferenceManager */ },
         render
     };
@@ -87,10 +87,36 @@ const MapperManager = (() => {
         } catch (e) { name = "ID " + id; }
         listEl.insertAdjacentHTML("beforeend", _entryTemplate(id, name));
     }
+    /* ----------  NEW:  export / import helpers  ---------- */
+
+    function getAll() {
+        return Array.from(listEl.querySelectorAll(".mapper-item")).map(div => ({
+            id: div.dataset.id,
+            name: div.querySelector(".mapper-name").value.trim(),
+            n: parseInt(div.querySelector(".mapper-count").value, 10) || 1,
+            checked: div.querySelector(".mapper-check").checked
+        }));
+    }
+
+    function clearAll() {
+        listEl.innerHTML = "";
+    }
+
+    /** Accepts the array produced by getAll() */
+    function loadFromArray(arr) {
+        clearAll();
+        arr.forEach(obj => {
+            const { id, name, n = 1, checked = true } = obj;
+            listEl.insertAdjacentHTML("beforeend", _entryTemplate(id, name));
+            const div = listEl.lastElementChild;
+            div.querySelector(".mapper-count").value = n;
+            div.querySelector(".mapper-check").checked = checked;
+        });
+    }
+
 
     function gatherSelected() {
         return Array.from(listEl.querySelectorAll(".mapper-item"))
-            .filter(div => div.querySelector(".mapper-check").checked)
             .map(div => ({
                 id: div.dataset.id,
                 name: div.querySelector(".mapper-name").value.trim(),
@@ -104,7 +130,8 @@ const MapperManager = (() => {
         }
     });
 
-    return { addMapper, gatherSelected };
+    return { addMapper, gatherSelected, getAll, clearAll, loadFromArray };
+
 })();
 
 /* ------------------------------------------------------------------ */
@@ -130,10 +157,6 @@ document.getElementById("add-to-queue-btn").onclick = () => {
     });
 };
 
-
-document.getElementById("start-queue-btn").onclick = () => {
-    QueueManager.start();
-};
 
 /* ------------------------------------------------------------------ */
 /* Thin wrapper util expected by QueueManager */

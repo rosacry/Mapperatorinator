@@ -32,7 +32,7 @@ def prepare_args(args: FidConfig | InferenceConfig):
         if torch.cuda.is_available():
             print("Using CUDA for inference (auto-selected).")
             args.device = "cuda"
-        elif hasattr(torch, "mps") and torch.mps and torch.mps.is_available():
+        elif torch.backends.mps.is_available():
             print("Using MPS for inference (auto-selected).")
             args.device = "mps"
         else:

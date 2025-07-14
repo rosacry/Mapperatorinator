@@ -493,6 +493,10 @@ $(document).ready(function () {
             $('input[name="in_context_options"]:checked').each(function () {
                 config.inContextOptions.push($(this).val());
             });
+            // Export mapper list
+            if (typeof MapperManager !== "undefined") {
+                config.mappers = MapperManager.getAll();
+            }
 
             return config;
         },
@@ -550,6 +554,9 @@ $(document).ready(function () {
                 Utils.resetFormToDefaults();
                 $("#model, #gamemode, #beatmap_path").trigger('change');
                 $('#audio_path, #output_path, #beatmap_path').trigger('blur');
+                if (typeof MapperManager !== "undefined") {
+                    MapperManager.clearAll();
+                }
                 this.showConfigStatus("All settings reset to default values", "success");
             }
         },
@@ -608,7 +615,10 @@ $(document).ready(function () {
                 config.inContextOptions?.forEach(value => {
                     $(`input[name="in_context_options"][value="${value}"]`).prop('checked', true);
                 });
-
+                // Import mapper list (must come **after** the DOM is ready)
+                if (config.mappers && typeof MapperManager !== "undefined") {
+                    MapperManager.loadFromArray(config.mappers);
+                }
                 // Trigger updates
                 $("#model, #gamemode").trigger('change');
                 $('#audio_path, #output_path, #beatmap_path').trigger('blur');
