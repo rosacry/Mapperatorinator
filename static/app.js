@@ -338,6 +338,17 @@ $(document).ready(function () {
             $('#song_artist').val(response.detected_artist ?? '');
             $('#song_title').val(response.detected_title ?? '');
 
+            // ── Flash message: did we detect song metadata? ────────────────────
+            const audioPathProvided = $('#audio_path').val().trim();      // current form value
+            if (audioPathProvided && (response.detected_artist || response.detected_title)) {
+                const art = response.detected_artist || "Unknown artist";
+                const ttl = response.detected_title || "Unknown title";
+                Utils.showFlashMessage(`Detected song: ${art} – ${ttl}`, 'success');
+            } else if (audioPathProvided && !response.detected_artist && !response.detected_title) {
+                Utils.showFlashMessage("Could not detect song metadata.", 'error');
+            }
+
+
             if (showFlashMessages) {
                 // Show errors as flash messages and inline indicators
                 response.errors.forEach(error => {
@@ -654,6 +665,15 @@ $(document).ready(function () {
 
         async handleSubmit(e) {
             e.preventDefault();
+            /* ----------------------------------------------------------
+   If there is ANYTHING in the queue, let the queue run and
+   skip the normal single-map path.
+   (window.queueAPI is defined in queue_manager.js)
+---------------------------------------------------------- */
+            if (window.queueAPI?.hasJobs && window.queueAPI.hasJobs()) {
+                window.queueAPI.start();            // kick off queue
+                return;                             // ← stop here
+            }
 
             // Apply placeholder values before validation
             if (!await this.validateForm()) return;
@@ -695,6 +715,15 @@ $(document).ready(function () {
                 return false;
             }
 
+            if (!beatmapPath) {
+                const artist = $('#song_artist').val().trim();
+                const title = $('#song_title').val().trim();
+                if (!artist || !title) {
+                    Utils.smoothScroll('#song_artist');
+                    Utils.showFlashMessage("Artist and Title are required when no beatmap is provided.", 'error');
+                    return false;
+                }
+            }
             return true;
         },
 

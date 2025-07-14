@@ -1093,6 +1093,13 @@ input[type="number"]:hover::-webkit-outer-spin-button {
   background: #335
 }
 
+
+/* .queue-item::before {
+  content: attr(data-stars) "★ ";
+  opacity: 0.7;
+  margin-right: 4px;
+} */
+
 /* ─── Uniform styling for the NEW text/number inputs ──────────────────
    These selectors only touch the extra controls we added later so they
    won’t interfere with any existing field you already tuned.            */

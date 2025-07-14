@@ -1,5 +1,13 @@
 /* queue_manager.js – handles generation queue + mapper list */
 
+function _defaultDiffLabel(stars) {
+    if (stars < 2.5) return "Easy";
+    else if (stars < 3.5) return "Normal";
+    else if (stars < 4.5) return "Hard";
+    else if (stars < 5.5) return "Insane";
+    else return "Expert";
+}
+
 const QueueManager = (() => {
     const queue = [];
     let running = false;
@@ -9,6 +17,7 @@ const QueueManager = (() => {
         list.innerHTML = "";
         queue.forEach((task, idx) => {
             const li = document.createElement("li");
+            li.classList.add("queue-item");
             li.textContent = `${task.audio_path} → ${task.output_path} (mapper ${task.mapper_display_name || "—"})`;
             const del = document.createElement("button");
             del.textContent = "✕";
@@ -18,14 +27,13 @@ const QueueManager = (() => {
             if (idx === 0 && running) li.classList.add("running");
             list.appendChild(li);
         });
-        const btn = document.getElementById("add-to-queue-btn");
-        if (btn) btn.disabled = running;
+        // const btn = document.getElementById("add-to-queue-btn");
+        // if (btn) btn.disabled = running;
     }
 
     function add(task) {
         queue.push(task);
         render();
-        if (!running) _runNext();
     }
     function remove(i) {
         if (running && i === 0) return;      // can't remove current
@@ -47,9 +55,12 @@ const QueueManager = (() => {
             _runNext();               // recurse
         }
     }
+    function start() {                 // kick off processing from outside
+        if (!running && queue.length) _runNext();
+    }
 
     return {
-        add, remove, hasPending,
+        add, remove, hasPending, start,
         /* Queue now starts automatically when the first item is added. */
         markFinished() { /* called by InferenceManager */ },
         render
@@ -118,6 +129,8 @@ const MapperManager = (() => {
 
     function gatherSelected() {
         return Array.from(listEl.querySelectorAll(".mapper-item"))
+            // NEW: keep only the rows that are checked
+            .filter(div => div.querySelector(".mapper-check").checked)
             .map(div => ({
                 id: div.dataset.id,
                 name: div.querySelector(".mapper-name").value.trim(),
@@ -147,13 +160,43 @@ document.getElementById("add-mapper-btn").onclick = () => {
 document.getElementById("add-to-queue-btn").onclick = () => {
     const mappers = MapperManager.gatherSelected();
     const fd = new FormData(document.getElementById("inferenceForm"));
-    // if no mapper checked we still enqueue one task with mapper_id blank
+
+    /* fall-back entry when nothing is ticked */
     (mappers.length ? mappers : [{ id: "", name: "", n: 1 }]).forEach(mp => {
         for (let i = 0; i < mp.n; i++) {
-            const t = Object.fromEntries(fd.entries());
-            t.mapper_id = mp.id;
-            t.mapper_display_name = mp.name;
-            QueueManager.add(t);
+
+            const artist = fd.get("artist")?.trim() || "??";
+            const title = fd.get("title")?.trim() || "??";
+
+            /* ------------ decide mapper/creator ---------------- */
+            const uiName = fd.get("mapper_name")?.trim();          // manual override field
+            const creator = uiName || mp.name || `Mapperatorinator ${fd.get("model")?.toUpperCase()}`;
+
+            /* ------------ difficulty string -------------------- */
+            let diffName = fd.get("difficulty_name")?.trim();
+            if (!diffName) {
+                const stars = parseFloat(fd.get("difficulty")) || 3.5;
+                const baseName = _defaultDiffLabel(stars);
+
+                /* include "<mapper>'s" only when sampling */
+                if (mp.id || mp.name) {
+                    diffName = `${creator}'s ${baseName}`;
+                } else {
+                    diffName = baseName;
+                }
+            }
+
+            /* ------------ assemble task ------------------------ */
+            const task = Object.fromEntries(fd.entries());
+            task.mapper_id = mp.id;
+            task.mapper_display_name = mp.name;
+            task.artist = artist;
+            task.title = title;
+            task.creator = creator;
+            task.difficulty_string = diffName;
+            task.display_name = `${artist} - ${title} (${creator}) [${diffName}]`;
+
+            QueueManager.add(task);
         }
     });
 };
@@ -174,3 +217,8 @@ const InferenceManager = {
 
 /* initial render */
 QueueManager.render();
+
+window.queueAPI = {
+    hasJobs: () => QueueManager.hasPending(),
+    start: () => QueueManager.start()
+};

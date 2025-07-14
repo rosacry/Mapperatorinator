@@ -25,4 +25,5 @@ torchaudio==2.1.2
 numpy==1.26.4
 pyacoustid
 musicbrainzngs
+mutagen
 #python-dotenv>=1.0   # Optional: load OSU_CLIENT_ID / SECRET from .env
