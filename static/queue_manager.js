@@ -37,29 +37,41 @@ const QueueManager = (() => {
     /* ---------- public helpers ---------- */
     function add(task) { queue.push(task); render(); }
     function clear() { if (!running) { queue.length = 0; render(); } }
-    function remove(i) { if (running && i === 0) return; queue.splice(i, 1); render(); }
+    function stop() { running = false; queue.length = 0; render(); }
+    async function remove(i) {
+        if (running && i === 0) {          // deleting the map that is playing
+            await InferenceManager.cancelInference();   // send cancel to Flask
+            queue.shift();                               // drop it from the list
+            running = false;                             // stop the loop – _runNext() will restart below
+            _runNext();                                  // continue with next (if any)
+        } else {
+            queue.splice(i, 1);
+            render();
+        }
+    }
     function hasPending() { return queue.length > 0; }
     function isRunning() { return running; }
 
     /* ---------- execution loop ---------- */
     async function _runNext() {
         if (!queue.length) { running = false; render(); return; }
-
         running = true;
-        const task = queue.shift();     // <── key fix: shrink queue *before* submit
+        const task = queue[0];              // grab first
         render();
-
         try {
-            await InferenceManager.runTask(task);   // see below
+            window._queueInProgress = true;  // ➌ tell handleSubmit who called
+            await InferenceManager.runTask(task);
         } catch (e) {
             console.error("Task failed", e);
         } finally {
-            _runNext();                 // recurse
+            queue.shift();                   // ➍ drop finished job
+            window._queueInProgress = false;
+            _runNext();                      //   …and start the next
         }
     }
     function start() { if (!running && queue.length) _runNext(); }
 
-    return { add, clear, remove, hasPending, isRunning, start, render };
+    return { add, clear, remove, stop, hasPending, isRunning, start, render };
 })();
 
 
@@ -191,6 +203,7 @@ document.getElementById("add-to-queue-btn").onclick = () => {
             const task = Object.fromEntries(fd.entries());
             task.mapper_id = mp.id;
             task.mapper_display_name = mp.name;
+            task.mapper_name = mp.name;
             task.artist = artist;
             task.title = title;
             task.creator = creator;

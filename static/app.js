@@ -223,6 +223,7 @@ $(document).ready(function () {
         }
     };
 
+    let lastDetectedAudioPath = "";
     // Path Manager for autofill, validation and clear button support
     const PathManager = {
         init() {
@@ -317,7 +318,6 @@ $(document).ready(function () {
                 });
             });
         },
-
         handleValidationResponse(response, showFlashMessages = false) {
             this.clearValidationErrors();
             const $audioPathInput = $('#audio_path');
@@ -341,10 +341,13 @@ $(document).ready(function () {
 
             // ── Flash message: did we detect song metadata? ────────────────────
             const audioPathProvided = $('#audio_path').val().trim();      // current form value
-            if (audioPathProvided && (response.detected_artist || response.detected_title)) {
+            if (audioPathProvided &&
+                audioPathProvided !== lastDetectedAudioPath &&     // new!
+                (response.detected_artist || response.detected_title)) {
                 const art = response.detected_artist || "Unknown artist";
                 const ttl = response.detected_title || "Unknown title";
                 Utils.showFlashMessage(`Detected song: ${art} – ${ttl}`, 'success');
+                lastDetectedAudioPath = audioPathProvided;
             } else if (audioPathProvided && !response.detected_artist && !response.detected_title) {
                 Utils.showFlashMessage("Could not detect song metadata.", 'error');
             }
@@ -672,7 +675,8 @@ $(document).ready(function () {
    skip the normal single-map path.
    (window.queueAPI is defined in queue_manager.js)
 ---------------------------------------------------------- */
-            if (window.queueAPI?.hasJobs && window.queueAPI.hasJobs()) {
+            if (!window._queueInProgress &&
+                window.queueAPI?.hasJobs && window.queueAPI.hasJobs()) {
                 window.queueAPI.start();            // kick off queue
                 return;                             // ← stop here
             }
@@ -989,6 +993,7 @@ $(document).ready(function () {
                 success: (response) => { // Expecting JSON response
                     AppState.isCancelled = true;
                     Utils.showFlashMessage(response.message || "Inference cancelled successfully.", "cancel-success");
+                    window.queueAPI?.stop?.();
                 },
                 error: (jqXHR) => {
                     const errorMsg = jqXHR.responseJSON?.message || "Failed to send cancel request. Unknown error.";
