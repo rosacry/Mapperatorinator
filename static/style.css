@@ -1186,3 +1186,21 @@ input.form-control-sm:focus {
   border-color: var(--accent-color);
   box-shadow: 0 0 8px var(--accent-color);
 }
+
+
+/* .collapsible.closed {
+  display: none;
+}
+
+#queue-panel {
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.collapse-btn {
+  background: none;
+  border: none;
+  color: var(--accent-color);
+  cursor: pointer;
+  margin-top: -8px;
+} */

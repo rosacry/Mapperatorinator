@@ -8,6 +8,9 @@ function _defaultDiffLabel(stars) {
     else return "Expert";
 }
 
+/* ------------------------------------------------------------- */
+/*  QUEUE CORE                                                   */
+/* ------------------------------------------------------------- */
 const QueueManager = (() => {
     const queue = [];
     let running = false;
@@ -18,54 +21,47 @@ const QueueManager = (() => {
         queue.forEach((task, idx) => {
             const li = document.createElement("li");
             li.classList.add("queue-item");
-            li.textContent = `${task.audio_path} → ${task.output_path} (mapper ${task.mapper_display_name || "—"})`;
+            li.textContent =
+                `${task.display_name || task.audio_path} → ${task.output_path} ` +
+                `(mapper ${task.mapper_display_name || "—"})`;
             const del = document.createElement("button");
             del.textContent = "✕";
             del.className = "delete-btn";
-            del.onclick = () => { remove(idx); };
+            del.onclick = () => remove(idx);
             li.appendChild(del);
             if (idx === 0 && running) li.classList.add("running");
             list.appendChild(li);
         });
-        // const btn = document.getElementById("add-to-queue-btn");
-        // if (btn) btn.disabled = running;
     }
 
-    function add(task) {
-        queue.push(task);
-        render();
-    }
-    function remove(i) {
-        if (running && i === 0) return;      // can't remove current
-        queue.splice(i, 1);
-        render();
-    }
+    /* ---------- public helpers ---------- */
+    function add(task) { queue.push(task); render(); }
+    function clear() { if (!running) { queue.length = 0; render(); } }
+    function remove(i) { if (running && i === 0) return; queue.splice(i, 1); render(); }
     function hasPending() { return queue.length > 0; }
+    function isRunning() { return running; }
 
+    /* ---------- execution loop ---------- */
     async function _runNext() {
         if (!queue.length) { running = false; render(); return; }
-        running = true; render();
-        const task = queue[0];
+
+        running = true;
+        const task = queue.shift();     // <── key fix: shrink queue *before* submit
+        render();
+
         try {
-            await InferenceManager.runTask(task);   // defined below
+            await InferenceManager.runTask(task);   // see below
         } catch (e) {
             console.error("Task failed", e);
         } finally {
-            queue.shift();            // drop finished
-            _runNext();               // recurse
+            _runNext();                 // recurse
         }
     }
-    function start() {                 // kick off processing from outside
-        if (!running && queue.length) _runNext();
-    }
+    function start() { if (!running && queue.length) _runNext(); }
 
-    return {
-        add, remove, hasPending, start,
-        /* Queue now starts automatically when the first item is added. */
-        markFinished() { /* called by InferenceManager */ },
-        render
-    };
+    return { add, clear, remove, hasPending, isRunning, start, render };
 })();
+
 
 /* ------------------------------------------------------------------ */
 /* Mapper list manager */
@@ -158,10 +154,21 @@ document.getElementById("add-mapper-btn").onclick = () => {
 };
 
 document.getElementById("add-to-queue-btn").onclick = () => {
+    /* ── NEW: ensure placeholders are resolved & a song is loaded ── */
+    PathManager.applyPlaceholderValues?.();           // harmless noop if not defined
+
+    const audio = document.getElementById("audio_path").value.trim();
+    const beat = document.getElementById("beatmap_path").value.trim();
+    if (!audio && !beat) {
+        Utils?.showFlashMessage("Load an audio or beatmap first.", "error");
+        return;                                       // abort adding a blank task
+    }
+    /* ────────────────────────────────────────────────────────────── */
+
     const mappers = MapperManager.gatherSelected();
     const fd = new FormData(document.getElementById("inferenceForm"));
 
-    /* fall-back entry when nothing is ticked */
+    /* fall‑back entry when nothing is ticked */
     (mappers.length ? mappers : [{ id: "", name: "", n: 1 }]).forEach(mp => {
         for (let i = 0; i < mp.n; i++) {
 
@@ -177,13 +184,7 @@ document.getElementById("add-to-queue-btn").onclick = () => {
             if (!diffName) {
                 const stars = parseFloat(fd.get("difficulty")) || 3.5;
                 const baseName = _defaultDiffLabel(stars);
-
-                /* include "<mapper>'s" only when sampling */
-                if (mp.id || mp.name) {
-                    diffName = `${creator}'s ${baseName}`;
-                } else {
-                    diffName = baseName;
-                }
+                diffName = (mp.id || mp.name) ? `${creator}'s ${baseName}` : baseName;
             }
 
             /* ------------ assemble task ------------------------ */
@@ -197,9 +198,12 @@ document.getElementById("add-to-queue-btn").onclick = () => {
             task.display_name = `${artist} - ${title} (${creator}) [${diffName}]`;
 
             QueueManager.add(task);
+            Utils?.showFlashMessage(`Queued ${task.display_name}`, 'success');
+            // QueueManager.start();
         }
     });
 };
+
 
 
 /* ------------------------------------------------------------------ */
@@ -220,5 +224,7 @@ QueueManager.render();
 
 window.queueAPI = {
     hasJobs: () => QueueManager.hasPending(),
-    start: () => QueueManager.start()
+    isRunning: () => QueueManager.isRunning(),
+    start: () => QueueManager.start(),
+    clear: () => QueueManager.clear()
 };

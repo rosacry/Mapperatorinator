@@ -3,12 +3,18 @@ import asyncio, os
 from typing import Optional, Tuple
 import acoustid, musicbrainzngs            # new
 from shazamio import Shazam                # fallback
+from pykakasi import kakasi
 
 # Tell the AcoustID library to use the local fpcalc.exe we just copied
 os.environ.setdefault("FPCALC", os.path.join(os.path.dirname(__file__), "fpcalc.exe"))
 
 ACOUSTID_KEY = "UT7pFXWpWG"  # free key from acoustid.org
 musicbrainzngs.set_useragent("Mapperatorinator", "1.0")
+
+_kks = kakasi(); _kks.setMode("H", "a"); _kks.setMode("K", "a"); _kks.setMode("J", "a")
+
+def _to_romaji(text: str) -> str:
+    return " ".join([w['hepburn'] for w in _kks.convert(text)]) or text
 
 async def _shazam(path: str) -> Tuple[Optional[str], Optional[str]]:
     out = await Shazam().recognize(path)
@@ -46,7 +52,11 @@ def _acoustid(path: str) -> tuple[Optional[str], Optional[str]]:
                 title  = rec.get("title")
                 if score > 0.6 and artist and title:
                     return artist, title
-
+    except acoustid.FingerprintGenerationError:
+        # Re‑encode to wav if fpcalc can’t read this OGG
+        tmp = path + "_tmp.wav"
+        os.system(f'ffmpeg -y -i "{path}" -ar 44100 -ac 2 "{tmp}" >NUL 2>&1')
+        return _acoustid(tmp)
     except acoustid.AcoustidError as e:
         print("AcoustID error:", e)
     except Exception as e:
@@ -59,6 +69,8 @@ def identify_song(path: str) -> Tuple[Optional[str], Optional[str]]:
     # 1️⃣ offline / AcoustID first
     artist, title = _acoustid(path)
     if artist and title:
+        if artist and title and any(ord(c) > 0x7F for c in artist+title):
+            artist, title = _to_romaji(artist), _to_romaji(title)
         return artist, title
     # 2️⃣ fallback to Shazam (async helper)
     try:
@@ -66,21 +78,3 @@ def identify_song(path: str) -> Tuple[Optional[str], Optional[str]]:
     except Exception as e:
         print("Shazam lookup failed:", e)
         return None, None
-
-# if __name__ == "__main__":                         # temp‑debug block
-#     import json, sys
-#     path = sys.argv[1] if len(sys.argv) > 1 else None
-#     print("Key in code →", repr(ACOUSTID_KEY))
-
-#     # just hit the /version endpoint – lightweight and needs only the key
-#     import urllib.request, urllib.parse, urllib.error
-
-#     qs = urllib.parse.urlencode({"client": ACOUSTID_KEY})
-#     try:
-#         with urllib.request.urlopen(f"https://api.acoustid.org/v2/version?{qs}", timeout=10) as r:
-#             print("HTTP", r.status)
-#             print(json.load(r))
-#     except urllib.error.HTTPError as e:
-#         print("HTTP", e.code)
-#         print(e.read().decode())
-#     sys.exit(0)

@@ -26,4 +26,5 @@ numpy==1.26.4
 pyacoustid
 musicbrainzngs
 mutagen
+pykakasi
 #python-dotenv>=1.0   # Optional: load OSU_CLIENT_ID / SECRET from .env

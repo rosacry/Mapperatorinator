@@ -68,6 +68,7 @@ $(document).ready(function () {
             PathManager.validateAndAutofillPaths(false);
         }
     };
+    window.Utils = Utils;
 
     // UI Manager for conditional visibility
     const UIManager = {
@@ -413,7 +414,7 @@ $(document).ready(function () {
             }
         }
     };
-
+    window.PathManager = PathManager;
     // Descriptor Manager
     const DescriptorManager = {
         init() {
@@ -481,7 +482,7 @@ $(document).ready(function () {
             };
 
             // Export form fields
-            const skip = new Set(['artist', 'title', 'mapper_name', 'difficulty_name']);
+            const skip = new Set(['artist', 'title', 'mapper_name', 'difficulty_name', 'audio_path', 'beatmap_path', 'output_path']);
             $('#inferenceForm').find('input, select, textarea').each(function () {
                 const $field = $(this);
                 const name = $field.attr('name');
@@ -571,6 +572,7 @@ $(document).ready(function () {
                 $('#audio_path, #output_path, #beatmap_path').trigger('blur');
                 if (typeof MapperManager !== "undefined") {
                     MapperManager.clearAll();
+                    if (window.queueAPI?.clear) window.queueAPI.clear();   // also wipe queue
                 }
                 this.showConfigStatus("All settings reset to default values", "success");
             }
@@ -1029,6 +1031,11 @@ $(document).ready(function () {
 
     // Start the application
     initializeApp();
+    // $('#adv-toggle').on('click', () => $('#adv-wrapper').toggleClass('closed'));
+    // $('#queue-toggle').on('click', () => {
+    //     $('#queue-panel').toggleClass('closed');
+    //     $('#queue-toggle').text($('#queue-panel').hasClass('closed') ? 'Queue ▸' : 'Queue ▼');
+    // });
     window.startInferenceWithFormData = function (formDataObj) {
         return new Promise((resolve, reject) => {
             // 1. shove the supplied values into the DOM form fields
