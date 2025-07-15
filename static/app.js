@@ -983,6 +983,7 @@ $(document).ready(function () {
             }
         },
 
+        // Update cancelInference function
         cancelInference() {
             const $cancelBtn = $("#cancel-button");
             $cancelBtn.prop('disabled', true).text('Cancelling...');
@@ -990,19 +991,23 @@ $(document).ready(function () {
             $.ajax({
                 url: "/cancel_inference",
                 method: "POST",
-                success: (response) => { // Expecting JSON response
+                success: (response) => {
+                    if (window.queueAPI?.stop) {
+                        window.queueAPI.stop();
+                    }
                     AppState.isCancelled = true;
-                    Utils.showFlashMessage(response.message || "Inference cancelled successfully.", "cancel-success");
-                    window.queueAPI?.stop?.();
+                    Utils.showFlashMessage("Queue and inference cancelled", "cancel-success");
+
+
                 },
                 error: (jqXHR) => {
-                    const errorMsg = jqXHR.responseJSON?.message || "Failed to send cancel request. Unknown error.";
+                    const errorMsg = jqXHR.responseJSON?.message || "Failed to cancel";
                     Utils.showFlashMessage(errorMsg, "error");
                     $cancelBtn.prop('disabled', false).text('Cancel');
                 }
             });
         }
-    };
+    }
 
     // Initialize all components
     function initializeApp() {

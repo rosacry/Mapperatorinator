@@ -1187,6 +1187,15 @@ input.form-control-sm:focus {
   box-shadow: 0 0 8px var(--accent-color);
 }
 
+.status-running {
+  color: #4CAF50;
+  font-weight: bold;
+}
+
+.status-pending {
+  color: #FFC107;
+}
+
 
 /* .collapsible.closed {
   display: none;

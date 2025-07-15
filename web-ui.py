@@ -2,6 +2,7 @@
 from mapper_api import lookup_username
 from audio_fingerprint import identify_song
 from filename_utils import rename_output, compose_diff_name
+import signal
 # End NEW ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 
 import functools
@@ -420,7 +421,7 @@ def stream_output():
 
 @app.route('/cancel_inference', methods=['POST'])
 def cancel_inference():
-    """Attempts to terminate the currently running inference process."""
+    """Attempts to terminate the currently running inference process and queue."""
     global current_process
     message = ""
     success = False
@@ -431,20 +432,16 @@ def cancel_inference():
             try:
                 pid = current_process.pid
                 print(f"Attempting to terminate process PID: {pid}...")
-                current_process.terminate()  # Send SIGTERM
-                # Optional: Add a short wait to see if it terminates quickly
-                try:
-                    current_process.wait(timeout=1)
-                    print(f"Process PID: {pid} terminated successfully after request.")
-                    message = "Cancel request sent, process terminated."
-                except subprocess.TimeoutExpired:
-                    print(f"Process PID: {pid} did not terminate immediately after SIGTERM.")
-                    message = "Cancel request sent. Process termination might take a moment."
-                    # You could consider current_process.kill() here if terminate isn't enough
-
+                # Terminate the entire process tree
+                if platform.system() == "Windows":
+                    subprocess.run(["taskkill", "/F", "/T", "/PID", str(pid)])
+                else:
+                    os.killpg(os.getpgid(pid), signal.SIGTERM)
+                
+                current_process = None
+                message = "Cancel request sent, process terminated."
                 success = True
                 status_code = 200
-                # DO NOT set current_process = None here. Let the stream generator handle it.
             except Exception as e:
                 print(f"Error terminating process: {e}")
                 message = f"Error occurred during cancellation: {e}"
@@ -452,13 +449,22 @@ def cancel_inference():
                 status_code = 500
         elif current_process:
             message = "Process already finished."
-            success = False  # Or True if you consider it 'cancelled' as it's done
+            success = False
             status_code = 409
         else:
             message = "No process is currently running."
             success = False
             status_code = 404
 
+        # NEW: Always clear the queue regardless of process state
+        if success or status_code == 404:
+            # Clear the frontend queue via JavaScript API
+            # This will be handled by the frontend's queueAPI
+            message = "Queue and process cancelled" if success else "Queue cleared"
+            success = True
+            status_code = 200
+
+    # Return response
     if success:
         return jsonify({"status": "success", "message": message}), status_code
     else:

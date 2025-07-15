@@ -21,15 +21,19 @@ const QueueManager = (() => {
         queue.forEach((task, idx) => {
             const li = document.createElement("li");
             li.classList.add("queue-item");
-            li.textContent =
-                `${task.display_name || task.audio_path} → ${task.output_path} ` +
-                `(mapper ${task.mapper_display_name || "—"})`;
+
+            // Add status indicator
+            const status = (idx === 0 && running) ?
+                '<span class="status-running">● Running</span> ' :
+                '<span class="status-pending">○ Pending</span> ';
+
+            li.innerHTML = status + `${task.display_name}...`;
+
             const del = document.createElement("button");
             del.textContent = "✕";
             del.className = "delete-btn";
             del.onclick = () => remove(idx);
             li.appendChild(del);
-            if (idx === 0 && running) li.classList.add("running");
             list.appendChild(li);
         });
     }
@@ -38,16 +42,24 @@ const QueueManager = (() => {
     function add(task) { queue.push(task); render(); }
     function clear() { if (!running) { queue.length = 0; render(); } }
     function stop() { running = false; queue.length = 0; render(); }
+    // Update the remove function
+    // Update the remove function
     async function remove(i) {
-        if (running && i === 0) {          // deleting the map that is playing
-            await InferenceManager.cancelInference();   // send cancel to Flask
-            queue.shift();                               // drop it from the list
-            running = false;                             // stop the loop – _runNext() will restart below
-            _runNext();                                  // continue with next (if any)
+        if (running && i === 0) {
+            // Cancel current inference
+            await InferenceManager.cancelInference();
+
+            // Remove only this item
+            queue.splice(i, 1);
+            running = false;
+
+            if (queue.length > 0) {
+                _runNext(); // Start next item
+            }
         } else {
             queue.splice(i, 1);
-            render();
         }
+        render();
     }
     function hasPending() { return queue.length > 0; }
     function isRunning() { return running; }
@@ -202,6 +214,10 @@ document.getElementById("add-to-queue-btn").onclick = () => {
             /* ------------ assemble task ------------------------ */
             const task = Object.fromEntries(fd.entries());
             task.mapper_id = mp.id;
+            // Add this to explicitly include mapper_id in form data
+            // if (mp.id) {
+            //     formData.append('mapper_id', mp.id);
+            // }
             task.mapper_display_name = mp.name;
             task.mapper_name = mp.name;
             task.artist = artist;
@@ -222,13 +238,20 @@ document.getElementById("add-to-queue-btn").onclick = () => {
 /* ------------------------------------------------------------------ */
 /* Thin wrapper util expected by QueueManager */
 
+// Update the runTask function
 const InferenceManager = {
     async runTask(task) {
-        // POST form data → /start_inference (same as original code)
+        // Create proper form data with mapper_id
         const formData = new FormData();
-        Object.entries(task).forEach(([k, v]) => formData.append(k, v));
-        // Here you can reuse your existing JS that triggers SSE etc.
-        await window.startInferenceWithFormData(formData); // you must implement
+        Object.entries(task).forEach(([k, v]) => {
+            if (k === "mapper_id" && v) {
+                formData.append("mapper_id", v); // Ensure mapper_id is included
+            }
+            formData.append(k, v);
+        });
+
+        // POST to inference endpoint
+        await window.startInferenceWithFormData(formData);
     }
 };
 
