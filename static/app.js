@@ -984,6 +984,7 @@ $(document).ready(function () {
         },
 
         // Update cancelInference function
+        // In the cancelInference function
         cancelInference() {
             const $cancelBtn = $("#cancel-button");
             $cancelBtn.prop('disabled', true).text('Cancelling...');
@@ -992,13 +993,16 @@ $(document).ready(function () {
                 url: "/cancel_inference",
                 method: "POST",
                 success: (response) => {
+                    // NEW: Clear queue if flag is present
+                    if (response.clear_queue && window.queueAPI?.clear) {
+                        window.queueAPI.clear();
+                    }
+
                     if (window.queueAPI?.stop) {
                         window.queueAPI.stop();
                     }
                     AppState.isCancelled = true;
                     Utils.showFlashMessage("Queue and inference cancelled", "cancel-success");
-
-
                 },
                 error: (jqXHR) => {
                     const errorMsg = jqXHR.responseJSON?.message || "Failed to cancel";

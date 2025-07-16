@@ -42,24 +42,26 @@ const QueueManager = (() => {
     function add(task) { queue.push(task); render(); }
     function clear() { if (!running) { queue.length = 0; render(); } }
     function stop() { running = false; queue.length = 0; render(); }
-    // Update the remove function
-    // Update the remove function
     async function remove(i) {
         if (running && i === 0) {
-            // Cancel current inference
+            // Cancel current inference but keep the queue running
             await InferenceManager.cancelInference();
 
             // Remove only this item
             queue.splice(i, 1);
-            running = false;
+            render();
 
+            // Immediately start next item if exists
             if (queue.length > 0) {
-                _runNext(); // Start next item
+                _runNext();
+            } else {
+                running = false;
             }
         } else {
+            // For non-running items, just remove them
             queue.splice(i, 1);
+            render();
         }
-        render();
     }
     function hasPending() { return queue.length > 0; }
     function isRunning() { return running; }
@@ -239,13 +241,15 @@ document.getElementById("add-to-queue-btn").onclick = () => {
 /* Thin wrapper util expected by QueueManager */
 
 // Update the runTask function
+// Replace the existing runTask function with this:
 const InferenceManager = {
     async runTask(task) {
         // Create proper form data with mapper_id
         const formData = new FormData();
         Object.entries(task).forEach(([k, v]) => {
+            // Special handling for mapper_id
             if (k === "mapper_id" && v) {
-                formData.append("mapper_id", v); // Ensure mapper_id is included
+                formData.append("mapper_id", v);
             }
             formData.append(k, v);
         });

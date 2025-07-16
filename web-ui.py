@@ -421,7 +421,6 @@ def stream_output():
 
 @app.route('/cancel_inference', methods=['POST'])
 def cancel_inference():
-    """Attempts to terminate the currently running inference process and queue."""
     global current_process
     message = ""
     success = False
@@ -456,13 +455,18 @@ def cancel_inference():
             success = False
             status_code = 404
 
-        # NEW: Always clear the queue regardless of process state
+        # NEW: Clear the queue when cancelling
         if success or status_code == 404:
-            # Clear the frontend queue via JavaScript API
-            # This will be handled by the frontend's queueAPI
             message = "Queue and process cancelled" if success else "Queue cleared"
             success = True
             status_code = 200
+            
+            # Add this to clear the frontend queue
+            return jsonify({
+                "status": "success", 
+                "message": message,
+                "clear_queue": True  # New flag to clear queue
+            }), status_code
 
     # Return response
     if success:
