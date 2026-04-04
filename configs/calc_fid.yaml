@@ -1,16 +1,16 @@
 defaults:
   - base_fid
-  - inference: tiny_dist7
+  - inference: tiny58m
   - _self_
 
-compile: false
 num_processes: 32
-seed: 0
+compile: false
 
 skip_generation: false
 fid: true
 fid_cm3p: true
 rhythm_stats: true
+extra_stats: true
 
 classifier_ckpt: 'OliBomby/osu-classifier'
 classifier_batch_size: 32
@@ -24,9 +24,11 @@ dataset_type: "mmrs"
 dataset_path: C:/Users/Olivier/Documents/Collections/Beatmap ML Datasets/MMRS2025
 dataset_start: 0
 dataset_end: 106  # Contains 324 std beatmaps
-gamemodes: [0]  # List of gamemodes to include in the dataset
+gamemodes: [3]  # List of gamemodes to include in the dataset
 
 inference:
+  seed: 0
+  compile: false
   super_timing: false
   temperature: 0.9        # Sampling temperature
   top_p: 0.9              # Top-p sampling threshold
@@ -41,8 +43,8 @@ hydra:
     chdir: True
     name: calc_fid
   run:
-    dir: ./logs_fid/${now:%Y-%m-%d}/${now:%H-%M-%S}
-#    dir: ./logs_fid/sweeps/test_1/inference=inference_v30
+#    dir: ./logs_fid/${now:%Y-%m-%d}/${now:%H-%M-%S}
+    dir: ./logs_fid/sweeps/test_m/inference=tiny58m
   sweep:
-    dir: ./logs_fid/sweeps/test_1
+    dir: ./logs_fid/sweeps/test_a
     subdir: ${hydra.job.override_dirname}

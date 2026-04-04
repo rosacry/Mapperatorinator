@@ -1,47 +1,38 @@
+import traceback
+from dataclasses import asdict
+from pathlib import Path
+
+from hydra import initialize_config_dir, compose
+from omegaconf import OmegaConf
+
 import excepthook  # noqa
-import argparse
+import base64
 import functools
 import os
 import platform
-import signal
 import socket
 import subprocess
 import sys
 import threading
-import time
+import uuid
+from typing import Callable, Any, Tuple, Dict
+
+import io
+import multiprocessing as mp
+import queue as queue_mod
 import datetime
-from typing import Callable, Any, Tuple, Dict, Optional
+import time
 
 import webview
 import werkzeug.serving
-from flask import Flask, render_template, request, Response, jsonify
+from flask import Flask, render_template, request, Response, jsonify, send_file
 
+import routed_pickle
 from config import InferenceConfig
-from inference import autofill_paths
-
-# Parse command line arguments
-def parse_args():
-    parser = argparse.ArgumentParser(description='Mapperatorinator Web UI')
-    device_group = parser.add_mutually_exclusive_group()
-    device_group.add_argument('--gpu', '-gpu', action='store_true',
-                              help='Force GPU/CUDA usage (default behavior)')
-    device_group.add_argument('--cpu', '-cpu', action='store_true', 
-                              help='Force CPU usage (slower, but works without CUDA)')
-    return parser.parse_args()
-
-args = parse_args()
-
-# Determine device preference: default to GPU (auto), --cpu forces CPU
-if args.cpu:
-    DEVICE_PREFERENCE = 'cpu'
-    print("Device mode: CPU (forced via --cpu flag)")
-else:
-    # Default or --gpu: use auto (will use CUDA if available)
-    DEVICE_PREFERENCE = 'auto'
-    if args.gpu:
-        print("Device mode: GPU/CUDA (forced via --gpu flag)")
-    else:
-        print("Device mode: auto (GPU/CUDA if available, otherwise CPU)")
+from osuT5.osuT5.event import ContextType
+from osuT5.osuT5.inference.server import InferenceClient
+from osuT5.osuT5.utils import load_model_loaders
+from inference import compile_args, get_server_address, main
 
 # Queue system imports
 try:
@@ -53,7 +44,7 @@ except ImportError as e:
     print(f"Warning: Queue features not available: {e}")
     QUEUE_FEATURES_AVAILABLE = False
     def lookup_username(mapper_id): return None
-    def identify_song(path): return None, None
+    def identify_song(path): return (None, None)
     def rename_output(*args): return args[0]
     def compose_diff_name(*args): return "Mapperatorinator"
 
@@ -106,88 +97,15 @@ def parse_file_dialog_result(result):
 app = Flask(__name__, template_folder=template_folder, static_folder=static_folder)
 app.secret_key = os.urandom(24)  # Set a secret key for Flask
 
-# ── Shared state for inference process and queue ────────────────────
-last_form_data: dict = {}  # Remember form data for file renaming
-queue_cancelled: bool = False  # Flag to cancel queue processing
-song_detection_cache: dict = {}  # Cache for song detection results {audio_path: (artist, title)}
+# --- Queue system shared state ---
+queue_cancelled: bool = False
+song_detection_cache: dict = {}
+beatmapset_enabled = False
+beatmapset_files = []
+beatmapset_audio_path = None
+beatmapset_background_path = None
+beatmapset_output_dir = None
 
-
-def apply_beatmap_customizations(osu_path, preview_time=None, background_path=None):
-    """Apply preview time and background image to a .osu file.
-    
-    Note: This only updates the .osu file metadata to reference the background.
-    The actual background file is embedded in the .osz by inference.py's export_osz.
-    """
-    if not os.path.exists(osu_path):
-        print(f"Warning: Cannot customize .osu file - not found: {osu_path}")
-        return
-    
-    try:
-        with open(osu_path, 'r', encoding='utf-8', errors='ignore') as f:
-            lines = f.readlines()
-        
-        new_lines = []
-        in_general = False
-        in_events = False
-        preview_written = False
-        bg_written = False
-        bg_name = None
-        
-        # Get the background filename for the .osu file reference
-        if background_path and os.path.exists(background_path):
-            bg_name = os.path.basename(background_path)
-        
-        for line in lines:
-            stripped = line.strip()
-            
-            # Track sections
-            if stripped == '[General]':
-                in_general = True
-                in_events = False
-                new_lines.append(line)
-                continue
-            elif stripped == '[Events]':
-                in_events = True
-                in_general = False
-                new_lines.append(line)
-                continue
-            elif stripped.startswith('[') and (in_general or in_events):
-                # Leaving section
-                if in_general and preview_time and not preview_written:
-                    new_lines.append(f"PreviewTime: {preview_time}\n")
-                if in_events and bg_name and not bg_written:
-                    new_lines.append(f'0,0,"{bg_name}",0,0\n')
-                in_general = False
-                in_events = False
-            
-            # Modify preview time in [General]
-            if in_general and stripped.startswith('PreviewTime:'):
-                if preview_time:
-                    new_lines.append(f"PreviewTime: {preview_time}\n")
-                    preview_written = True
-                else:
-                    new_lines.append(line)
-                continue
-            
-            # Modify/add background in [Events]
-            if in_events and (stripped.startswith('0,0,"') or stripped.startswith("0,0,'")):
-                if bg_name:
-                    new_lines.append(f'0,0,"{bg_name}",0,0\n')
-                    bg_written = True
-                else:
-                    new_lines.append(line)
-                continue
-            
-            new_lines.append(line)
-        
-        # Write back
-        with open(osu_path, 'w', encoding='utf-8') as f:
-            f.writelines(new_lines)
-        
-        print(f"Applied customizations to: {osu_path}")
-        
-    except Exception as e:
-        print(f"Warning: Failed to apply customizations to {osu_path}: {e}")
 
 # --- pywebview API Class ---
 class Api:
@@ -226,6 +144,37 @@ class Api:
 
         return parse_file_dialog_result(result)
 
+    def browse_image(self):
+        """Opens a file dialog specifically for image files and returns the selected file path."""
+        # Get the window dynamically from the global list
+        if not webview.windows:
+            print("Error: No pywebview window found.")
+            return None
+
+        current_window = webview.windows[0]
+
+        # Image file type filter
+        image_file_types = (
+            'Image Files (*.jpg;*.jpeg;*.png;*.bmp;*.gif;*.webp)',
+            '*.jpg;*.jpeg;*.png;*.bmp;*.gif;*.webp',
+            'JPEG Files (*.jpg;*.jpeg)',
+            '*.jpg;*.jpeg',
+            'PNG Files (*.png)',
+            '*.png',
+            'All Files (*.*)',
+            '*.*'
+        )
+
+        try:
+            result = current_window.create_file_dialog(
+                webview.OPEN_DIALOG,
+                file_types=image_file_types
+            )
+        except Exception:
+            result = current_window.create_file_dialog(OPEN_DIALOG)
+
+        return parse_file_dialog_result(result)
+
     def browse_folder(self):
         """Opens a folder dialog and returns the selected folder path."""
         # Get the window dynamically from the global list
@@ -239,43 +188,104 @@ class Api:
         return parse_file_dialog_result(result)
 
 
-# --- Shared State for Inference Process ---
-current_process: subprocess.Popen | None = None
-process_lock = threading.Lock()  # Lock for accessing current_process safely
+# --- Shared State for Inference Processes ---
+# Track inference workers (multiprocessing) instead of Popen
+# job_id -> {"process": mp.Process, "queue": mp.Queue, "cancelled": bool}
+processes = {}
+cancelled_jobs = set()
+process_lock = threading.Lock()
 
 
-# --- Helper Function (same as original Flask) ---
-def dq_quote(s):
-    """Wrap the string in double quotes and escape inner double quotes."""
-    # Basic check if it looks quoted
-    if isinstance(s, str) and s.startswith('"') and s.endswith('"'):
-        return s
-    return '"' + str(s).replace('"', '\\"') + '"'
+def _ensure_inference_server(args):
+    model_loader, tokenizer_loader = load_model_loaders(
+        ckpt_path_str=args.model_path,
+        t5_args=args.train,
+        device=args.device,
+        precision=args.precision,
+        attn_implementation=args.attn_implementation,
+        eval_mode=True,
+        pickle_module=routed_pickle,
+        lora_path=args.lora_path,
+    )
+    _server_owner_client = InferenceClient(
+        model_loader,
+        tokenizer_loader,
+        max_batch_size=args.max_batch_size,
+        socket_path=get_server_address(args.model_path),
+    )
+
+    # Start the server in a dedicated thread that outlives per-job workers.
+    _server_owner_client.ensure_server()
 
 
-# Helper function for double-single quotes
-def dsq_quote(s):
-    """
-    Prepares a path string for Hydra command-line override.
-    Wraps the path in single quotes, escaping internal single quotes (' -> \\').
-    Then wraps the result in double quotes for shell safety.
-    Example: "C:/My's Folder" becomes "\"'C:/My\\'s Folder'\""
-    """
-    path_str = str(s)
-
-    # 1. Escape internal single quotes within the path string itself
-    escaped_path = path_str.replace("'", "\\'")  # Replace ' with \'
-
-    # 2. Wrap the escaped path string in single quotes
-    inner_quoted = "'" + escaped_path + "'"
-
-    # 3. Wrap the single-quoted string in double quotes for the shell command line
-    return '"' + inner_quoted + '"'
+def _coerce_optional_int(v):
+    if v is None or v == '':
+        return None
+    return int(v)
 
 
-def format_list_arg(items):
-    """Formats a list of strings for the command line argument."""
-    return "[" + ",".join("'" + str(d) + "'" for d in items) + "]"
+def _coerce_optional_float(v):
+    if v is None or v == '':
+        return None
+    return float(v)
+
+
+def _coerce_bool_checkbox(form, key: str) -> bool:
+    return key in form
+
+
+class _QueueWriter(io.TextIOBase):
+    def __init__(self, q: mp.Queue):
+        self._q = q
+        self._buf = ""
+
+    def write(self, s):
+        if not s:
+            return 0
+        self._buf += s
+
+        # tqdm progress bars often update the same line using carriage returns.
+        # Forward those updates as individual messages so the UI can parse percentage.
+        while "\r" in self._buf:
+            seg, self._buf = self._buf.split("\r", 1)
+            if seg:
+                self._q.put(seg)
+            else:
+                # Even an empty segment can represent a progress refresh; keep UI alive.
+                self._q.put("")
+
+        while "\n" in self._buf:
+            line, self._buf = self._buf.split("\n", 1)
+            self._q.put(line)
+        return len(s)
+
+    def flush(self):
+        if self._buf:
+            self._q.put(self._buf)
+            self._buf = ""
+
+
+def _inference_worker(cfg: InferenceConfig, out_q: mp.Queue):
+    """Worker entrypoint executed in a separate process (spawn-safe)."""
+    import sys as _sys
+    import traceback as _traceback
+
+    try:
+        # Redirect stdout/stderr to queue.
+        qw = _QueueWriter(out_q)
+        _sys.stdout = qw
+        _sys.stderr = qw
+
+        main(cfg)
+        qw.flush()
+        out_q.put({"_event": "exit", "code": 0})
+    except Exception as e:
+        try:
+            out_q.put(str(e))
+            out_q.put(_traceback.format_exc())
+        except Exception:
+            pass
+        out_q.put({"_event": "exit", "code": 1})
 
 
 # --- Flask Routes ---
@@ -289,21 +299,21 @@ def index():
 
 @app.route('/check_bf16_support', methods=['GET'])
 def check_bf16_support():
-    """Check if the GPU supports bf16 precision."""
+    """Check if the GPU supports bf16 precision for faster inference."""
     try:
         import torch
-        
+
         if not torch.cuda.is_available():
             return jsonify({"supported": False, "reason": "CUDA not available"})
-        
+
         # Get GPU compute capability
         device_props = torch.cuda.get_device_properties(0)
         compute_capability = (device_props.major, device_props.minor)
         gpu_name = device_props.name
-        
+
         # bf16 requires compute capability 8.0+ (Ampere and newer: RTX 30xx, 40xx, A100, etc.)
         supported = compute_capability[0] >= 8
-        
+
         return jsonify({
             "supported": supported,
             "gpu_name": gpu_name,
@@ -317,417 +327,197 @@ def check_bf16_support():
 @app.route('/start_inference', methods=['POST'])
 def start_inference():
     """Starts the inference process based on form data."""
-    global current_process, last_form_data
-    with process_lock:
-        if current_process and current_process.poll() is None:
-            return jsonify({"status": "error", "message": "Process already running"}), 409  # Conflict
+    job_id = uuid.uuid4().hex
 
-        # Save form data for file renaming after completion
-        last_form_data = request.form.to_dict(flat=True)
+    # Create config
+    config_name = request.form.get('model')
+    with initialize_config_dir(version_base="1.1", config_dir=str(Path(__file__).parent / "configs/inference")):
+        cfg = compose(config_name=config_name)
+    cfg = OmegaConf.to_object(cfg)
+    cfg.use_server = True
 
-        # --- Construct Command List (shell=False) ---
-        python_executable = sys.executable  # Get path to current Python interpreter
-        cmd = [python_executable, "inference.py", "-cn"]
+    # Required/paths
+    cfg.audio_path = request.form.get('audio_path') or None
+    cfg.output_path = request.form.get('output_path') or None
+    cfg.beatmap_path = request.form.get('beatmap_path') or None
+    cfg.lora_path = request.form.get('lora_path') or None
 
-        # Get the model name from the form
-        model_name = request.form.get('model')
-        config_name = model_name
-        cmd.append(config_name)  # Add the config name to the command
+    # Basic settings
+    cfg.gamemode = _coerce_optional_int(request.form.get('gamemode')) or 0
+    cfg.difficulty = _coerce_optional_float(request.form.get('difficulty'))
+    cfg.year = _coerce_optional_int(request.form.get('year'))
 
-        # Helper to quote values for Hydra's command-line parser
-        def hydra_quote(value):
-            """Quotes a value for Hydra (double quotes, escapes internal)."""
-            value_str = str(value)
-            # Escape internal double quotes and backslashes
-            escaped_value = value_str.replace('\\', '\\\\').replace('"', '\\"')
-            return f'"{escaped_value}"'
+    # Numeric settings
+    cfg.hp_drain_rate = _coerce_optional_float(request.form.get('hp_drain_rate'))
+    cfg.circle_size = _coerce_optional_float(request.form.get('circle_size'))
+    cfg.overall_difficulty = _coerce_optional_float(request.form.get('overall_difficulty'))
+    cfg.approach_rate = _coerce_optional_float(request.form.get('approach_rate'))
+    cfg.slider_multiplier = _coerce_optional_float(request.form.get('slider_multiplier'))
+    cfg.slider_tick_rate = _coerce_optional_float(request.form.get('slider_tick_rate'))
+    cfg.keycount = _coerce_optional_int(request.form.get('keycount'))
+    cfg.hold_note_ratio = _coerce_optional_float(request.form.get('hold_note_ratio'))
+    cfg.scroll_speed_ratio = _coerce_optional_float(request.form.get('scroll_speed_ratio'))
+    cfg.cfg_scale = _coerce_optional_float(request.form.get('cfg_scale')) or cfg.cfg_scale
+    cfg.temperature = _coerce_optional_float(request.form.get('temperature')) or cfg.temperature
+    cfg.top_p = _coerce_optional_float(request.form.get('top_p')) or cfg.top_p
+    cfg.seed = _coerce_optional_int(request.form.get('seed'))
+    cfg.mapper_id = _coerce_optional_int(request.form.get('mapper_id'))
 
-        # Set of keys that need quoting for Hydra (paths and string values with special chars)
-        quote_keys = {"audio_path", "output_path", "beatmap_path", "lora_path", 
-                      "artist", "title", "creator", "version", "background"}
+    # Metadata
+    cfg.title = request.form.get('title') or None
+    cfg.title_unicode = request.form.get('title_unicode') or None
+    cfg.artist = request.form.get('artist') or None
+    cfg.artist_unicode = request.form.get('artist_unicode') or None
+    cfg.creator = request.form.get('creator') or None
+    cfg.version = request.form.get('version') or None
+    cfg.source = request.form.get('source') or None
+    cfg.tags = request.form.get('tags') or None
+    cfg.preview_time = _coerce_optional_int(request.form.get('preview_time'))
 
-        # Helper to add argument if value exists
-        def add_arg(key, value):
-            if value is not None and value != '':  # Ensure value is not empty
-                if key in quote_keys:
-                    # Quote values for Hydra
-                    cmd.append(f"{key}={hydra_quote(value)}")
-                else:
-                    # Other values usually don't need explicit Hydra quoting when passed via list
-                    cmd.append(f"{key}={value}")
+    # Background image
+    background_image = request.form.get('background_image')
+    if background_image:
+        cfg.background = background_image
 
-        # Helper for list arguments (Hydra format: key=['item1','item2',...])
-        def add_list_arg(key, items):
-            if items:
-                # Wrap each item in single quotes and join with comma
-                quoted_items = [f"'{str(item)}'" for item in items]
-                items_str = ",".join(quoted_items)
-                cmd.append(f"{key}=[{items_str}]")
+    # Timing and segmentation
+    cfg.start_time = _coerce_optional_int(request.form.get('start_time'))
+    cfg.end_time = _coerce_optional_int(request.form.get('end_time'))
 
-        # Required Paths
-        add_arg("audio_path", request.form.get('audio_path'))
-        add_arg("output_path", request.form.get('output_path'))
-        # Beatmap path
-        beatmap_path = request.form.get('beatmap_path')
-        add_arg("beatmap_path", beatmap_path)
+    # Checkboxes
+    cfg.export_osz = _coerce_bool_checkbox(request.form, 'export_osz')
+    cfg.add_to_beatmap = _coerce_bool_checkbox(request.form, 'add_to_beatmap')
+    cfg.overwrite_reference_beatmap = _coerce_bool_checkbox(request.form, 'overwrite_reference_beatmap')
+    cfg.hitsounded = _coerce_bool_checkbox(request.form, 'hitsounded')
+    cfg.super_timing = _coerce_bool_checkbox(request.form, 'super_timing')
 
-        # Optional LoRA path
-        if 'lora_path' in request.form:
-            add_arg("lora_path", request.form.get('lora_path'))
+    # Precision
+    if _coerce_bool_checkbox(request.form, 'enable_bf16'):
+        cfg.precision = 'bf16'
 
-        # Basic settings
-        if 'gamemode' in request.form:
-            add_arg("gamemode", request.form.get('gamemode'))
-        else:
-            # Default to 0 if not provided
-            add_arg("gamemode", 0)
-        add_arg("difficulty", request.form.get('difficulty'))
-        add_arg("year", request.form.get('year'))
+    # Descriptor lists
+    descriptors = request.form.getlist('descriptors')
+    cfg.descriptors = descriptors if descriptors else None
+    negative_descriptors = request.form.getlist('negative_descriptors')
+    cfg.negative_descriptors = negative_descriptors if negative_descriptors else None
 
-        # Numeric settings
-        for param in ['hp_drain_rate', 'circle_size', 'overall_difficulty', 'approach_rate', 'slider_multiplier',
-                      'slider_tick_rate', 'keycount', 'hold_note_ratio', 'scroll_speed_ratio',
-                      'cfg_scale', 'temperature', 'top_p', 'seed']:
-            add_arg(param, request.form.get(param))
-        # mapper_id
-        add_arg("mapper_id", request.form.get('mapper_id'))
-        
-        # Precision setting (bf16 for faster inference on supported GPUs)
-        if 'enable_bf16' in request.form:
-            cmd.append("precision=bf16")
-        # else uses default fp32 from config
-        
-        # Device setting (from command line args)
-        cmd.append(f"device={DEVICE_PREFERENCE}")
-
-        # Beatmap metadata (artist, title, background, preview time)
-        # These come from detected_artist/detected_title form fields
-        add_arg("artist", request.form.get('detected_artist'))
-        add_arg("title", request.form.get('detected_title'))
-        add_arg("background", request.form.get('background_path'))
-        add_arg("preview_time", request.form.get('preview_time'))
-        
-        # Creator and version (difficulty name)
-        mapper_name = request.form.get('mapper_name')
-        mapper_id = request.form.get('mapper_id')
-        model = request.form.get('model', 'v30').upper()
-        if mapper_name:
-            add_arg("creator", mapper_name)
-        else:
-            add_arg("creator", f"Mapperatorinator {model}")
-        
-        # Generate version (difficulty name) from stars and mapper
-        difficulty = request.form.get('difficulty')
-        if difficulty:
-            stars = float(difficulty)
-            base_diff = 'Easy' if stars < 2.0 else 'Normal' if stars < 2.7 else 'Hard' if stars < 4.0 else 'Insane' if stars < 5.3 else 'Expert' if stars < 6.5 else 'Expert+'
-            if mapper_name and mapper_id:
-                version = f"{mapper_name}'s {base_diff}"
-            else:
-                version = base_diff
-            add_arg("version", version)
-
-        # Timing and segmentation
-        for param in ['start_time', 'end_time']:
-            add_arg(param, request.form.get(param))
-
-        # Checkboxes
-        if 'export_osz' in request.form:
-            cmd.append("export_osz=true")
-        else :
-            cmd.append("export_osz=false")
-        # Only enable add_to_beatmap and overwrite_reference_beatmap if beatmap_path is provided
-        if 'add_to_beatmap' in request.form and beatmap_path:
-            cmd.append("add_to_beatmap=true")
-        else:
-            cmd.append("add_to_beatmap=false")
-        if 'overwrite_reference_beatmap' in request.form and beatmap_path:
-            cmd.append("overwrite_reference_beatmap=true")
-        else:
-            cmd.append("overwrite_reference_beatmap=false")
-        if 'hitsounded' in request.form:
-            cmd.append("hitsounded=true")
-        else:
-            cmd.append("hitsounded=false")
-        if 'super_timing' in request.form:
-            cmd.append("super_timing=true")
-        else:
-            cmd.append("super_timing=false")
-
-        # Descriptors
-        descriptors = request.form.getlist('descriptors')
-        add_list_arg("descriptors", descriptors)
-
-        # Negative Descriptors
-        negative_descriptors = request.form.getlist('negative_descriptors')
-        add_list_arg("negative_descriptors", negative_descriptors)
-
-        # In-Context Options
-        in_context_options = request.form.getlist('in_context_options')
-        if in_context_options and beatmap_path:  # Only add if not empty
-            add_list_arg("in_context", in_context_options)
-        # --- End Command List Construction ---
-
-        print("Executing Command List (shell=False):", cmd)
-
+    # In-context options
+    in_context_options = request.form.getlist('in_context_options')
+    if in_context_options and cfg.beatmap_path:
         try:
-            # Start the inference process without shell=True
-            current_process = subprocess.Popen(
-                cmd,  # Pass the list directly
-                shell=False,  # Explicitly False (default)
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,  # Combine stdout and stderr
-                bufsize=1,
-                universal_newlines=True,
-                encoding='utf-8',
-                errors='replace'
-            )
-            print(f"Started process with PID: {current_process.pid}")
-            # Return success to the AJAX call
-            return jsonify({"status": "success", "message": "Inference started"}), 202  # Accepted
-
+            cfg.in_context = [ContextType[opt] for opt in in_context_options]
         except Exception as e:
-            print(f"Error starting subprocess: {e}")
-            current_process = None
-            return jsonify({"status": "error", "message": f"Failed to start process: {e}"}), 500
+            traceback.print_exc()
+            return jsonify({"status": "error", "message": f"Invalid in-context options: {e}"}), 400
+
+    # Validate and compile args
+    try:
+        compile_args(cfg, verbose=False)
+    except ValueError as ve:
+        traceback.print_exc()
+        return jsonify({"status": "error", "message": str(ve)}), 400
+
+    # Ensure a shared server is running, owned by web UI.
+    try:
+        _ensure_inference_server(cfg)
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"status": "error", "message": f"Failed to ensure inference server: {e}"}), 500
+
+    # Spawn the worker process.
+    try:
+        q = mp.Queue()
+        p = mp.Process(target=_inference_worker, args=(cfg, q), daemon=True)
+        p.start()
+
+        with process_lock:
+            processes[job_id] = {"process": p, "queue": q}
+
+        return jsonify({"status": "success", "message": "Inference started", "job_id": job_id}), 202
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"status": "error", "message": f"Failed to start process: {e}"}), 500
 
 
 @app.route('/stream_output')
 def stream_output():
     """Streams the output of the running inference process using SSE."""
 
-    def generate():
-        global current_process, beatmapset_enabled, beatmapset_files, beatmapset_audio_path, beatmapset_output_dir
-        process_to_stream = None
-        client_disconnected = False  # Track if client disconnected to avoid yielding in finally
+    job_id = request.args.get('job_id', '').strip()
+    if not job_id:
+        return Response("event: end\ndata: Missing job_id\n\n", mimetype='text/event-stream')
 
-        # Short lock to safely get the process object
+    def generate():
         with process_lock:
-            if current_process and current_process.poll() is None:
-                process_to_stream = current_process
-                print(f"Attempting to stream output for PID: {process_to_stream.pid}")
-            else:
-                # Handle case where process is already finished or never started
-                print("Stream requested but no active process found or process already finished.")
+            rec = processes.get(job_id)
+            if not rec:
                 yield "event: end\ndata: No active process or process already finished\n\n"
                 return
+            proc = rec["process"]
+            q = rec["queue"]
 
-        # If we got a process, proceed with streaming
-        if process_to_stream:
-            print(f"Streaming output for PID: {process_to_stream.pid}")
-            full_output_lines = []
-            error_occurred = False
-            log_filepath = None
-            generated_osu_path = None  # Track the actual generated .osu file path
-            generated_osz_path = None  # Track the actual generated .osz file path
+        full_output_lines = []
+        error_occurred = False
+        exit_code = None
 
-            try:
-                # Stream lines from stdout
-                for line in iter(process_to_stream.stdout.readline, ""):
-                    full_output_lines.append(line)
-                    try:
-                        yield f"data: {line.rstrip()}\n\n"
-                    except GeneratorExit:
-                        # Client disconnected (e.g., window closed), exit gracefully
-                        print(f"Client disconnected during streaming for PID {process_to_stream.pid}")
-                        client_disconnected = True
-                        raise  # Re-raise to trigger cleanup without yielding
-                    sys.stdout.flush()  # Ensure data is sent
-                    
-                    # Parse the actual generated file path from inference.py output
-                    # inference.py prints: "Generated beatmap saved to {result_path}"
-                    # and optionally: "Generated .osz saved to {osz_path}"
-                    stripped_line = line.strip()
-                    if stripped_line.startswith("Generated beatmap saved to "):
-                        generated_osu_path = stripped_line.replace("Generated beatmap saved to ", "").strip()
-                        print(f"[stream_output] Captured generated .osu path: {generated_osu_path}")
-                    elif stripped_line.startswith("Generated .osz saved to "):
-                        generated_osz_path = stripped_line.replace("Generated .osz saved to ", "").strip()
-                        print(f"[stream_output] Captured generated .osz path: {generated_osz_path}")
+        try:
+            while True:
+                try:
+                    item = q.get(timeout=0.2)
+                except queue_mod.Empty:
+                    if not proc.is_alive():
+                        # Process died without sending sentinel.
+                        exit_code = proc.exitcode
+                        break
+                    continue
 
-                # --- Process finished, check status ---
-                process_to_stream.stdout.close()  # Close the pipe
-                return_code = process_to_stream.wait()  # Wait for process to terminate fully
-                print(f"Process {process_to_stream.pid} finished streaming with exit code: {return_code}")
+                if isinstance(item, dict) and item.get("_event") == "exit":
+                    exit_code = item.get("code", 0)
+                    break
 
-                if return_code != 0:
-                    error_occurred = True
-                    print(f"Non-zero exit code ({return_code}) detected for PID {process_to_stream.pid}. Marking as error.")
-                else:
-                    # --- Post-process output file after successful generation ---
-                    # Use the actual generated file path instead of the output directory
-                    actual_output_file = generated_osu_path
-                    audio_path = last_form_data.get('audio_path', '') if last_form_data else ''
-                    
-                    if actual_output_file and os.path.isfile(actual_output_file):
-                        final_path = actual_output_file
-                        
-                        # --- Rename output file if QUEUE_FEATURES_AVAILABLE ---
-                        if QUEUE_FEATURES_AVAILABLE and last_form_data:
-                            try:
-                                mapper_name = last_form_data.get('mapper_name', '')
-                                mapper_id = last_form_data.get('mapper_id', '')
-                                diff_name = last_form_data.get('diff_name', '')
-                                detected_artist = last_form_data.get('detected_artist', '')
-                                detected_title = last_form_data.get('detected_title', '')
-                                
-                                # Get artist/title from the beatmap file if not in form data
-                                artist = detected_artist
-                                title = detected_title
-                                if not artist or not title:
-                                    try:
-                                        with open(actual_output_file, 'r', encoding='utf-8', errors='ignore') as f:
-                                            for bm_line in f:
-                                                if bm_line.startswith('Artist:') and not artist:
-                                                    artist = bm_line.split(':', 1)[1].strip()
-                                                elif bm_line.startswith('Title:') and not title:
-                                                    title = bm_line.split(':', 1)[1].strip()
-                                                if artist and title:
-                                                    break
-                                    except Exception as read_e:
-                                        print(f"Warning: Could not read artist/title from beatmap: {read_e}")
-                                
-                                artist = artist or "Unknown Artist"
-                                title = title or "Unknown Title"
-                                
-                                # Determine creator name
-                                creator = mapper_name
-                                if not creator and mapper_id:
-                                    # Try to get mapper name from API
-                                    try:
-                                        creator = lookup_username(mapper_id)
-                                    except Exception:
-                                        pass
-                                creator = creator or f"Mapperatorinator {last_form_data.get('model', 'V30').upper()}"
-                                
-                                # Determine difficulty name
-                                difficulty = diff_name
-                                if not difficulty:
-                                    star_rating = float(last_form_data.get('difficulty', 5.0))
-                                    if star_rating < 2.0:
-                                        base_diff = "Easy"
-                                    elif star_rating < 2.7:
-                                        base_diff = "Normal"
-                                    elif star_rating < 4.0:
-                                        base_diff = "Hard"
-                                    elif star_rating < 5.3:
-                                        base_diff = "Insane"
-                                    elif star_rating < 6.5:
-                                        base_diff = "Expert"
-                                    else:
-                                        base_diff = "Expert+"
-                                    
-                                    # Format like "mapper's Expert" if we have a mapper
-                                    if mapper_name or mapper_id:
-                                        mapper_display = mapper_name or creator
-                                        if mapper_display.endswith('s') or mapper_display.endswith('S'):
-                                            difficulty = f"{mapper_display}' {base_diff}"
-                                        else:
-                                            difficulty = f"{mapper_display}'s {base_diff}"
-                                    else:
-                                        difficulty = base_diff
-                                
-                                # Rename the file
-                                new_path = rename_output(
-                                    old_path=actual_output_file,
-                                    artist=artist,
-                                    title=title,
-                                    creator=creator,
-                                    difficulty=difficulty
-                                )
-                                
-                                if new_path != actual_output_file:
-                                    print(f"Renamed output file to: {new_path}")
-                                    try:
-                                        yield f"event: renamed\ndata: {new_path.replace(os.sep, '/')}\n\n"
-                                    except GeneratorExit:
-                                        print(f"Client disconnected during rename event")
-                                        client_disconnected = True
-                                        raise  # Re-raise to trigger cleanup without yielding
-                                    final_path = new_path
-                                    
-                            except Exception as rename_e:
-                                print(f"Warning: Could not rename output file: {rename_e}")
-                        
-                        # --- Apply preview time and background if set ---
-                        if last_form_data:
-                            preview_time = last_form_data.get('preview_time', '')
-                            background_path = last_form_data.get('background_path', '')
-                            
-                            if preview_time or background_path:
-                                apply_beatmap_customizations(final_path, preview_time, background_path)
-                        
-                        # --- Add to beatmap set if enabled (ALWAYS, even without "Compile as Beatmap Set") ---
-                        # This ensures the file is properly tracked and available immediately
-                        if beatmapset_enabled:
-                            beatmapset_files.append(final_path)
-                            if not beatmapset_audio_path and audio_path:
-                                beatmapset_audio_path = audio_path
-                            if not beatmapset_output_dir:
-                                beatmapset_output_dir = os.path.dirname(final_path)
-                            print(f"Added to beatmap set: {final_path} (total: {len(beatmapset_files)})")
-                        
-                        # Send the final file path to the frontend so it knows where the file is
-                        try:
-                            yield f"event: file_ready\ndata: {final_path.replace(os.sep, '/')}\n\n"
-                        except GeneratorExit:
-                            print(f"Client disconnected during file_ready event")
-                            client_disconnected = True
-                            raise  # Re-raise to trigger cleanup without yielding
-                    else:
-                        print(f"Warning: Generated file not found or path not captured. Path: {actual_output_file}")
+                line = str(item)
+                full_output_lines.append(line + "\n")
+                yield f"data: {line.rstrip()}\n\n"
+                sys.stdout.flush()
 
-            except GeneratorExit:
-                # Client disconnected - do cleanup without yielding
-                print(f"Client disconnected (GeneratorExit) for PID {process_to_stream.pid}")
-                client_disconnected = True
-                # Cleanup will happen in finally block
-            except Exception as e:
-                print(f"Error during streaming for PID {process_to_stream.pid}: {e}")
-                error_occurred = True
-                full_output_lines.append(f"\n--- STREAMING ERROR ---\n{e}\n")
-            finally:
-                # --- Log Saving Logic (if error occurred) ---
-                if error_occurred and not client_disconnected:
-                    try:
-                        log_dir = os.path.join(script_dir, 'logs')
-                        os.makedirs(log_dir, exist_ok=True)
-                        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-                        log_filename = f"error_{process_to_stream.pid}_{timestamp}.log"
-                        log_filepath = os.path.join(log_dir, log_filename)
-                        error_content = "".join(full_output_lines)
-
-                        with open(log_filepath, 'w', encoding='utf-8') as f:
-                            f.write(error_content)
-                        print(f"Error log saved for PID {process_to_stream.pid} to: {log_filepath}")
-                        try:
-                            yield f"event: error_log\ndata: {log_filepath.replace(os.sep, '/')}\n\n"
-                        except GeneratorExit:
-                            client_disconnected = True  # Don't yield anymore
-
-                    except Exception as log_e:
-                        print(f"FATAL: Could not write error log for PID {process_to_stream.pid}: {log_e}")
-
-                # --- Standard End Event (only if client still connected) ---
-                if not client_disconnected:
-                    completion_message = "Process completed"
-                    if error_occurred:
-                        completion_message += " with errors"
-                    try:
-                        yield f"event: end\ndata: {completion_message}\n\n"
-                    except GeneratorExit:
-                        client_disconnected = True  # Don't yield anymore
-                    print(f"Finished streaming for PID: {process_to_stream.pid}. Sent 'end' event.")
-                else:
-                    print(f"Finished streaming for PID: {process_to_stream.pid}. Client disconnected, skipped 'end' event.")
-
-                # --- Cleanup global process reference ---
+            # Determine error state.
+            if exit_code and exit_code != 0:
                 with process_lock:
-                    if current_process == process_to_stream:
-                        current_process = None
-                        print("Cleared global current_process reference.")
-                    else:
-                        print(f"Stale process {process_to_stream.pid} finished streaming, global reference was already updated/cleared.")
+                    was_cancelled = job_id in cancelled_jobs
+                    cancelled_jobs.discard(job_id)
+                if was_cancelled:
+                    error_occurred = False
+                else:
+                    error_occurred = True
+        except Exception as e:
+            error_occurred = True
+            full_output_lines.append(f"\n--- STREAMING ERROR ---\n{e}\n")
+        finally:
+            # Save logs on error (same behavior as before).
+            if error_occurred:
+                try:
+                    log_dir = os.path.join(script_dir, 'logs')
+                    os.makedirs(log_dir, exist_ok=True)
+                    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+                    pid = proc.pid if proc is not None else 0
+                    log_filename = f"error_{pid}_{timestamp}.log"
+                    log_filepath = os.path.join(log_dir, log_filename)
+                    error_content = "".join(full_output_lines)
+
+                    with open(log_filepath, 'w', encoding='utf-8') as f:
+                        f.write(error_content)
+                    yield f"event: error_log\ndata: {log_filepath.replace(os.sep, '/')}\n\n"
+                except Exception:
+                    pass
+
+            completion_message = "Process completed"
+            if error_occurred:
+                completion_message += " with errors"
+            yield f"event: end\ndata: {completion_message}\n\n"
+
+            # Cleanup.
+            with process_lock:
+                processes.pop(job_id, None)
+                cancelled_jobs.discard(job_id)
 
     return Response(generate(), mimetype='text/event-stream')
 
@@ -735,371 +525,57 @@ def stream_output():
 @app.route('/cancel_inference', methods=['POST'])
 def cancel_inference():
     """Attempts to terminate the currently running inference process."""
-    global current_process, queue_cancelled
-    message = ""
-    success = False
-    status_code = 500
-    
-    # Check if we should also cancel the queue
-    clear_queue = request.json.get('clear_queue', False) if request.is_json else False
+    global queue_cancelled
+
+    # Support both form data and JSON
+    if request.is_json:
+        data = request.json or {}
+        job_id = data.get('job_id', '').strip() if data.get('job_id') else ''
+        clear_queue = data.get('clear_queue', False)
+    else:
+        job_id = request.form.get('job_id', '').strip()
+        clear_queue = False
+
     if clear_queue:
         queue_cancelled = True
 
-    with process_lock:
-        if current_process and current_process.poll() is None:
-            try:
-                pid = current_process.pid
-                print(f"Attempting to terminate process PID: {pid}...")
-                
-                # On Windows, use taskkill to kill the process tree
-                if sys.platform == 'win32':
+    # If no specific job_id, cancel all running jobs
+    if not job_id:
+        with process_lock:
+            if not processes:
+                msg = "Queue cancelled." if clear_queue else "No active processes"
+                return jsonify({"status": "success" if clear_queue else "error", "message": msg}), 200 if clear_queue else 404
+            for jid, rec in list(processes.items()):
+                proc = rec["process"]
+                if proc.is_alive():
+                    cancelled_jobs.add(jid)
                     try:
-                        import subprocess as sp
-                        sp.run(['taskkill', '/F', '/T', '/PID', str(pid)], 
-                               capture_output=True, check=False)
-                        print(f"Process tree PID: {pid} killed with taskkill.")
-                        message = "Cancel request sent, process tree terminated."
-                    except Exception as taskkill_error:
-                        print(f"taskkill failed: {taskkill_error}, falling back to terminate()")
-                        current_process.terminate()
-                        message = "Cancel request sent. Process termination might take a moment."
-                else:
-                    # On Unix, use process group kill
-                    try:
-                        import os as os_mod
-                        os_mod.killpg(os_mod.getpgid(pid), signal.SIGTERM)
-                        print(f"Process group PID: {pid} terminated with SIGTERM.")
-                        message = "Cancel request sent, process group terminated."
+                        if sys.platform == 'win32':
+                            subprocess.run(['taskkill', '/F', '/T', '/PID', str(proc.pid)], capture_output=True, timeout=5)
+                        else:
+                            proc.terminate()
                     except Exception:
-                        current_process.terminate()
-                        message = "Cancel request sent. Process termination might take a moment."
-                
-                # Wait briefly to see if it terminates
-                try:
-                    current_process.wait(timeout=1)
-                    print(f"Process PID: {pid} terminated successfully after request.")
-                except subprocess.TimeoutExpired:
-                    print(f"Process PID: {pid} did not terminate immediately.")
+                        pass
+        return jsonify({"status": "success", "message": "Cancel request sent"}), 200
 
-                success = True
-                status_code = 200
-                # DO NOT set current_process = None here. Let the stream generator handle it.
+    with process_lock:
+        rec = processes.get(job_id)
+        if not rec:
+            return jsonify({"status": "error", "message": "No active process found"}), 404
+        proc = rec["process"]
+
+        if proc.is_alive():
+            cancelled_jobs.add(job_id)
+            try:
+                if sys.platform == 'win32':
+                    subprocess.run(['taskkill', '/F', '/T', '/PID', str(proc.pid)], capture_output=True, timeout=5)
+                else:
+                    proc.terminate()
+                return jsonify({"status": "success", "message": "Cancel request sent"}), 200
             except Exception as e:
-                print(f"Error terminating process: {e}")
-                message = f"Error occurred during cancellation: {e}"
-                success = False
-                status_code = 500
-        elif current_process:
-            message = "Process already finished."
-            success = True if clear_queue else False
-            status_code = 200 if clear_queue else 409
-        else:
-            message = "No process is currently running."
-            if clear_queue:
-                message = "Queue cancelled. No process was running."
-                success = True
-                status_code = 200
-            else:
-                success = False
-                status_code = 404
+                return jsonify({"status": "error", "message": f"Failed to terminate process: {e}"}), 500
 
-    response_data = {"status": "success" if success else "error", "message": message}
-    if clear_queue:
-        response_data["queue_cleared"] = True
-    return jsonify(response_data), status_code
-
-
-@app.route('/queue_status', methods=['GET', 'POST'])
-def queue_status():
-    """Get or set the queue cancellation status."""
-    global queue_cancelled
-    
-    if request.method == 'POST':
-        data = request.json or {}
-        if 'cancelled' in data:
-            queue_cancelled = data['cancelled']
-            return jsonify({"status": "success", "cancelled": queue_cancelled})
-        return jsonify({"status": "error", "message": "Missing 'cancelled' field"}), 400
-    
-    # GET - return current status
-    return jsonify({
-        "cancelled": queue_cancelled,
-        "process_running": current_process is not None and current_process.poll() is None
-    })
-
-
-@app.route('/reset_queue', methods=['POST'])
-def reset_queue():
-    """Reset the queue cancellation flag (called when starting a new queue)."""
-    global queue_cancelled
-    queue_cancelled = False
-    return jsonify({"status": "success", "message": "Queue reset"})
-
-
-@app.route('/get_audio_info', methods=['POST'])
-def get_audio_info():
-    """Get audio file info and return a URL for playback."""
-    data = request.get_json() or {}
-    audio_path = data.get('path', '')
-    
-    if not audio_path or not os.path.exists(audio_path):
-        return jsonify({"success": False, "message": "Audio file not found"})
-    
-    try:
-        # Return a URL that serves the audio file
-        # We'll create a route to serve audio files
-        return jsonify({
-            "success": True,
-            "url": f"/serve_audio?path={audio_path}",
-            "duration": None  # Could add duration detection if needed
-        })
-    except Exception as e:
-        return jsonify({"success": False, "message": str(e)})
-
-
-@app.route('/serve_audio', methods=['GET'])
-def serve_audio():
-    """Serve an audio file for preview playback with Range request support for seeking."""
-    audio_path = request.args.get('path', '')
-    
-    if not audio_path or not os.path.exists(audio_path):
-        return "Audio file not found", 404
-    
-    # Determine content type
-    ext = os.path.splitext(audio_path)[1].lower()
-    content_types = {
-        '.mp3': 'audio/mpeg',
-        '.ogg': 'audio/ogg',
-        '.wav': 'audio/wav',
-        '.flac': 'audio/flac',
-        '.m4a': 'audio/mp4'
-    }
-    content_type = content_types.get(ext, 'audio/mpeg')
-    
-    # Get file size
-    file_size = os.path.getsize(audio_path)
-    
-    # Check for Range header (needed for seeking)
-    range_header = request.headers.get('Range', None)
-    
-    if range_header:
-        # Parse Range header (e.g., "bytes=0-" or "bytes=1000-2000")
-        byte_start = 0
-        byte_end = file_size - 1
-        
-        range_match = range_header.replace('bytes=', '').split('-')
-        if range_match[0]:
-            byte_start = int(range_match[0])
-        if len(range_match) > 1 and range_match[1]:
-            byte_end = int(range_match[1])
-        
-        # Ensure valid range
-        byte_end = min(byte_end, file_size - 1)
-        content_length = byte_end - byte_start + 1
-        
-        def generate_range():
-            with open(audio_path, 'rb') as f:
-                f.seek(byte_start)
-                remaining = content_length
-                while remaining > 0:
-                    chunk_size = min(8192, remaining)
-                    chunk = f.read(chunk_size)
-                    if not chunk:
-                        break
-                    remaining -= len(chunk)
-                    yield chunk
-        
-        # Return 206 Partial Content
-        response = Response(
-            generate_range(),
-            status=206,
-            mimetype=content_type,
-            direct_passthrough=True
-        )
-        response.headers['Content-Range'] = f'bytes {byte_start}-{byte_end}/{file_size}'
-        response.headers['Accept-Ranges'] = 'bytes'
-        response.headers['Content-Length'] = content_length
-        return response
-    else:
-        # No Range header - return full file
-        def generate():
-            with open(audio_path, 'rb') as f:
-                while chunk := f.read(8192):
-                    yield chunk
-        
-        response = Response(generate(), mimetype=content_type)
-        response.headers['Accept-Ranges'] = 'bytes'
-        response.headers['Content-Length'] = file_size
-        return response
-
-
-@app.route('/get_image_preview', methods=['POST'])
-def get_image_preview():
-    """Get base64 encoded image preview for background."""
-    import base64
-    
-    data = request.get_json() or {}
-    image_path = data.get('path', '')
-    
-    if not image_path or not os.path.exists(image_path):
-        return jsonify({"success": False, "message": "Image file not found"})
-    
-    try:
-        ext = os.path.splitext(image_path)[1].lower()
-        if ext not in ['.jpg', '.jpeg', '.png', '.gif', '.bmp']:
-            return jsonify({"success": False, "message": "Unsupported image format"})
-        
-        with open(image_path, 'rb') as f:
-            image_data = base64.b64encode(f.read()).decode('utf-8')
-        
-        type_map = {'.jpg': 'jpeg', '.jpeg': 'jpeg', '.png': 'png', '.gif': 'gif', '.bmp': 'bmp'}
-        image_type = type_map.get(ext, 'jpeg')
-        
-        return jsonify({
-            "success": True,
-            "data": image_data,
-            "type": image_type
-        })
-    except Exception as e:
-        return jsonify({"success": False, "message": str(e)})
-
-
-@app.route('/preview_background', methods=['GET'])
-def preview_background():
-    """Serve background image for queue item preview."""
-    from flask import send_file
-    
-    image_path = request.args.get('path', '')
-    
-    if not image_path or not os.path.exists(image_path):
-        # Return a 1x1 transparent pixel as fallback
-        from io import BytesIO
-        transparent_pixel = b'\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x06\x00\x00\x00\x1f\x15\xc4\x89\x00\x00\x00\nIDATx\x9cc\x00\x01\x00\x00\x05\x00\x01\r\n-\xb4\x00\x00\x00\x00IEND\xaeB`\x82'
-        return send_file(BytesIO(transparent_pixel), mimetype='image/png')
-    
-    try:
-        ext = os.path.splitext(image_path)[1].lower()
-        mime_types = {'.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png', '.gif': 'image/gif', '.bmp': 'image/bmp'}
-        mimetype = mime_types.get(ext, 'image/jpeg')
-        
-        return send_file(image_path, mimetype=mimetype)
-    except Exception:
-        # Return transparent pixel on error
-        from io import BytesIO
-        transparent_pixel = b'\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x06\x00\x00\x00\x1f\x15\xc4\x89\x00\x00\x00\nIDATx\x9cc\x00\x01\x00\x00\x05\x00\x01\r\n-\xb4\x00\x00\x00\x00IEND\xaeB`\x82'
-        return send_file(BytesIO(transparent_pixel), mimetype='image/png')
-
-
-# Beatmap set compilation state
-beatmapset_enabled = False
-beatmapset_files = []
-beatmapset_audio_path = None
-beatmapset_background_path = None
-beatmapset_output_dir = None
-
-
-@app.route('/init_beatmapset', methods=['POST'])
-def init_beatmapset():
-    """Initialize beatmap set compilation for a queue run."""
-    global beatmapset_enabled, beatmapset_files, beatmapset_audio_path, beatmapset_background_path, beatmapset_output_dir
-    data = request.get_json() or {}
-    beatmapset_enabled = data.get('enabled', False)
-    beatmapset_files = []
-    beatmapset_audio_path = None
-    beatmapset_background_path = None
-    beatmapset_output_dir = None
-    return jsonify({"status": "success", "enabled": beatmapset_enabled})
-
-
-@app.route('/add_to_beatmapset', methods=['POST'])
-def add_to_beatmapset():
-    """Add a generated .osu file to the beatmap set."""
-    global beatmapset_files, beatmapset_audio_path, beatmapset_background_path, beatmapset_output_dir
-    if not beatmapset_enabled:
-        return jsonify({"status": "skipped", "message": "Beatmap set compilation not enabled"})
-    
-    data = request.get_json() or {}
-    osu_file = data.get('osu_file')
-    audio_path = data.get('audio_path')
-    background_path = data.get('background_path')
-    output_dir = data.get('output_dir')
-    
-    if osu_file and os.path.exists(osu_file):
-        beatmapset_files.append(osu_file)
-        if not beatmapset_audio_path and audio_path:
-            beatmapset_audio_path = audio_path
-        if not beatmapset_background_path and background_path:
-            beatmapset_background_path = background_path
-        if not beatmapset_output_dir and output_dir:
-            beatmapset_output_dir = output_dir
-    
-    return jsonify({"status": "success", "files_count": len(beatmapset_files)})
-
-
-@app.route('/finalize_beatmapset', methods=['POST'])
-def finalize_beatmapset():
-    """Compile all collected .osu files into a single .osz beatmap set."""
-    global beatmapset_enabled, beatmapset_files, beatmapset_audio_path, beatmapset_background_path, beatmapset_output_dir
-    
-    if not beatmapset_enabled or len(beatmapset_files) == 0:
-        return jsonify({"success": False, "message": "No files to compile"})
-    
-    try:
-        import zipfile
-        import shutil
-        
-        # Determine output directory
-        output_dir = beatmapset_output_dir or os.path.dirname(beatmapset_files[0])
-        
-        # Get metadata from first .osu file to name the osz
-        first_osu = beatmapset_files[0]
-        artist = "Unknown"
-        title = "Unknown"
-        
-        try:
-            with open(first_osu, 'r', encoding='utf-8') as f:
-                for line in f:
-                    if line.startswith('Artist:'):
-                        artist = line.split(':', 1)[1].strip()
-                    elif line.startswith('Title:'):
-                        title = line.split(':', 1)[1].strip()
-                    if artist != "Unknown" and title != "Unknown":
-                        break
-        except Exception as e:
-            print(f"Error reading metadata from .osu file: {e}")
-        
-        # Create osz filename
-        safe_artist = "".join(c for c in artist if c.isalnum() or c in " -_").strip()
-        safe_title = "".join(c for c in title if c.isalnum() or c in " -_").strip()
-        osz_name = f"{safe_artist} - {safe_title}.osz"
-        osz_path = os.path.join(output_dir, osz_name)
-        
-        # Create the .osz (which is just a .zip)
-        with zipfile.ZipFile(osz_path, 'w', zipfile.ZIP_DEFLATED) as zf:
-            # Add all .osu files
-            for osu_file in beatmapset_files:
-                zf.write(osu_file, os.path.basename(osu_file))
-            
-            # Add audio file if exists
-            if beatmapset_audio_path and os.path.exists(beatmapset_audio_path):
-                zf.write(beatmapset_audio_path, os.path.basename(beatmapset_audio_path))
-            
-            # Add background image if exists
-            if beatmapset_background_path and os.path.exists(beatmapset_background_path):
-                zf.write(beatmapset_background_path, os.path.basename(beatmapset_background_path))
-        
-        # Reset state
-        beatmapset_enabled = False
-        beatmapset_files = []
-        beatmapset_audio_path = None
-        beatmapset_background_path = None
-        beatmapset_output_dir = None
-        
-        return jsonify({"success": True, "filename": osz_name, "path": osz_path})
-        
-    except Exception as e:
-        print(f"Error creating beatmap set: {e}")
-        return jsonify({"success": False, "message": str(e)})
+    return jsonify({"status": "success", "message": "Process already finished"}), 200
 
 
 @app.route('/open_folder', methods=['GET'])
@@ -1203,38 +679,9 @@ def save_config():
         })
 
 
-# ═══════════════════════════════════════════════════════════════════════
-#  QUEUE SYSTEM ROUTES
-# ═══════════════════════════════════════════════════════════════════════
-
-@app.route("/lookup_mapper_name", methods=["POST"])
-def api_lookup_mapper():
-    """Look up mapper username by scraping public osu! profile page."""
-    data = request.get_json() or {}
-    mapper_id = data.get("mapper_id")
-    print(f"[lookup_mapper] Received request for mapper_id: {mapper_id}")
-
-    if not mapper_id:
-        return jsonify({"error": "mapper_id required"}), 400
-
-    if not QUEUE_FEATURES_AVAILABLE:
-        print("[lookup_mapper] Queue features not available")
-        return jsonify({"error": "Queue features not available"}), 503
-    
-    try:
-        name = lookup_username(mapper_id)
-        print(f"[lookup_mapper] Result for {mapper_id}: {name}")
-        if not name:
-            return jsonify({"error": "User not found"}), 404
-        return jsonify({"username": name})
-    except Exception as e:
-        print(f"Mapper lookup error: {e}")
-        return jsonify({"error": str(e)}), 500
-
-
 @app.route('/validate_paths', methods=['POST'])
 def validate_paths():
-    """Validates paths, autofills folders, and attempts song detection."""
+    """Validates and autofills missing paths."""
     try:
         # Get paths
         audio_path = request.form.get('audio_path', '').strip()
@@ -1246,36 +693,44 @@ def validate_paths():
         inference_args.beatmap_path = beatmap_path
         inference_args.output_path = output_path
 
-        result = autofill_paths(inference_args)
+        try:
+            compile_args(inference_args, verbose=False)
+        except ValueError as v:
+            return jsonify({
+                'success': False,
+                'autofilled_args': None,
+                'errors': [str(v)]
+            }), 200
 
-        # Attempt song detection only if explicitly requested (with caching)
+        autofilled_args = asdict(inference_args)
+        del autofilled_args['in_context']
+        del autofilled_args['output_type']
+        del autofilled_args['train']
+
+        # Attempt song detection if requested
         detected_artist = None
         detected_title = None
         detect_song = request.form.get('detect_song', 'false').lower() == 'true'
-        
+
         if detect_song and QUEUE_FEATURES_AVAILABLE and inference_args.audio_path:
             actual_audio = inference_args.audio_path
             if os.path.isfile(actual_audio):
-                # Check cache first
                 if actual_audio in song_detection_cache:
                     detected_artist, detected_title = song_detection_cache[actual_audio]
                 else:
                     try:
                         detected_artist, detected_title = identify_song(actual_audio)
-                        # Cache the result (even if None)
                         song_detection_cache[actual_audio] = (detected_artist, detected_title)
                     except Exception as e:
                         print(f"Song detection error: {e}")
                         song_detection_cache[actual_audio] = (None, None)
 
-        # Build response
+        # Return the results
         response_data = {
-            'success': result['success'],
-            'autofilled_audio_path': inference_args.audio_path,
-            'autofilled_output_path': inference_args.output_path,
-            'errors': result['errors']
+            'success': True,
+            'autofilled_args': autofilled_args,
+            'errors': []
         }
-        
         if detected_artist:
             response_data['detected_artist'] = detected_artist
         if detected_title:
@@ -1285,13 +740,193 @@ def validate_paths():
 
     except Exception as e:
         error_msg = f"Error during path validation: {str(e)}"
-        print(f"Path validation error: {error_msg}")
+        print(error_msg)
         return jsonify({
             'success': False,
-            'errors': [error_msg],
-            'autofilled_audio_path': None,
-            'autofilled_output_path': None
+            'autofilled_args': None,
+            'errors': [error_msg]
         }), 500
+
+
+# ═══════════════════════════════════════════════════════════════════════
+#  QUEUE SYSTEM ROUTES
+# ═══════════════════════════════════════════════════════════════════════
+
+@app.route("/lookup_mapper_name", methods=["POST"])
+def api_lookup_mapper():
+    """Look up mapper username by scraping public osu! profile page."""
+    data = request.get_json() or {}
+    mapper_id = data.get("mapper_id")
+    if not mapper_id:
+        return jsonify({"error": "mapper_id required"}), 400
+    if not QUEUE_FEATURES_AVAILABLE:
+        return jsonify({"error": "Queue features not available"}), 503
+    try:
+        name = lookup_username(mapper_id)
+        if not name:
+            return jsonify({"error": "User not found"}), 404
+        return jsonify({"username": name})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/queue_status', methods=['GET', 'POST'])
+def queue_status():
+    """Get or set the queue cancellation status."""
+    global queue_cancelled
+    if request.method == 'POST':
+        data = request.json or {}
+        if 'cancelled' in data:
+            queue_cancelled = data['cancelled']
+            return jsonify({"status": "success", "cancelled": queue_cancelled})
+        return jsonify({"status": "error", "message": "Missing 'cancelled' field"}), 400
+    return jsonify({"cancelled": queue_cancelled})
+
+
+@app.route('/reset_queue', methods=['POST'])
+def reset_queue():
+    """Reset the queue cancellation flag."""
+    global queue_cancelled
+    queue_cancelled = False
+    return jsonify({"status": "success", "message": "Queue reset"})
+
+
+@app.route('/get_audio_info', methods=['POST'])
+def get_audio_info():
+    """Get audio file info and return a URL for playback."""
+    data = request.get_json() or {}
+    audio_path = data.get('path', '')
+    if not audio_path or not os.path.exists(audio_path):
+        return jsonify({"success": False, "message": "Audio file not found"})
+    try:
+        return jsonify({"success": True, "url": f"/serve_audio?path={audio_path}", "duration": None})
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e)})
+
+
+@app.route('/serve_audio', methods=['GET'])
+def serve_audio():
+    """Serve an audio file for preview playback with Range request support."""
+    audio_path = request.args.get('path', '')
+    if not audio_path or not os.path.exists(audio_path):
+        return "Audio file not found", 404
+
+    ext = os.path.splitext(audio_path)[1].lower()
+    content_types = {'.mp3': 'audio/mpeg', '.ogg': 'audio/ogg', '.wav': 'audio/wav', '.flac': 'audio/flac', '.m4a': 'audio/mp4'}
+    content_type = content_types.get(ext, 'audio/mpeg')
+    file_size = os.path.getsize(audio_path)
+    range_header = request.headers.get('Range', None)
+
+    if range_header:
+        byte_start, byte_end = 0, file_size - 1
+        range_match = range_header.replace('bytes=', '').split('-')
+        if range_match[0]:
+            byte_start = int(range_match[0])
+        if len(range_match) > 1 and range_match[1]:
+            byte_end = int(range_match[1])
+        byte_end = min(byte_end, file_size - 1)
+        content_length = byte_end - byte_start + 1
+
+        def generate_range():
+            with open(audio_path, 'rb') as f:
+                f.seek(byte_start)
+                remaining = content_length
+                while remaining > 0:
+                    chunk = f.read(min(8192, remaining))
+                    if not chunk:
+                        break
+                    remaining -= len(chunk)
+                    yield chunk
+
+        response = Response(generate_range(), status=206, mimetype=content_type, direct_passthrough=True)
+        response.headers['Content-Range'] = f'bytes {byte_start}-{byte_end}/{file_size}'
+        response.headers['Accept-Ranges'] = 'bytes'
+        response.headers['Content-Length'] = content_length
+        return response
+    else:
+        def generate():
+            with open(audio_path, 'rb') as f:
+                while chunk := f.read(8192):
+                    yield chunk
+        response = Response(generate(), mimetype=content_type)
+        response.headers['Accept-Ranges'] = 'bytes'
+        response.headers['Content-Length'] = file_size
+        return response
+
+
+@app.route('/get_image_preview', methods=['POST'])
+def get_image_preview():
+    """Get base64 encoded image preview for background."""
+    data = request.get_json() or {}
+    image_path = data.get('path', '')
+    if not image_path or not os.path.exists(image_path):
+        return jsonify({"success": False, "message": "Image file not found"})
+    try:
+        ext = os.path.splitext(image_path)[1].lower()
+        if ext not in ['.jpg', '.jpeg', '.png', '.gif', '.bmp']:
+            return jsonify({"success": False, "message": "Unsupported image format"})
+        with open(image_path, 'rb') as f:
+            image_data = base64.b64encode(f.read()).decode('utf-8')
+        type_map = {'.jpg': 'jpeg', '.jpeg': 'jpeg', '.png': 'png', '.gif': 'gif', '.bmp': 'bmp'}
+        return jsonify({"success": True, "data": image_data, "type": type_map.get(ext, 'jpeg')})
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e)})
+
+
+@app.route('/init_beatmapset', methods=['POST'])
+def init_beatmapset():
+    """Initialize beatmap set compilation for a queue run."""
+    global beatmapset_enabled, beatmapset_files, beatmapset_audio_path, beatmapset_background_path, beatmapset_output_dir
+    data = request.get_json() or {}
+    beatmapset_enabled = data.get('enabled', False)
+    beatmapset_files = []
+    beatmapset_audio_path = None
+    beatmapset_background_path = None
+    beatmapset_output_dir = None
+    return jsonify({"status": "success", "enabled": beatmapset_enabled})
+
+
+@app.route('/finalize_beatmapset', methods=['POST'])
+def finalize_beatmapset():
+    """Compile all collected .osu files into a single .osz beatmap set."""
+    global beatmapset_enabled, beatmapset_files, beatmapset_audio_path, beatmapset_background_path, beatmapset_output_dir
+    import zipfile
+
+    if not beatmapset_enabled or len(beatmapset_files) == 0:
+        return jsonify({"success": False, "message": "No files to compile"})
+    try:
+        output_dir = beatmapset_output_dir or os.path.dirname(beatmapset_files[0])
+        first_osu = beatmapset_files[0]
+        artist, title = "Unknown", "Unknown"
+        try:
+            with open(first_osu, 'r', encoding='utf-8') as f:
+                for line in f:
+                    if line.startswith('Artist:'):
+                        artist = line.split(':', 1)[1].strip()
+                    elif line.startswith('Title:'):
+                        title = line.split(':', 1)[1].strip()
+                    if artist != "Unknown" and title != "Unknown":
+                        break
+        except Exception:
+            pass
+        safe_artist = "".join(c for c in artist if c.isalnum() or c in " -_").strip()
+        safe_title = "".join(c for c in title if c.isalnum() or c in " -_").strip()
+        osz_path = os.path.join(output_dir, f"{safe_artist} - {safe_title}.osz")
+        with zipfile.ZipFile(osz_path, 'w', zipfile.ZIP_DEFLATED) as zf:
+            for osu_file in beatmapset_files:
+                zf.write(osu_file, os.path.basename(osu_file))
+            if beatmapset_audio_path and os.path.exists(beatmapset_audio_path):
+                zf.write(beatmapset_audio_path, os.path.basename(beatmapset_audio_path))
+            if beatmapset_background_path and os.path.exists(beatmapset_background_path):
+                zf.write(beatmapset_background_path, os.path.basename(beatmapset_background_path))
+        beatmapset_enabled = False
+        beatmapset_files = []
+        beatmapset_audio_path = None
+        beatmapset_background_path = None
+        beatmapset_output_dir = None
+        return jsonify({"success": True, "filename": os.path.basename(osz_path), "path": osz_path})
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e)})
 
 
 # --- Function to Run Flask in a Thread ---
@@ -1342,7 +977,7 @@ if __name__ == '__main__':
         screen_height = primary_screen.height
         # Calculate window size (e.g., 45% width, 95% height of primary screen)
         window_width = int(screen_width * 0.45)
-        window_height = int(screen_height * 0.95)
+        window_height = int(screen_height * 0.9)
         print(f"Screen: {screen_width}x{screen_height}, Window: {window_width}x{window_height}")
     except Exception as e:
         print(f"Could not get screen dimensions, using default: {e}")
@@ -1370,30 +1005,8 @@ if __name__ == '__main__':
         js_api=api  # Expose Python API class here
     )
 
-    # Start the pywebview event loop
+    # Start the pywebview event loop (no args needed here now)
     webview.start()
 
     print("Pywebview window closed. Exiting application.")
-    
-    # Cleanup: terminate any running inference process
-    with process_lock:
-        if current_process and current_process.poll() is None:
-            print(f"Terminating running inference process (PID: {current_process.pid})...")
-            try:
-                if sys.platform == 'win32':
-                    # On Windows, use taskkill to kill the entire process tree
-                    import subprocess as sp
-                    sp.run(['taskkill', '/F', '/T', '/PID', str(current_process.pid)], 
-                           capture_output=True, timeout=5)
-                else:
-                    current_process.terminate()
-                    current_process.wait(timeout=3)
-            except Exception as e:
-                print(f"Warning: Could not terminate process cleanly: {e}")
-                try:
-                    current_process.kill()
-                except Exception:
-                    pass
-            print("Inference process terminated.")
-    
     # Flask thread will exit automatically as it's a daemon

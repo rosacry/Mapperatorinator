@@ -157,6 +157,10 @@ class Tokenizer(PushToHubMixin):
                     y_count = y_max - y_min + 1
                     self.event_ranges.append(EventRange(EventType.POS, 0, x_count * y_count - 1))
 
+                    if args.data.position_refinement:
+                        ref_count = p // args.data.position_refinement
+                        self.event_ranges.append(EventRange(EventType.POS_REFINE, 0, ref_count * ref_count - 1))
+
             if 3 in args.data.gamemodes:
                 if args.data.add_keycount_token:
                     self.input_event_ranges.append(EventRange(EventType.MANIA_KEYCOUNT, 1, 18))
@@ -164,7 +168,7 @@ class Tokenizer(PushToHubMixin):
                     self.input_event_ranges.append(EventRange(EventType.HOLD_NOTE_RATIO, -1, 12))
                 self.event_ranges.append(EventRange(EventType.MANIA_COLUMN, 0, 17))
 
-            if 1 in args.data.gamemodes or 3 in args.data.gamemodes:
+            if 1 in args.data.gamemodes or 3 in args.data.gamemodes or args.data.add_sv:
                 if args.data.add_scroll_speed_ratio_token:
                     self.input_event_ranges.append(EventRange(EventType.SCROLL_SPEED_RATIO, -1, 12))
                 self.event_ranges.append(EventRange(EventType.SCROLL_SPEED, 0, 1000))
@@ -198,16 +202,26 @@ class Tokenizer(PushToHubMixin):
             if args.data.add_kiai_special_token or args.data.add_kiai or any(ContextType.KIAI in c["out"] for c in args.data.context_types):
                 self.event_ranges.append(EventRange(EventType.KIAI, 0, 1))
 
+            if args.data.sustain_interval:
+                self.event_ranges.append(EventRange(EventType.SLIDER_SUSTAIN, 0, 0))
+                self.event_ranges.append(EventRange(EventType.SLIDER_REPEAT_SUSTAIN, 0, 0))
+                self.event_ranges.append(EventRange(EventType.SPINNER_SUSTAIN, 0, 0))
+
             if 3 in args.data.gamemodes:
                 self.event_ranges.append(EventRange(EventType.HOLD_NOTE, 0, 0))
                 self.event_ranges.append(EventRange(EventType.HOLD_NOTE_END, 0, 0))
                 self.event_ranges.append(EventRange(EventType.SCROLL_SPEED_CHANGE, 0, 0))
+                if args.data.sustain_interval:
+                    self.event_ranges.append(EventRange(EventType.HOLD_NOTE_SUSTAIN, 0, 0))
 
             if 1 in args.data.gamemodes:
                 self.event_ranges.append(EventRange(EventType.DRUMROLL, 0, 0))
                 self.event_ranges.append(EventRange(EventType.DRUMROLL_END, 0, 0))
                 self.event_ranges.append(EventRange(EventType.DENDEN, 0, 0))
                 self.event_ranges.append(EventRange(EventType.DENDEN_END, 0, 0))
+                if args.data.sustain_interval:
+                    self.event_ranges.append(EventRange(EventType.DRUMROLL_SUSTAIN, 0, 0))
+                    self.event_ranges.append(EventRange(EventType.DENDEN_SUSTAIN, 0, 0))
 
         self.event_range: dict[EventType, EventRange] = {er.type: er for er in self.event_ranges} | {er.type: er for er in self.input_event_ranges}
 
@@ -586,16 +600,48 @@ class Tokenizer(PushToHubMixin):
         self.num_descriptor_classes = len(self.descriptor_idx)
 
     def _init_descriptor_idx_mmrs(self, args):
-        # Populate descriptor_idx
-        descriptors = self.metadata["OmdbTags"].explode().dropna().unique()
-        for descriptor_name in descriptors:
-            self.descriptor_idx[descriptor_name] = len(self.descriptor_idx)
+        if args.data.descriptor_source == "omdb":
+            # Populate descriptor_idx
+            descriptors = self.metadata["OmdbTags"].explode().dropna().unique()
+            for descriptor_name in descriptors:
+                self.descriptor_idx[descriptor_name] = len(self.descriptor_idx)
 
-        # Populate beatmap_descriptors
-        self.beatmap_descriptors = (self.metadata.reset_index().set_index(["Id"])["OmdbTags"]
-                                    .apply(lambda x: None if np.count_nonzero(x) == 0 else [self.descriptor_idx[y] for y in x]).dropna().to_dict())
+            # Populate beatmap_descriptors
+            self.beatmap_descriptors = (self.metadata.reset_index().set_index(["Id"])["OmdbTags"]
+                                        .apply(lambda x: None if np.count_nonzero(x) == 0 else [self.descriptor_idx[y] for y in x]).dropna().to_dict())
 
-        self.num_descriptor_classes = len(self.descriptor_idx)
+            self.num_descriptor_classes = len(self.descriptor_idx)
+        elif args.data.descriptor_source == "user_tags":
+            path = Path(args.data.tags_metadata_path)
+
+            if not path.exists():
+                raise ValueError(f"tags_metadata_path {path} not found")
+
+            # The tags metadata file is a JSON file with the following format:
+            #  { "tags": [ { "id": tag_idx, "name": tag_name }, ... ] }
+            with open(path, 'r', encoding="utf-8") as file:
+                data = json.load(file)
+            tags = data["tags"]
+            self.descriptor_idx = {tag["name"]: tag["id"] for tag in tags}
+            self.num_descriptor_classes = max(self.descriptor_idx.values()) + 1
+
+            def filter_tags(row):
+                # Zip the two lists together and keep pairs where count >= 2
+                filtered_pairs = [(t, c) for t, c in zip(row['TopTagIds'], row['TopTagCounts']) if c >= args.data.min_top_tag_count]
+
+                # If no tags remain, return None (to make dropping rows easy)
+                if not filtered_pairs:
+                    return None
+
+                # Unzip the pairs back into two separate lists
+                # noinspection PyArgumentList
+                ids, _ = zip(*filtered_pairs)
+                return list(ids)
+
+            self.beatmap_descriptors = (self.metadata.reset_index().set_index(["Id"])[["TopTagIds", "TopTagCounts"]]
+                                        .apply(filter_tags, axis=1).dropna().to_dict())
+        else:
+            raise ValueError(f"descriptor_source {args.data.descriptor_source} not supported")
 
     def save_pretrained(self, save_directory: str, **kwargs):
         """Save the tokenizer to the given directory as a JSON file."""

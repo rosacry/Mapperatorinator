@@ -1,8 +1,10 @@
 import multiprocessing
 
 import hydra
+import torch
 import tqdm
 from matplotlib import pyplot as plt
+from omegaconf import OmegaConf
 from torch.utils.data import DataLoader
 
 from osuT5.config import TrainConfig
@@ -49,9 +51,20 @@ def play_hs(audio, tokens, sr, tokenizer):
 
     sd.play(audio_with_hits, samplerate=sr)
 
+def _get_token_context( tokens: torch.Tensor, sos, eos, strict=False):
+    """Get the start and end indices of the token context in the given tokens."""
+    start = (tokens == sos).nonzero(as_tuple=True)[0]
+    start = start[0] + 1 if len(start) > 0 else (None if strict else 0)
+    end = (tokens == eos).nonzero(as_tuple=True)[0]
+    end = end[0] if len(end) > 0 else (None if strict else len(tokens))
+    if start is None or end is None:
+        return 0, 0
+    return start, end
 
-@hydra.main(config_path="../configs/osut5", config_name="train_tiny_dist3", version_base="1.1")
+
+@hydra.main(config_path="../configs/train", config_name="v30", version_base="1.1")
 def main(args: TrainConfig):
+    args = OmegaConf.to_object(args)
     setup_args(args)
 
     mgr = multiprocessing.Manager()
@@ -98,12 +111,18 @@ def main(args: TrainConfig):
     if args.mode == 'lengths':
         # Make histogram of the lengths of the sequences
         lengths = []
+        sv_lengths = []
         for b in tqdm.tqdm(dataloader, smoothing=0.01):
             for i in range(len(b["frames"])):  # batch size
                 length = b['decoder_attention_mask'][i].sum().item()
                 lengths.append(length)
+
+                start, end = _get_token_context(b['decoder_input_ids'][i], 7, 8, strict=True)
+                sv_length = end - start
+                sv_lengths.append(sv_length)
+
             shared.current_train_step += 1
-            if len(lengths) > 100000:
+            if len(lengths) > 10000:
                 break
 
         plt.hist(lengths, bins=100)
@@ -125,12 +144,18 @@ def main(args: TrainConfig):
         print(f"Total number of tokens: {sum(lengths)}")
         print(f"Total number of sequences with length 0: {lengths.count(2)}")
 
+        print(f"Max SV length: {max(sv_lengths)}")
+        print(f"Min SV length: {min(sv_lengths)}")
+        print(f"Total number of SV tokens: {sum(sv_lengths)}")
+
+        print(f"Average SV token ratio: {sum(sv_lengths) / sum(lengths)}")
+
     if args.mode == 'plot':
         for b in tqdm.tqdm(dataloader, smoothing=0.01):
             mels = transform(b["frames"])
             # [tokenizer.decode(t) if t > 16 else t for t in b['decoder_input_ids'][3].cpu().numpy()]
             # plot the melspectrogram
-            play_hs(audio, labels, args, tokenizer)
+            # play_hs(audio, labels, args, tokenizer)
             for i in range(len(mels)):
                 fig, ax = plt.subplots(figsize=(12, 6), dpi=200)
                 ax.imshow(mels[i].numpy().T, aspect="auto", origin="lower", norm="log")

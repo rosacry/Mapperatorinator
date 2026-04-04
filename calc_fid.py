@@ -9,6 +9,7 @@ from typing import Optional
 import hydra
 import numpy as np
 import torch
+from omegaconf import OmegaConf
 from scipy import linalg
 from slider import Beatmap, Circle, Slider, Spinner, HoldNote
 from torch.utils.data import DataLoader
@@ -18,14 +19,183 @@ from transformers import AutoProcessor, AutoModel
 from classifier.classify import ExampleDataset
 from classifier.libs.model.model import OsuClassifierOutput
 from classifier.libs.utils import load_ckpt
-from config import FidConfig
-from inference import prepare_args, load_diff_model, generate, load_model_with_server
+from config import FidConfig, InferenceConfig
+from inference import load_diff_model, generate, load_model_with_server, compile_device_and_seed, \
+    setup_inference_environment
 from osuT5.osuT5.dataset.data_utils import load_audio_file, load_mmrs_metadata, filter_mmrs_metadata
 from osuT5.osuT5.inference import generation_config_from_beatmap, beatmap_config_from_beatmap
 from osuT5.osuT5.tokenizer import ContextType
-from multiprocessing import Manager, Process
+from multiprocessing import Process
+
+# Add imports for multiprocessing-safe logging
+import multiprocessing
+from logging.handlers import QueueHandler, QueueListener
 
 logger = logging.getLogger(__name__)
+
+
+# --- Extra metrics helpers (Drain/BPM/SR) ---
+
+def _drain_time_seconds(beatmap: Beatmap, *, break_threshold_seconds: float = 8.0) -> float:
+    """Drain time in seconds.
+
+    Defined as the time between the first and last hit object minus any breaks.
+    Breaks are gaps between consecutive hit object start times larger than `break_threshold_seconds`.
+    """
+    times_ms = [int(obj.time.total_seconds() * 1000) for obj in beatmap.hit_objects(stacking=False)]
+    if len(times_ms) < 2:
+        return 0.0
+
+    times_ms.sort()
+    span_ms = times_ms[-1] - times_ms[0]
+    if span_ms <= 0:
+        return 0.0
+
+    thresh_ms = int(break_threshold_seconds * 1000)
+    break_ms = 0
+    for a, b in zip(times_ms, times_ms[1:]):
+        gap = b - a
+        if gap > thresh_ms:
+            break_ms += gap
+
+    return max(0.0, (span_ms - break_ms) / 1000.0)
+
+
+def _song_length_seconds(beatmap: Beatmap) -> float:
+    """Integration domain length in seconds.
+
+    Uses the last hit object's start time as a proxy for song length.
+    """
+    times = [obj.time.total_seconds() for obj in beatmap.hit_objects(stacking=False)]
+    if not times:
+        return 0.0
+    return max(times)
+
+
+def _timing_points_sorted(beatmap: Beatmap):
+    tps = list(getattr(beatmap, "timing_points", []) or [])
+    tps.sort(key=lambda tp: float(tp.offset.total_seconds()))
+    return tps
+
+
+def _bpm_segments(beatmap: Beatmap) -> list[tuple[float, float]]:
+    """Piecewise-constant BPM segments from uninherited timing points.
+
+    Returns [(start_time_seconds, bpm), ...] sorted by start time.
+    """
+    segs: list[tuple[float, float]] = []
+    for tp in _timing_points_sorted(beatmap):
+        ms_per_beat = getattr(tp, "ms_per_beat", None)
+        if ms_per_beat is None or ms_per_beat <= 0:
+            # ignore inherited/invalid timing points
+            continue
+        bpm = 60000.0 / float(ms_per_beat)
+        segs.append((float(tp.offset.total_seconds()), bpm))
+
+    if not segs:
+        return [(0.0, 0.0)]
+
+    segs.sort(key=lambda x: x[0])
+
+    # If multiple points share the same timestamp, keep the last one.
+    deduped: list[tuple[float, float]] = []
+    for s, bpm in segs:
+        if deduped and abs(deduped[-1][0] - s) < 1e-12:
+            deduped[-1] = (s, bpm)
+        else:
+            deduped.append((s, bpm))
+    return deduped
+
+
+def _bpm_at(segments: list[tuple[float, float]], t: float) -> float:
+    """BPM at time t given piecewise segments [(start, bpm), ...]."""
+    current = segments[0][1]
+    for s, bpm in segments:
+        if s <= t + 1e-12:
+            current = bpm
+        else:
+            break
+    return current
+
+
+def _bpm_mse_for_pair(real: Beatmap, generated: Beatmap) -> tuple[float, float]:
+    """Return (integral_0^L (r(t)-g(t))^2 dt, L) for one pair."""
+    length_s = max(_song_length_seconds(real), _song_length_seconds(generated))
+    if length_s <= 0:
+        return 0.0, 0.0
+
+    r_segs = _bpm_segments(real)
+    g_segs = _bpm_segments(generated)
+
+    change_points = {0.0, float(length_s)}
+    change_points.update(s for s, _ in r_segs if 0.0 <= s <= length_s)
+    change_points.update(s for s, _ in g_segs if 0.0 <= s <= length_s)
+    cps = sorted(change_points)
+
+    integrated = 0.0
+    for a, b in zip(cps, cps[1:]):
+        if b <= a:
+            continue
+        mid = (a + b) / 2.0
+        diff = _bpm_at(r_segs, mid) - _bpm_at(g_segs, mid)
+        integrated += (diff * diff) * (b - a)
+
+    return integrated, float(length_s)
+
+
+def _sr_stars(beatmap_path: Path) -> Optional[float]:
+    """Star rating via rosu_pp_py."""
+    import rosu_pp_py as rosu
+
+    rosu_map = rosu.Beatmap(path=str(beatmap_path))
+    rosu_diff = rosu.Difficulty()
+    attrs = rosu_diff.calculate(rosu_map)
+    return attrs.stars
+
+
+def _configure_generation_log_parent(log_file: Path) -> tuple[QueueListener, multiprocessing.Queue]:
+    """Configure a QueueListener in the parent process that writes generation logs to a file."""
+    log_file.parent.mkdir(parents=True, exist_ok=True)
+
+    queue: multiprocessing.Queue = multiprocessing.Queue(-1)
+
+    file_handler = logging.FileHandler(log_file, mode="a", encoding="utf-8")
+    file_handler.setLevel(logging.INFO)
+    file_handler.setFormatter(
+        logging.Formatter("[%(asctime)s][%(processName)s][%(name)s][%(levelname)s] - %(message)s")
+    )
+
+    listener = QueueListener(queue, file_handler, respect_handler_level=True)
+    listener.start()
+    return listener, queue
+
+
+def _configure_generation_log_worker(queue: multiprocessing.Queue) -> logging.Logger:
+    """Configure the current process to send generation logs to the parent via QueueHandler."""
+    if queue is None:
+        # Fallback: no queue provided (e.g., single-process mode). Log to a local file.
+        gen_logger = logging.getLogger("calc_fid.generation")
+        gen_logger.setLevel(logging.INFO)
+        if not any(isinstance(h, logging.FileHandler) and getattr(h, "baseFilename", "").endswith("generation.log")
+                   for h in gen_logger.handlers):
+            fh = logging.FileHandler("generation.log", mode="a", encoding="utf-8")
+            fh.setFormatter(
+                logging.Formatter("[%(asctime)s][%(processName)s][%(name)s][%(levelname)s] - %(message)s")
+            )
+            gen_logger.addHandler(fh)
+        gen_logger.propagate = False
+        return gen_logger
+
+    gen_logger = logging.getLogger("calc_fid.generation")
+    gen_logger.setLevel(logging.INFO)
+
+    # Avoid duplicates if this function is called more than once in the same process.
+    if not any(isinstance(h, QueueHandler) for h in gen_logger.handlers):
+        gen_logger.addHandler(QueueHandler(queue))
+
+    # Prevent propagation into Hydra/root handlers (keeps calc_fid.log clean).
+    gen_logger.propagate = False
+    return gen_logger
 
 
 def get_beatmap_paths(args: FidConfig) -> list[Path]:
@@ -193,11 +363,11 @@ def get_rhythm(beatmap, passive=False):
     return rhythm
 
 
-def generate_beatmaps(beatmap_paths, fid_args: FidConfig, return_dict, idx):
-    args = fid_args.inference
-    args.device = fid_args.device
+def generate_beatmaps(beatmap_paths, args: InferenceConfig, dataset_type, idx, log_queue=None):
     torch.set_grad_enabled(False)
     torch.set_float32_matmul_precision('high')
+
+    gen_logger = _configure_generation_log_worker(log_queue)
 
     model, tokenizer, diff_model, diff_tokenizer, refine_model = None, None, None, None, None
     model, tokenizer = load_model_with_server(
@@ -207,6 +377,7 @@ def generate_beatmaps(beatmap_paths, fid_args: FidConfig, return_dict, idx):
         max_batch_size=args.max_batch_size,
         use_server=args.use_server,
         precision=args.precision,
+        attn_implementation=args.attn_implementation,
     )
 
     if args.compile:
@@ -226,15 +397,15 @@ def generate_beatmaps(beatmap_paths, fid_args: FidConfig, return_dict, idx):
             beatmap = Beatmap.from_path(beatmap_path)
             output_path = Path("generated") / beatmap_path.stem
 
-            if fid_args.dataset_type == "ors":
+            if dataset_type == "ors":
                 audio_path = beatmap_path.parents[1] / list(beatmap_path.parents[1].glob('audio.*'))[0]
             else:
                 audio_path = beatmap_path.parent / beatmap.audio_filename
 
-            if fid_args.skip_generation or (output_path.exists() and len(list(output_path.glob("*.osu"))) > 0):
+            if output_path.exists() and len(list(output_path.glob("*.osu"))) > 0:
                 if not output_path.exists() or len(list(output_path.glob("*.osu"))) == 0:
                     raise FileNotFoundError(f"Generated beatmap not found in {output_path}")
-                print(f"Skipping {beatmap_path.stem} as it already exists")
+                gen_logger.info("Skipping %s as it already exists", beatmap_path.stem)
             else:
                 if ContextType.GD in args.in_context:
                     other_beatmaps = [k for k in beatmap_path.parent.glob("*.osu") if k != beatmap_path]
@@ -244,7 +415,7 @@ def generate_beatmaps(beatmap_paths, fid_args: FidConfig, return_dict, idx):
                 else:
                     other_beatmap_path = beatmap_path
 
-                generation_config = generation_config_from_beatmap(beatmap, tokenizer)
+                generation_config = generation_config_from_beatmap(beatmap, beatmap_path, tokenizer)
                 beatmap_config = beatmap_config_from_beatmap(beatmap)
                 beatmap_config.version = args.version
 
@@ -264,12 +435,16 @@ def generate_beatmaps(beatmap_paths, fid_args: FidConfig, return_dict, idx):
                     diff_tokenizer=diff_tokenizer,
                     refine_model=refine_model,
                     verbose=False,
+                    logger=gen_logger,
                 )[0]
                 generated_beatmap = Beatmap.parse(result)
-                print(beatmap_path, "Generated %s hit objects" % len(generated_beatmap.hit_objects(stacking=False)))
-        except Exception as e:
-            print(f"Error processing {beatmap_path}: {e}")
-            traceback.print_exc()
+                gen_logger.info(
+                    "%s Generated %s hit objects",
+                    str(beatmap_path),
+                    len(generated_beatmap.hit_objects(stacking=False)),
+                )
+        except Exception:
+            gen_logger.exception("Error processing %s", beatmap_path)
         finally:
             torch.cuda.empty_cache()  # Clear any cached memory
 
@@ -289,7 +464,7 @@ def calculate_metrics(args: FidConfig, beatmap_paths: list[Path]):
     cm3p_model, cm3p_processor = None, None
     if args.fid_cm3p:
         cm3p_processor = AutoProcessor.from_pretrained(args.cm3p_ckpt, trust_remote_code=True, revision="main")
-        cm3p_model = AutoModel.from_pretrained(args.cm3p_ckpt, device_map=args.device, torch_dtype=torch.bfloat16,
+        cm3p_model = AutoModel.from_pretrained(args.cm3p_ckpt, device_map=args.device, dtype=torch.bfloat16,
                                                trust_remote_code=True, revision="main")
 
     real_features = []
@@ -298,6 +473,16 @@ def calculate_metrics(args: FidConfig, beatmap_paths: list[Path]):
     generated_features_cm3p = []
     active_rhythm_stats = {}
     passive_rhythm_stats = {}
+
+    # Extra metrics accumulators
+    drain_se_sum = 0.0
+    drain_n = 0
+
+    bpm_integrated_se_sum = 0.0
+    bpm_length_sum = 0.0
+
+    sr_se_sum = 0.0
+    sr_n = 0
 
     for beatmap_path in tqdm(beatmap_paths, desc=f"Metrics"):
         try:
@@ -310,7 +495,8 @@ def calculate_metrics(args: FidConfig, beatmap_paths: list[Path]):
                 audio_path = beatmap_path.parent / beatmap.audio_filename
 
             if generated_path.exists() and len(list(generated_path.glob("*.osu"))) > 0:
-                generated_beatmap = Beatmap.from_path(list(generated_path.glob("*.osu"))[0])
+                generated_osu_path = list(generated_path.glob("*.osu"))[0]
+                generated_beatmap = Beatmap.from_path(generated_osu_path)
             else:
                 logger.warning(f"Skipping {beatmap_path.stem} as no generated beatmap found")
                 continue
@@ -355,6 +541,28 @@ def calculate_metrics(args: FidConfig, beatmap_paths: list[Path]):
                 real_passive_rhythm = get_rhythm(beatmap, passive=True)
                 generated_passive_rhythm = get_rhythm(generated_beatmap, passive=True)
                 add_to_dict(calculate_rhythm_stats(real_passive_rhythm, generated_passive_rhythm), passive_rhythm_stats)
+
+            if args.extra_stats:
+                # --- Extra metrics per pair ---
+                # Drain time MSE
+                real_drain = _drain_time_seconds(beatmap)
+                gen_drain = _drain_time_seconds(generated_beatmap)
+                drain_diff = real_drain - gen_drain
+                drain_se_sum += float(drain_diff * drain_diff)
+                drain_n += 1
+
+                # BPM MSE (accumulate integral and length so final is sum(integrals)/sum(lengths)
+                integ, length_s = _bpm_mse_for_pair(beatmap, generated_beatmap)
+                bpm_integrated_se_sum += float(integ)
+                bpm_length_sum += float(length_s)
+
+                # SR MSE (rosu)
+                real_sr = _sr_stars(beatmap_path)
+                gen_sr = _sr_stars(generated_osu_path)
+                sr_diff = float(real_sr - gen_sr)
+                sr_se_sum += sr_diff * sr_diff
+                sr_n += 1
+
         except Exception as e:
             print(f"Error processing {beatmap_path}: {e}")
             traceback.print_exc()
@@ -390,6 +598,17 @@ def calculate_metrics(args: FidConfig, beatmap_paths: list[Path]):
         logger.info(f"Passive Rhythm Recall: {passive_recall}")
         logger.info(f"Passive Rhythm F1: {passive_f1}")
 
+    if args.extra_stats:
+        # --- Log extra metrics ---
+        if drain_n > 0:
+            logger.info(f"Drain RMSE: {np.sqrt(drain_se_sum / drain_n)}")
+
+        if bpm_length_sum > 0:
+            logger.info(f"BPM RMSE: {np.sqrt(bpm_integrated_se_sum / bpm_length_sum)}")
+
+        if sr_n > 0:
+            logger.info(f"SR RMSE: {np.sqrt(sr_se_sum / sr_n)}")
+
 
 def test_training_set_overlap(beatmap_paths: list[Path], training_set_ids_path: Optional[str]):
     if training_set_ids_path is None:
@@ -416,7 +635,11 @@ def test_training_set_overlap(beatmap_paths: list[Path], training_set_ids_path: 
 
 @hydra.main(config_path="configs", config_name="calc_fid", version_base="1.1")
 def main(args: FidConfig):
-    prepare_args(args)
+    args: FidConfig = OmegaConf.to_object(args)
+    compile_device_and_seed(args.inference)
+    setup_inference_environment(args.inference.seed)
+    args.device = args.inference.device
+
     print(f"Logging to directory: {os.getcwd()}")
 
     # Fix inference model path
@@ -427,26 +650,34 @@ def main(args: FidConfig):
 
     test_training_set_overlap(beatmap_paths, args.training_set_ids_path)
 
-    if not args.skip_generation:
-        # Assign beatmaps to processes in a round-robin fashion
-        num_processes = args.num_processes
-        chunks = [[] for _ in range(num_processes)]
-        for i, path in enumerate(beatmap_paths):
-            chunks[i % num_processes].append(path)
+    listener = None
+    try:
+        # Configure generation logger (writes to generation.log in the Hydra run dir)
+        listener, log_queue = _configure_generation_log_parent(Path(os.getcwd()) / "generation.log")
 
-        manager = Manager()
-        return_dict = manager.dict()
-        processes = []
+        if not args.skip_generation:
+            # Assign beatmaps to processes in a round-robin fashion
+            num_processes = max(args.num_processes, 1)
+            chunks = [[] for _ in range(num_processes)]
+            for i, path in enumerate(beatmap_paths):
+                chunks[i % num_processes].append(path)
 
-        for i in range(num_processes):
-            p = Process(target=generate_beatmaps, args=(chunks[i], args, return_dict, i))
-            processes.append(p)
-            p.start()
+            if args.num_processes <= 0:
+                generate_beatmaps(chunks[0], args.inference, args.dataset_type, 0, log_queue=log_queue)
+            else:
+                processes = []
+                for i in range(num_processes):
+                    p = Process(target=generate_beatmaps, args=(chunks[i], args.inference, args.dataset_type, i, log_queue))
+                    processes.append(p)
+                    p.start()
 
-        for p in processes:
-            p.join()
+                for p in processes:
+                    p.join()
 
-    calculate_metrics(args, beatmap_paths)
+        calculate_metrics(args, beatmap_paths)
+    finally:
+        if listener is not None:
+            listener.stop()
 
 
 if __name__ == "__main__":

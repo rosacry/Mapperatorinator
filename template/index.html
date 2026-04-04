@@ -1,515 +1,630 @@
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Mapperatorinator Interface (Flask+pywebview)</title>
+    <title>Mapperatorinator Interface</title>
     <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet" />
     <link href="https://cdnjs.cloudflare.com/ajax/libs/select2/4.0.13/css/select2.min.css" rel="stylesheet" />
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
 </head>
-
 <body>
-    <div id="flash-container"></div>
-    <div class="container">
-        <main>
-            <form id="inferenceForm" method="POST" class="card form-card">
+<div id="flash-container"></div>
+<div class="container">
+    <main>
+        <form id="inferenceForm" method="POST" class="card form-card">
 
-                <!-- Paths Section -->
-                <fieldset>
-                    <legend>Paths</legend>
-                    <div class="path-input-group">
-                        <label for="audio_path" title="Path to audio file">Audio Path:</label>
-                        <div class="input-with-clear">
-                            <input type="text" id="audio_path" name="audio_path" />
-                            <button type="button" class="clear-input-btn" data-target="audio_path"
-                                style="display: none;">×</button>
-                        </div>
-                        <button type="button" class="browse-button" data-browse-type="file"
-                            data-target="audio_path">Browse...</button>
-                    </div>
-                    <div class="path-input-group">
-                        <label for="output_path" title="Path to output folder">Output Path:</label>
-                        <div class="input-with-clear">
-                            <input type="text" id="output_path" name="output_path" />
-                            <button type="button" class="clear-input-btn" data-target="output_path"
-                                style="display: none;">×</button>
-                        </div>
-                        <button type="button" class="browse-button" data-browse-type="folder"
-                            data-target="output_path">Browse...</button>
-                    </div>
-                    <div class="path-input-group">
-                        <label for="beatmap_path"
-                            title="Path to .osu file to autofill metadata, audio path, and output path, or use as reference">Beatmap
-                            Path:</label>
-                        <div class="input-with-clear">
-                            <input type="text" id="beatmap_path" name="beatmap_path" />
-                            <button type="button" class="clear-input-btn" data-target="beatmap_path"
-                                style="display: none;">×</button>
-                        </div>
-                        <button type="button" class="browse-button" data-browse-type="file"
-                            data-target="beatmap_path">Browse...</button>
-                    </div>
-
-                    <!-- In-Context Options Box -->
-                    <div id="in-context-options-box" class="context-options-box" style="display: none;">
-                        <h4 title="List of additional context to provide to the model">In-Context Options</h4>
-                        <div class="context-options-container">
-                            {% for option in [('TIMING', 'Timing'), ('KIAI', 'Kiai'), ('GD', 'Guest Difficulty'),
-                            ('NO_HS', 'No Hitsound')] %}
-                            <div class="context-option-item" data-value="{{ option[0] }}">
-                                <input type="checkbox" id="context-{{ option[0].lower() }}" name="in_context_options"
-                                    value="{{ option[0] }}" />
-                                <label for="context-{{ option[0].lower() }}">{{ option[1] }}</label>
-                            </div>
-                            {% endfor %}
-                        </div>
-                    </div>
-                </fieldset>
-
-                <!-- Basic Settings -->
-                <fieldset>
-                    <legend>Basic Settings</legend>
-                    <label for="model">Model:</label>
-                    <select id="model" name="model" class="styled-select">
-                        <option value="v28">Mapperatorinator V28</option>
-                        <option value="v29">Mapperatorinator V29 (Supports gamemodes and descriptors)</option>
-                        <option value="v30" selected>Mapperatorinator V30 (Best model)</option>
-                        <option value="v31">Mapperatorinator V31 (Slightly more accurate than V29)</option>
+            <!-- Paths Section -->
+            <fieldset style="gap: 10px">
+                <legend data-i18n="sections.paths">Paths</legend>
+                <div class="fieldset-legend-control">
+                    <span class="i18n-icon" aria-hidden="true" title="Language">
+                        <svg width="18px" height="18px" viewBox="0 0 24 24"><path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zm6.93 6h-2.95c-.32-1.25-.78-2.45-1.38-3.56 1.84.63 3.37 1.91 4.33 3.56zM12 4.04c.83 1.2 1.48 2.53 1.91 3.96h-3.82c.43-1.43 1.08-2.76 1.91-3.96zM4.26 14C4.1 13.36 4 12.69 4 12s.1-1.36.26-2h3.38c-.08.66-.14 1.32-.14 2 0 .68.06 1.34.14 2H4.26zm.82 2h2.95c.32 1.25.78 2.45 1.38 3.56-1.84-.63-3.37-1.9-4.33-3.56zm2.95-8H5.08c.96-1.66 2.49-2.93 4.33-3.56C8.81 5.55 8.35 6.75 8.03 8zM12 19.96c-.83-1.2-1.48-2.53-1.91-3.96h3.82c-.43 1.43-1.08 2.76-1.91 3.96zM14.34 14H9.66c-.09-.66-.16-1.32-.16-2 0-.68.07-1.35.16-2h4.68c.09.65.16 1.32.16 2 0 .68-.07 1.34-.16 2zm.25 5.56c.6-1.11 1.06-2.31 1.38-3.56h2.95c-.96 1.65-2.49 2.93-4.33 3.56zM16.36 14c.08-.66.14-1.32.14-2 0-.68-.06-1.34-.14-2h3.38c.16.64.26 1.31.26 2s-.1 1.36-.26 2h-3.38z"/></svg>
+                    </span>
+                    <select id="language-selector" class="styled-select" style="width: auto; min-width: 120px;" aria-label="Language">
+                        <option value="en">English</option>
+                        <option value="zh-CN">简体中文</option>
                     </select>
+                </div>
 
-                    <label for="gamemode">Gamemode:</label>
-                    <select id="gamemode" name="gamemode" class="styled-select">
-                        {% for mode in [('0', 'Standard'), ('1', 'Taiko'), ('2', 'Catch the Beat'), ('3', 'Mania')] %}
-                        <option value="{{ mode[0] }}">{{ mode[1] }}</option>
+                <div class="path-input-group">
+                    <label for="audio_path" data-i18n="labels.audio_path" data-i18n-title="tooltips.audio_path" title="Path to audio file">Audio Path:</label>
+                    <div class="input-with-clear">
+                        <input type="text" id="audio_path" name="audio_path" />
+                        <button type="button" class="clear-input-btn" data-target="audio_path" style="display: none;">×</button>
+                    </div>
+                    <button type="button" class="browse-button" data-browse-type="file" data-target="audio_path" data-i18n="buttons.browse">Browse...</button>
+                </div>
+                <div class="path-input-group">
+                    <label for="output_path" data-i18n="labels.output_path" data-i18n-title="tooltips.output_path" title="Path to output folder">Output Path:</label>
+                    <div class="input-with-clear">
+                        <input type="text" id="output_path" name="output_path" />
+                        <button type="button" class="clear-input-btn" data-target="output_path" style="display: none;">×</button>
+                    </div>
+                    <button type="button" class="browse-button" data-browse-type="folder" data-target="output_path" data-i18n="buttons.browse">Browse...</button>
+                </div>
+                <div class="path-input-group">
+                    <label for="beatmap_path" data-i18n="labels.beatmap_path" data-i18n-title="tooltips.beatmap_path" title="Path to .osu file to autofill metadata, audio path, and output path, or use as reference">Beatmap Path:</label>
+                    <div class="input-with-clear">
+                        <input type="text" id="beatmap_path" name="beatmap_path" />
+                        <button type="button" class="clear-input-btn" data-target="beatmap_path" style="display: none;">×</button>
+                    </div>
+                    <button type="button" class="browse-button" data-browse-type="file" data-target="beatmap_path" data-i18n="buttons.browse">Browse...</button>
+                </div>
+
+                <!-- In-Context Options Box -->
+                <div id="in-context-options-box" class="context-options-box" style="display: none;">
+                    <h4 data-i18n="sections.in_context_options" data-i18n-title="tooltips.in_context_options" title="List of additional context to provide to the model">In-Context Options</h4>
+                    <div class="context-options-container">
+                        {% for option in [('TIMING', 'Timing'), ('KIAI', 'Kiai'), ('GD', 'Guest Difficulty'), ('NO_HS', 'No Hitsound')] %}
+                        <div class="context-option-item" data-value="{{ option[0] }}">
+                            <input type="checkbox" id="context-{{ option[0].lower() }}" name="in_context_options" value="{{ option[0] }}" />
+                            <label for="context-{{ option[0].lower() }}">{{ option[1] }}</label>
+                        </div>
                         {% endfor %}
-                    </select>
-
-                    <label for="difficulty" title="Difficulty rating (star rating)">Difficulty (star rating):</label>
-                    <input type="number" step="0.1" id="difficulty" name="difficulty" min="0" value="5" />
-                </fieldset>
-
-                <!-- Difficulty Metadata -->
-                <fieldset>
-                    <legend>Difficulty Metadata</legend>
-                    <label for="hp_drain_rate" title="HP drain rate (HP)">HP Drain Rate (HP):</label>
-                    <input type="number" step="0.1" id="hp_drain_rate" name="hp_drain_rate" min="0" max="10"
-                        value="5" />
-
-                    <div class="form-group conditional-field" id="group-circle_size" data-show-for-gamemode="0"
-                        style="display: none;">
-                        <label for="circle_size" title="Circle size (CS)">Circle Size (CS):</label>
-                        <input type="number" step="0.1" id="circle_size" name="circle_size" min="0" max="10"
-                            value="4" />
                     </div>
+                </div>
+            </fieldset>
 
-                    <div class="form-group conditional-field" id="group-keycount" data-show-for-gamemode="3"
-                        style="display: none;">
-                        <label for="keycount" title="Number of keys for mania">Key Count:</label>
-                        <input type="number" id="keycount" name="keycount" min="0" max="18" value="4" />
+            <!-- Basic Settings -->
+            <fieldset>
+                <legend data-i18n="sections.basic_settings">Basic Settings</legend>
+                <label for="model" data-i18n="labels.model">Model:</label>
+                <select id="model" name="model" class="styled-select">
+                    <option value="v28" data-i18n="models.v28">Mapperatorinator V28</option>
+                    <option value="v29" data-i18n="models.v29">Mapperatorinator V29 (Supports gamemodes and descriptors)</option>
+                    <option value="v30" selected data-i18n="models.v30">Mapperatorinator V30 (Best model)</option>
+                    <option value="v31" data-i18n="models.v31">Mapperatorinator V31 (Slightly more accurate than V29)</option>
+                </select>
+
+                <div class="metadata-row">
+                    <div class="metadata-group">
+                        <label for="gamemode" data-i18n="labels.gamemode">Gamemode:</label>
+                        <select id="gamemode" name="gamemode" class="styled-select">
+                            <option value="0" data-i18n="gamemodes.0">Standard</option>
+                            <option value="1" data-i18n="gamemodes.1">Taiko</option>
+                            <option value="2" data-i18n="gamemodes.2">Catch the Beat</option>
+                            <option value="3" data-i18n="gamemodes.3">Mania</option>
+                        </select>
                     </div>
-
-                    <label for="overall_difficulty" title="Overall difficulty (OD)">Overall Difficulty (OD):</label>
-                    <input type="number" step="0.1" id="overall_difficulty" name="overall_difficulty" min="0" max="10"
-                        value="8" />
-
-                    <label for="approach_rate" title="Approach rate (AR)">Approach Rate (AR):</label>
-                    <input type="number" step="0.1" id="approach_rate" name="approach_rate" min="0" max="10"
-                        value="9" />
-
-                    <label for="slider_multiplier" title="Slider velocity multiplier">Slider Multiplier:</label>
-                    <input type="number" step="0.1" id="slider_multiplier" name="slider_multiplier" min="0" max="3.6"
-                        value="1.4" />
-
-                    <label for="slider_tick_rate" title="Slider tick rate">Slider Tick Rate:</label>
-                    <input type="number" step="0.5" id="slider_tick_rate" name="slider_tick_rate" min="0.5" max="4.0"
-                        value="1" />
-                </fieldset>
-
-                <!-- Advanced Settings -->
-                <fieldset>
-                    <legend>Advanced Settings</legend>
-                    <label for="lora_path"
-                        title="Path to folder or HuggingFace repository with LoRA weights and config. This can be used to tweak the style of the model beyond its usual capabilities.">LoRA
-                        Path or ID:</label>
-                    <div class="path-input-group" style="margin-bottom: 0;">
-                        <div class="input-with-clear">
-                            <input type="text" id="lora_path" name="lora_path" />
-                            <button type="button" class="clear-input-btn" data-target="lora_path"
-                                style="display: none;">×</button>
-                        </div>
-                        <button type="button" class="browse-button" data-browse-type="folder"
-                            data-target="lora_path">Browse...</button>
+                    <div class="metadata-group">
+                        <label for="difficulty" data-i18n="labels.difficulty" data-i18n-title="tooltips.difficulty" title="Difficulty rating (star rating)">Difficulty (star rating):</label>
+                        <input type="number" step="0.1" id="difficulty" name="difficulty" min="0" value="5" />
                     </div>
+                </div>
+            </fieldset>
 
-                    <label for="mapper_id" title="Mapper user ID for style">Mapper ID:</label>
-                    <input type="text" id="mapper_id" name="mapper_id" />
-                    <span id="mapper_name_display" class="mapper-name-display"></span>
-                    <!-- Hidden field to store resolved mapper name -->
-                    <input type="hidden" id="mapper_name" name="mapper_name" />
-
-                    <div class="form-group conditional-field" id="group-year" data-hide-for-model="v30">
-                        <label for="year" title="Year of the song (2007-2023)">Year (2007-2023):</label>
-                        <input type="number" id="year" name="year" min="2007" max="2023" value="2023" />
+            <!-- Song Metadata -->
+            <fieldset>
+                <legend data-i18n="sections.song_metadata">Song Metadata</legend>
+                <div class="metadata-row">
+                    <div class="metadata-group">
+                        <label for="title" data-i18n="labels.title" data-i18n-title="tooltips.title" title="Song title">Title:</label>
+                        <input type="text" id="title" name="title" />
                     </div>
-
-                    <div class="form-group conditional-field" id="group-hold_note_ratio" data-show-for-gamemode="3"
-                        style="display: none;">
-                        <label for="hold_note_ratio" title="Hold note ratio for mania 0-1">Hold Note Ratio:</label>
-                        <input type="number" step="0.01" id="hold_note_ratio" name="hold_note_ratio" min="0" max="1" />
+                    <div class="metadata-group">
+                        <label for="title_unicode" data-i18n="labels.title_unicode" data-i18n-title="tooltips.title_unicode" title="Song title in Unicode/Japanese">Title (Unicode):</label>
+                        <input type="text" id="title_unicode" name="title_unicode" />
                     </div>
-
-                    <div class="form-group conditional-field" id="group-scroll_speed_ratio" data-show-for-gamemode="2,3"
-                        style="display: none;">
-                        <label for="scroll_speed_ratio" title="Scroll speed ratio for mania and ctb 0-1">Scroll Speed
-                            Ratio:</label>
-                        <input type="number" step="0.01" id="scroll_speed_ratio" name="scroll_speed_ratio" min="0"
-                            max="1" />
+                </div>
+                <div class="metadata-row">
+                    <div class="metadata-group">
+                        <label for="artist" data-i18n="labels.artist" data-i18n-title="tooltips.artist" title="Song artist">Artist:</label>
+                        <input type="text" id="artist" name="artist" />
                     </div>
-
-                    <label for="cfg_scale" title="Scale of the classifier-free guidance">CFG Scale:</label>
-                    <input type="number" step="0.1" id="cfg_scale" name="cfg_scale" min="0" value="1.0" />
-
-                    <label for="temperature">Temperature:</label>
-                    <input type="number" id="temperature" name="temperature" step="0.01" min="0" max="1" value="0.9">
-
-                    <label for="top_p">Top-p:</label>
-                    <input type="number" id="top_p" name="top_p" step="0.01" min="0" max="1" value="0.9">
-
-                    <label for="seed" title="Random seed for generation">Random Seed:</label>
-                    <input type="text" id="seed" name="seed" />
-                </fieldset>
-
-                <!-- Generation Interval -->
-                <fieldset>
-                    <legend>Generation Interval</legend>
-                    <label for="start_time" title="Generation start time in milliseconds">Start Time (ms):</label>
-                    <input type="number" id="start_time" name="start_time" min="0" />
-
-                    <label for="end_time" title="Generation end time in milliseconds">End Time (ms):</label>
-                    <input type="number" id="end_time" name="end_time" min="0" />
-                </fieldset>
-
-                <!-- Song Metadata (for file naming) -->
-                <fieldset id="song-metadata-fieldset">
-                    <legend>Song Metadata</legend>
-                    <div id="song-detection-status" class="detection-status"></div>
-
-                    <label for="detected_artist">Artist:</label>
-                    <input type="text" id="detected_artist" name="detected_artist" />
-
-                    <label for="detected_title">Title:</label>
-                    <input type="text" id="detected_title" name="detected_title" />
-
-                    <div class="option-item metadata-option">
-                        <input type="checkbox" id="auto_detect_metadata" name="auto_detect_metadata" />
-                        <label for="auto_detect_metadata"
-                            title="Automatically detect artist and title from audio file">Auto-detect Metadata</label>
+                    <div class="metadata-group">
+                        <label for="artist_unicode" data-i18n="labels.artist_unicode" data-i18n-title="tooltips.artist_unicode" title="Artist name in Unicode/Japanese">Artist (Unicode):</label>
+                        <input type="text" id="artist_unicode" name="artist_unicode" />
                     </div>
-
-                    <label for="diff_name" title="Difficulty name for the output file">Difficulty Name:</label>
-                    <input type="text" id="diff_name" name="diff_name" />
-
-                    <div class="option-item metadata-option">
-                        <input type="checkbox" id="auto_generate_diff_name" name="auto_generate_diff_name" />
-                        <label for="auto_generate_diff_name"
-                            title="Auto-fill difficulty name based on star rating (Easy, Normal, Hard, Insane, Expert, Expert+)">Generate
-                            From Star Rating</label>
+                </div>
+                <div class="metadata-row">
+                    <div class="metadata-group">
+                        <label for="creator" data-i18n="labels.creator" data-i18n-title="tooltips.creator" title="Beatmap creator/mapper name">Creator:</label>
+                        <input type="text" id="creator" name="creator" />
                     </div>
-                </fieldset>
-
-                <!-- Beatmap Customization -->
-                <fieldset id="beatmap-customization-fieldset">
-                    <legend>Beatmap Customization</legend>
-
-                    <div class="customization-row">
-                        <label for="preview_time"
-                            title="Preview time in milliseconds (the point in the song that plays during beatmap selection)">Preview
-                            Time (ms):</label>
+                    <div class="metadata-group">
+                        <label for="version" data-i18n="labels.version" data-i18n-title="tooltips.version" title="Beatmap version/difficulty name">Version:</label>
+                        <input type="text" id="version" name="version" />
+                    </div>
+                </div>
+                <div class="metadata-row">
+                    <div class="metadata-group">
+                        <label for="preview_time" data-i18n="labels.preview_time" data-i18n-title="tooltips.preview_time" title="Preview time in milliseconds">Preview Time (ms):</label>
                         <div class="preview-input-group">
-                            <input type="number" id="preview_time" name="preview_time" min="0" placeholder="Auto" />
+                            <input type="number" id="preview_time" name="preview_time" min="-1" max="600000" />
                             <button type="button" id="pick-preview-btn" class="browse-button"
                                 title="Pick preview point from audio">Pick...</button>
                         </div>
                         <span id="preview-time-display" class="preview-time-display"></span>
                     </div>
-
-                    <div class="customization-row">
-                        <label for="background_path" title="Background image for the beatmap">Background Image:</label>
-                        <div class="path-input-group" style="margin-bottom: 0;">
+                    <div class="metadata-group">
+                        <label for="background_image" data-i18n="labels.background_image" data-i18n-title="tooltips.background_image" title="Background image file">Background Image:</label>
+                        <div class="path-input-group">
                             <div class="input-with-clear">
-                                <input type="text" id="background_path" name="background_path" placeholder="None" />
-                                <button type="button" class="clear-input-btn" data-target="background_path"
-                                    style="display: none;">×</button>
+                                <input type="text" id="background_image" name="background_image" />
+                                <button type="button" class="clear-input-btn" data-target="background_image" style="display: none;">×</button>
                             </div>
-                            <button type="button" class="browse-button" data-browse-type="file"
-                                data-target="background_path">Browse...</button>
+                            <button type="button" class="browse-button" data-browse-type="image" data-target="background_image" data-i18n="buttons.browse">Browse...</button>
                         </div>
                     </div>
-                    <div id="background-preview" class="background-preview" style="display: none;">
-                        <img id="background-preview-img" src="" alt="Background preview" />
+                </div>
+                <div class="metadata-row">
+                    <div class="metadata-group">
+                        <label for="source" data-i18n="labels.source" data-i18n-title="tooltips.source" title="Sourcename (e.g., album, anime, game)">Source:</label>
+                        <input type="text" id="source" name="source" />
                     </div>
-                </fieldset>
-
-                <!-- Options -->
-                <fieldset>
-                    <legend>Options</legend>
-                    <div class="option-item" id="bf16-option" style="display: none;">
-                        <input type="checkbox" id="enable_bf16" name="enable_bf16" value="false" />
-                        <label for="enable_bf16" class="checkbox-label"
-                            title="Enable bfloat16 precision for ~40-60% faster generation. Requires NVIDIA RTX 30xx/40xx GPU. No quality loss.">Enable
-                            BF16 (Faster)</label>
+                    <div class="metadata-group">
+                        <label for="tags" data-i18n="labels.tags" data-i18n-title="tooltips.tags" title="Tags for searching and categorizing, separated by spaces">Tags:</label>
+                        <input type="text" id="tags" name="tags" />
                     </div>
-                    <div class="option-item">
-                        <input type="checkbox" id="export_osz" name="export_osz" value="false" />
-                        <label for="export_osz"
-                            title="Whether to export a .osz file containing the generated beatmap and audio file">Export
-                            .osz</label>
+                </div>
+                <div id="song-detection-status" class="detection-status"></div>
+                <div class="option-item metadata-option">
+                    <input type="checkbox" id="auto_detect_metadata" name="auto_detect_metadata" />
+                    <label for="auto_detect_metadata"
+                        title="Automatically detect artist and title from audio file">Auto-detect Metadata</label>
+                </div>
+                <div class="option-item metadata-option">
+                    <input type="checkbox" id="auto_generate_diff_name" name="auto_generate_diff_name" />
+                    <label for="auto_generate_diff_name"
+                        title="Auto-fill difficulty name based on star rating">Generate Diff Name From Star Rating</label>
+                </div>
+            </fieldset>
+
+            <!-- Difficulty Metadata -->
+            <fieldset>
+                <legend data-i18n="sections.difficulty_metadata">Difficulty Metadata</legend>
+
+                <div class="metadata-row">
+                    <div class="metadata-group">
+                        <label for="hp_drain_rate" data-i18n="labels.hp_drain_rate" data-i18n-title="tooltips.hp_drain_rate" title="HP drain rate (HP)">HP Drain Rate (HP):</label>
+                        <input type="number" step="0.1" id="hp_drain_rate" name="hp_drain_rate" min="0" max="10" value="5" />
                     </div>
-
-                    <div class="option-item conditional-field" id="add-to-beatmap-option" style="display: none;">
-                        <input type="checkbox" id="add_to_beatmap" name="add_to_beatmap" value="false" />
-                        <label for="add_to_beatmap"
-                            title="Whether to merge the generated content with the reference beatmap">Add to
-                            Beatmap</label>
+                    <div class="metadata-group">
+                        <div class="form-group conditional-field" id="group-circle_size" data-show-for-gamemode="0" style="display: none;">
+                            <label for="circle_size" data-i18n="labels.circle_size" data-i18n-title="tooltips.circle_size" title="Circle size (CS)">Circle Size (CS):</label>
+                            <input type="number" step="0.1" id="circle_size" name="circle_size" min="0" max="10" value="4" />
+                        </div>
+                        <div class="form-group conditional-field" id="group-keycount" data-show-for-gamemode="3" style="display: none;">
+                            <label for="keycount" data-i18n="labels.keycount" data-i18n-title="tooltips.keycount" title="Number of keys for mania">Key Count:</label>
+                            <input type="number" id="keycount" name="keycount" min="0" max="18" value="4" />
+                        </div>
                     </div>
+                </div>
 
-                    <div class="option-item conditional-field" id="overwrite-reference-beatmap-option"
-                        style="display: none;">
-                        <input type="checkbox" id="overwrite_reference_beatmap" name="overwrite_reference_beatmap"
-                            value="false" />
-                        <label for="overwrite_reference_beatmap"
-                            title="Whether to overwrite the reference beatmap file instead of creating a new file">Overwrite
-                            Reference Beatmap</label>
+                <div class="metadata-row">
+                    <div class="metadata-group">
+                        <label for="overall_difficulty" data-i18n="labels.overall_difficulty" data-i18n-title="tooltips.overall_difficulty" title="Overall difficulty (OD)">Overall Difficulty (OD):</label>
+                        <input type="number" step="0.1" id="overall_difficulty" name="overall_difficulty" min="0" max="10" value="8" />
                     </div>
-
-                    <div class="option-item conditional-field" id="option-item-hitsounded" data-hide-for-model="v30">
-                        <input type="checkbox" id="hitsounded" name="hitsounded" value="true" checked />
-                        <label for="hitsounded">Add Hitsounds</label>
+                    <div class="metadata-group">
+                        <label for="approach_rate" data-i18n="labels.approach_rate" data-i18n-title="tooltips.approach_rate" title="Approach rate (AR)">Approach Rate (AR):</label>
+                        <input type="number" step="0.1" id="approach_rate" name="approach_rate" min="0" max="10" value="9" />
                     </div>
+                </div>
 
-                    <div class="option-item">
-                        <input type="checkbox" id="super_timing" name="super_timing" value="false" />
-                        <label for="super_timing"
-                            title="Whether to use slow accurate variable BPM timing generator">Super Timing</label>
+                <div class="metadata-row">
+                    <div class="metadata-group">
+                        <label for="slider_multiplier" data-i18n="labels.slider_multiplier" data-i18n-title="tooltips.slider_multiplier" title="Slider velocity multiplier">Slider Multiplier:</label>
+                        <input type="number" step="0.1" id="slider_multiplier" name="slider_multiplier" min="0" max="3.6" value="1.4" />
                     </div>
-                </fieldset>
+                    <div class="metadata-group">
+                        <label for="slider_tick_rate" data-i18n="labels.slider_tick_rate" data-i18n-title="tooltips.slider_tick_rate" title="Slider tick rate">Slider Tick Rate:</label>
+                        <input type="number" step="0.5" id="slider_tick_rate" name="slider_tick_rate" min="0.5" max="4.0" value="1" />
+                    </div>
+                </div>
+            </fieldset>
 
-                <!-- Descriptors -->
-                <div class="custom-dropdown-descriptors conditional-field" data-hide-for-model="v30">
-                    <button type="button" class="dropdown-header">
-                        <span class="dropdown-title"
-                            title="List of descriptors for style (1 click = include, 2 clicks = exclude)">Descriptors</span>
-                        <span class="dropdown-arrow">&#9660;</span>
-                    </button>
-                    <div class="dropdown-content" inert>
-                        <div class="descriptors-container">
-                            {% set descriptor_groups = [
-                            { "title": "General", "items": [
-                            { "value": "gimmick", "title": "Focused on a single unique design or gameplay idea." },
-                            { "value": "2B", "title": "Includes gameplay elements with two or more objects placed
-                            simultaneously." },
-                            { "value": "slider only", "title": "Restricts object choice to sliders only." },
-                            { "value": "circle only", "title": "Restricts object choice to circles only." },
-                            { "value": "swing", "title": "Uses 1/3, 1/6, and 1/12 snap divisors for most/all objects." }
-                            ]},
-                            { "title": "Meta Information", "items": [
-                            { "value": "collab", "title": "A map with two or more associated mappers." },
-                            { "value": "megacollab", "title": "A map with 8 or more associated mappers." },
-                            { "value": "marathon", "title": "A map with a drain time of over 5 minutes." },
-                            { "value": "gungathon", "title": "A map with a drain time of over 10 minutes." },
-                            { "value": "multi-song", "title": "Contains multiple songs within the audio." },
-                            { "value": "variable timing", "title": "Contains multiple timing points, usually for
-                            non-metronome songs." },
-                            { "value": "accelerating bpm", "title": "Features progressively increasing tempo." },
-                            { "value": "time signatures", "title": "Many changes or uncommon time signatures." },
-                            { "value": "storyboard", "title": "Contains a storyboard that enhances gameplay experience."
-                            },
-                            { "value": "storyboard gimmick", "title": "Uses storyboard elements that change how the map
-                            is played." },
-                            { "value": "keysounds", "title": "Uses various pitched hitsounds to create a melody." },
-                            { "value": "download unavailable", "title": "Cannot be downloaded from the osu! website." },
-                            { "value": "custom skin", "title": "Utilizes custom skin elements and graphics." },
-                            { "value": "featured artist", "title": "Features song(s) from osu!'s Featured Artist
-                            listing." },
-                            { "value": "custom song", "title": "Maps a song made specifically for the map." }
-                            ]},
-                            { "title": "Style", "items": [
-                            { "value": "messy", "title": "Visually chaotic and disorganised patterns." },
-                            { "value": "geometric", "title": "Incorporates geometric shapes within the design." },
-                            { "value": "grid snap", "title": "Objects are placed along a square grid." },
-                            { "value": "hexgrid", "title": "Objects are placed along a hexagonal grid." },
-                            { "value": "freeform", "title": "A loose approach to visual structure." },
-                            { "value": "symmetrical", "title": "Employs symmetry within the design." },
-                            { "value": "old-style revival", "title": "Emulates a style from early mapping." },
-                            { "value": "clean", "title": "Visually uncluttered and organised patterns." },
-                            { "value": "slidershapes", "title": "Uses a variety of slider designs." },
-                            { "value": "distance snapped", "title": "Uses osu's built-in distance snap feature." },
-                            { "value": "iNiS-style", "title": "Originates from the original DS games." },
-                            { "value": "avant-garde", "title": "Experimental design philosophies." },
-                            { "value": "perfect stacks", "title": "Features perfectly overlapped stacked notes." },
-                            { "value": "ninja spinners", "title": "Features very short spinners." }
-                            ]},
-                            { "title": "Song Representation", "items": [
-                            { "value": "simple", "title": "Accessible and straightforward design." },
-                            { "value": "chaotic", "title": "Unpredictable map design." },
-                            { "value": "repetition", "title": "Features recognizable identical patterns." },
-                            { "value": "progression", "title": "Gradual advancement in difficulty." },
-                            { "value": "high contrast", "title": "Uses flashy ideas to follow music changes." },
-                            { "value": "improvisation", "title": "Uses patterns that do not directly match the music."
-                            },
-                            { "value": "playfield usage", "title": "Deliberate use of the playfield." },
-                            { "value": "playfield constraint", "title": "Restricts object placement to a part of the
-                            playfield." },
-                            { "value": "video gimmick", "title": "References the background video in its patterning." },
-                            { "value": "difficulty spike", "title": "A sudden, significant challenge increase." },
-                            { "value": "low sv", "title": "Prominent low slider velocity usage." },
-                            { "value": "high sv", "title": "Prominent high slider velocity usage." },
-                            { "value": "colorhax", "title": "Intentional use of combo colors for immersion." }
-                            ]},
-                            { "title": "Skillsets", "items": [
-                            { "value": "tech", "title": "Tests uncommon skills." },
-                            { "value": "slider tech", "title": "Tests skills involving complex sliders." },
-                            { "value": "complex sv", "title": "Large changes in slider velocity to test reading." },
-                            { "value": "reading", "title": "Tests a player's reading skill." },
-                            { "value": "visually dense", "title": "Patterns with many visible notes that make reading
-                            hard." },
-                            { "value": "overlap reading", "title": "Overlapped objects obscure note order." }
-                            ]},
-                            { "title": "Aim", "items": [
-                            { "value": "jump aim", "title": "Focuses heavily on jumps." },
-                            { "value": "sharp aim", "title": "Heavy use of sharp angle movement." },
-                            { "value": "wide aim", "title": "Uses wide angle movement patterns." },
-                            { "value": "linear aim", "title": "Requires continuous straight movement." },
-                            { "value": "aim control", "title": "Features abrupt velocity or direction changes." },
-                            { "value": "flow aim", "title": "Encourages fully continuous cursor movement." },
-                            { "value": "precision", "title": "Requires fine, precise cursor movement." }
-                            ]},
-                            { "title": "Tap", "items": [
-                            { "value": "finger control", "title": "Tests complex tapping ability." },
-                            { "value": "complex snap divisors", "title": "Uses unusual snap divisors." },
-                            { "value": "bursts", "title": "Continuous alternating patterns, typically 9 notes or less."
-                            },
-                            { "value": "streams", "title": "Continuous alternating patterns, typically more than 9
-                            notes." },
-                            { "value": "spaced streams", "title": "Streams with large spacing between notes." },
-                            { "value": "cutstreams", "title": "Streams with very uneven spacing." },
-                            { "value": "stamina", "title": "Tests endurance over long periods." }
-                            ]},
-                            { "title": "Scene", "items": [
-                            { "value": "aspire", "title": "Uses glitches for unique effects." },
-                            { "value": "mapping contest", "title": "An entry for a mapping contest." },
-                            { "value": "tournament custom", "title": "A custom map for a tournament." },
-                            { "value": "tag", "title": "Designed for multiplayer tag mode." },
-                            { "value": "port", "title": "Originally created for other media then imported." }
-                            ]}
-                            ] %}
+            <!-- Advanced Settings -->
+            <fieldset>
+                <legend data-i18n="sections.advanced_settings">Advanced Settings</legend>
 
-                            {% for group in descriptor_groups %}
-                            <div class="descriptor-group">
-                                <h3>{{ group.title }}</h3>
-                                {% for item in group["items"] %}
-                                <div class="descriptor-item">
-                                    {% set item_id = "desc-" ~ item.value|replace(" ", "-") %}
-                                    <input type="checkbox" id="{{ item_id }}" name="descriptors"
-                                        value="{{ item.value }}" />
-                                    <label for="{{ item_id }}" title="{{ item.title }}">{{ item.value }}</label>
-                                </div>
-                                {% endfor %}
+                <div class="metadata-row">
+                    <div class="metadata-group">
+                        <label for="lora_path" data-i18n="labels.lora_path" data-i18n-title="tooltips.lora_path" title="Path to folder or HuggingFace repository with LoRA weights and config. This can be used to tweak the style of the model beyond its usual capabilities.">LoRA Path or ID:</label>
+                        <div class="path-input-group">
+                            <div class="input-with-clear">
+                                <input type="text" id="lora_path" name="lora_path" />
+                                <button type="button" class="clear-input-btn" data-target="lora_path" style="display: none;">×</button>
+                            </div>
+                            <button type="button" class="browse-button" data-browse-type="folder" data-target="lora_path" data-i18n="buttons.browse">Browse...</button>
+                        </div>
+                    </div>
+                    <div class="metadata-group">
+                        <label for="seed" data-i18n="labels.seed" data-i18n-title="tooltips.seed" title="Random seed for generation">Random Seed:</label>
+                        <input type="text" id="seed" name="seed" />
+                    </div>
+                </div>
+
+                <div class="metadata-row">
+                    <div class="metadata-group">
+                        <div class="form-group conditional-field" id="group-hold_note_ratio" data-show-for-gamemode="3" style="display: none;">
+                            <label for="hold_note_ratio" data-i18n="labels.hold_note_ratio" data-i18n-title="tooltips.hold_note_ratio" title="Hold note ratio for mania 0-1">Hold Note Ratio:</label>
+                            <input type="number" step="0.01" id="hold_note_ratio" name="hold_note_ratio" min="0" max="1" />
+                        </div>
+                    </div>
+                    <div class="metadata-group">
+                        <div class="form-group conditional-field" id="group-scroll_speed_ratio" data-show-for-gamemode="2,3" style="display: none;">
+                            <label for="scroll_speed_ratio" data-i18n="labels.scroll_speed_ratio" data-i18n-title="tooltips.scroll_speed_ratio" title="Scroll speed ratio for mania and ctb 0-1">Scroll Speed Ratio:</label>
+                            <input type="number" step="0.01" id="scroll_speed_ratio" name="scroll_speed_ratio" min="0" max="1" />
+                        </div>
+                    </div>
+                </div>
+
+                <div class="metadata-row">
+                    <div class="metadata-group">
+                        <label for="mapper_id" data-i18n="labels.mapper_id" data-i18n-title="tooltips.mapper_id" title="Mapper user ID for style">Mapper ID:</label>
+                        <input type="text" id="mapper_id" name="mapper_id" />
+                    </div>
+                    <div class="metadata-group">
+                        <label for="cfg_scale" data-i18n="labels.cfg_scale" data-i18n-title="tooltips.cfg_scale" title="Scale of the classifier-free guidance">CFG Scale:</label>
+                        <input type="number" step="0.1" id="cfg_scale" name="cfg_scale" min="0" value="1.0"/>
+                    </div>
+                </div>
+
+                <div class="metadata-row">
+                    <div class="metadata-group">
+                        <label for="temperature" data-i18n="labels.temperature">Temperature:</label>
+                        <input type="number" id="temperature" name="temperature" step="0.01" min="0" max="1" value="0.9">
+                    </div>
+                    <div class="metadata-group">
+                        <label for="top_p" data-i18n="labels.top_p">Top-p:</label>
+                        <input type="number" id="top_p" name="top_p" step="0.01" min="0" max="1" value="0.9">
+                    </div>
+                </div>
+
+                <div class="metadata-row">
+                    <div class="metadata-group">
+                        <div class="form-group conditional-field" id="group-year" data-hide-for-model="v30">
+                            <label for="year" data-i18n="labels.year" data-i18n-title="tooltips.year">Year (2007-2023):</label>
+                            <input type="number" id="year" name="year" min="2007" max="2023" value="2023" />
+                        </div>
+                    </div>
+                </div>
+            </fieldset>
+
+            <!-- Generation Interval -->
+            <fieldset>
+                <legend data-i18n="sections.generation_interval">Generation Interval</legend>
+
+                <div class="metadata-row">
+                    <div class="metadata-group">
+                        <label for="start_time" data-i18n="labels.start_time" data-i18n-title="tooltips.start_time" title="Generation start time in milliseconds">Start Time (ms):</label>
+                        <input type="number" id="start_time" name="start_time" min="0" />
+                    </div>
+                    <div class="metadata-group">
+                        <label for="end_time" data-i18n="labels.end_time" data-i18n-title="tooltips.end_time" title="Generation end time in milliseconds">End Time (ms):</label>
+                        <input type="number" id="end_time" name="end_time" min="0" />
+                    </div>
+                </div>
+            </fieldset>
+
+            <!-- Options -->
+            <fieldset>
+                <legend data-i18n="sections.options">Options</legend>
+                <div class="option-item">
+                    <input type="checkbox" id="export_osz" name="export_osz" value="false" />
+                    <label for="export_osz" data-i18n="options.export_osz" data-i18n-title="options.export_osz_tooltip" title="Whether to export a .osz file containing the generated beatmap and audio file">Export .osz</label>
+                </div>
+
+                <div class="option-item conditional-field" id="add-to-beatmap-option" style="display: none;">
+                    <input type="checkbox" id="add_to_beatmap" name="add_to_beatmap" value="false" />
+                    <label for="add_to_beatmap" data-i18n="options.add_to_beatmap" data-i18n-title="options.add_to_beatmap_tooltip" title="Whether to merge the generated content with the reference beatmap">Add to Beatmap</label>
+                </div>
+
+                <div class="option-item conditional-field" id="overwrite-reference-beatmap-option" style="display: none;">
+                    <input type="checkbox" id="overwrite_reference_beatmap" name="overwrite_reference_beatmap" value="false" />
+                    <label for="overwrite_reference_beatmap" data-i18n="options.overwrite_reference_beatmap" data-i18n-title="options.overwrite_reference_beatmap_tooltip" title="Whether to overwrite the reference beatmap file instead of creating a new file">Overwrite Reference Beatmap</label>
+                </div>
+
+                <div class="option-item conditional-field" id="option-item-hitsounded" data-hide-for-model="v30">
+                    <input type="checkbox" id="hitsounded" name="hitsounded" value="true" checked />
+                    <label for="hitsounded" data-i18n="options.hitsounded">Add Hitsounds</label>
+                </div>
+
+                <div class="option-item">
+                    <input type="checkbox" id="super_timing" name="super_timing" value="false" />
+                    <label for="super_timing" data-i18n="options.super_timing" data-i18n-title="options.super_timing_tooltip" title="Whether to use slow accurate variable BPM timing generator">Super Timing</label>
+                </div>
+
+                <div class="option-item" id="bf16-option" style="display: none;">
+                    <input type="checkbox" id="enable_bf16" name="enable_bf16" value="false" />
+                    <label for="enable_bf16" data-i18n-title="options.enable_bf16_tooltip" title="Use BF16 precision for ~15% faster inference on Ampere+ GPUs (RTX 30xx/40xx)">
+                        <span data-i18n="options.enable_bf16">BF16 Precision</span> <span id="bf16-gpu-info" style="font-size: 0.85em; color: var(--text-secondary);"></span>
+                    </label>
+                </div>
+            </fieldset>
+
+            <!-- Descriptors -->
+            <div class="custom-dropdown-descriptors conditional-field" data-hide-for-model="v30">
+                <button type="button" class="dropdown-header">
+                    <span class="dropdown-title" data-i18n="sections.descriptors" data-i18n-title="tooltips.descriptors" title="List of descriptors for style (1 click = include, 2 clicks = exclude)">Descriptors</span>
+                    <span class="dropdown-arrow">&#9660;</span>
+                </button>
+                <div class="dropdown-content" inert>
+                    <div class="descriptors-container">
+                        {% set descriptor_groups = [
+                        { "title": "General", "items": [
+                        { "value": "gimmick", "title": "Focused on a single unique design or gameplay idea." },
+                        { "value": "2B", "title": "Includes gameplay elements with two or more objects placed simultaneously." },
+                        { "value": "slider only", "title": "Restricts object choice to sliders only." },
+                        { "value": "circle only", "title": "Restricts object choice to circles only." },
+                        { "value": "swing", "title": "Uses 1/3, 1/6, and 1/12 snap divisors for most/all objects." }
+                        ]},
+                        { "title": "Meta Information", "items": [
+                        { "value": "collab", "title": "A map with two or more associated mappers." },
+                        { "value": "megacollab", "title": "A map with 8 or more associated mappers." },
+                        { "value": "marathon", "title": "A map with a drain time of over 5 minutes." },
+                        { "value": "gungathon", "title": "A map with a drain time of over 10 minutes." },
+                        { "value": "multi-song", "title": "Contains multiple songs within the audio." },
+                        { "value": "variable timing", "title": "Contains multiple timing points, usually for non-metronome songs." },
+                        { "value": "accelerating bpm", "title": "Features progressively increasing tempo." },
+                        { "value": "time signatures", "title": "Many changes or uncommon time signatures." },
+                        { "value": "storyboard", "title": "Contains a storyboard that enhances gameplay experience." },
+                        { "value": "storyboard gimmick", "title": "Uses storyboard elements that change how the map is played." },
+                        { "value": "keysounds", "title": "Uses various pitched hitsounds to create a melody." },
+                        { "value": "download unavailable", "title": "Cannot be downloaded from the osu! website." },
+                        { "value": "custom skin", "title": "Utilizes custom skin elements and graphics." },
+                        { "value": "featured artist", "title": "Features song(s) from osu!'s Featured Artist listing." },
+                        { "value": "custom song", "title": "Maps a song made specifically for the map." }
+                        ]},
+                        { "title": "Style", "items": [
+                        { "value": "messy", "title": "Visually chaotic and disorganised patterns." },
+                        { "value": "geometric", "title": "Incorporates geometric shapes within the design." },
+                        { "value": "grid snap", "title": "Objects are placed along a square grid." },
+                        { "value": "hexgrid", "title": "Objects are placed along a hexagonal grid." },
+                        { "value": "freeform", "title": "A loose approach to visual structure." },
+                        { "value": "symmetrical", "title": "Employs symmetry within the design." },
+                        { "value": "old-style revival", "title": "Emulates a style from early mapping." },
+                        { "value": "clean", "title": "Visually uncluttered and organised patterns." },
+                        { "value": "slidershapes", "title": "Uses a variety of slider designs." },
+                        { "value": "distance snapped", "title": "Uses osu's built-in distance snap feature." },
+                        { "value": "iNiS-style", "title": "Originates from the original DS games." },
+                        { "value": "avant-garde", "title": "Experimental design philosophies." },
+                        { "value": "perfect stacks", "title": "Features perfectly overlapped stacked notes." },
+                        { "value": "ninja spinners", "title": "Features very short spinners." }
+                        ]},
+                        { "title": "Song Representation", "items": [
+                        { "value": "simple", "title": "Accessible and straightforward design." },
+                        { "value": "chaotic", "title": "Unpredictable map design." },
+                        { "value": "repetition", "title": "Features recognizable identical patterns." },
+                        { "value": "progression", "title": "Gradual advancement in difficulty." },
+                        { "value": "high contrast", "title": "Uses flashy ideas to follow music changes." },
+                        { "value": "improvisation", "title": "Uses patterns that do not directly match the music." },
+                        { "value": "playfield usage", "title": "Deliberate use of the playfield." },
+                        { "value": "playfield constraint", "title": "Restricts object placement to a part of the playfield." },
+                        { "value": "video gimmick", "title": "References the background video in its patterning." },
+                        { "value": "difficulty spike", "title": "A sudden, significant challenge increase." },
+                        { "value": "low sv", "title": "Prominent low slider velocity usage." },
+                        { "value": "high sv", "title": "Prominent high slider velocity usage." },
+                        { "value": "colorhax", "title": "Intentional use of combo colors for immersion." }
+                        ]},
+                        { "title": "Skillsets", "items": [
+                        { "value": "tech", "title": "Tests uncommon skills." },
+                        { "value": "slider tech", "title": "Tests skills involving complex sliders." },
+                        { "value": "complex sv", "title": "Large changes in slider velocity to test reading." },
+                        { "value": "reading", "title": "Tests a player's reading skill." },
+                        { "value": "visually dense", "title": "Patterns with many visible notes that make reading hard." },
+                        { "value": "overlap reading", "title": "Overlapped objects obscure note order." }
+                        ]},
+                        { "title": "Aim", "items": [
+                        { "value": "jump aim", "title": "Focuses heavily on jumps." },
+                        { "value": "sharp aim", "title": "Heavy use of sharp angle movement." },
+                        { "value": "wide aim", "title": "Uses wide angle movement patterns." },
+                        { "value": "linear aim", "title": "Requires continuous straight movement." },
+                        { "value": "aim control", "title": "Features abrupt velocity or direction changes." },
+                        { "value": "flow aim", "title": "Encourages fully continuous cursor movement." },
+                        { "value": "precision", "title": "Requires fine, precise cursor movement." }
+                        ]},
+                        { "title": "Tap", "items": [
+                        { "value": "finger control", "title": "Tests complex tapping ability." },
+                        { "value": "complex snap divisors", "title": "Uses unusual snap divisors." },
+                        { "value": "bursts", "title": "Continuous alternating patterns, typically 9 notes or less." },
+                        { "value": "streams", "title": "Continuous alternating patterns, typically more than 9 notes." },
+                        { "value": "spaced streams", "title": "Streams with large spacing between notes." },
+                        { "value": "cutstreams", "title": "Streams with very uneven spacing." },
+                        { "value": "stamina", "title": "Tests endurance over long periods." }
+                        ]},
+                        { "title": "Scene", "items": [
+                        { "value": "aspire", "title": "Uses glitches for unique effects." },
+                        { "value": "mapping contest", "title": "An entry for a mapping contest." },
+                        { "value": "tournament custom", "title": "A custom map for a tournament." },
+                        { "value": "tag", "title": "Designed for multiplayer tag mode." },
+                        { "value": "port", "title": "Originally created for other media then imported." }
+                        ]}
+                        ] %}
+
+                        {% for group in descriptor_groups %}
+                        <div class="descriptor-group">
+                            {% set group_key = group.title|lower|replace(" ", "_") %}
+                            <h3 data-i18n="descriptors.groups.{{ group_key }}">{{ group.title }}</h3>
+                            {% for item in group["items"] %}
+                            <div class="descriptor-item">
+                                {% set item_id = "desc-" ~ item.value|replace(" ", "-") %}
+                                {% set item_key = item.value|replace(" ", "_")|replace("-", "_") %}
+                                <input type="checkbox" id="{{ item_id }}" name="descriptors" value="{{ item.value }}" />
+                                <label for="{{ item_id }}" 
+                                       data-i18n="descriptors.items.{{ item.value }}.label"
+                                       data-i18n-title="descriptors.items.{{ item.value }}.tooltip"
+                                       title="{{ item.title }}">{{ item.value }}</label>
                             </div>
                             {% endfor %}
                         </div>
+                        {% endfor %}
                     </div>
-                </div>
-                <!-- Config Section -->
-                <fieldset>
-                    <legend>Config</legend>
-                    <div style="display: flex; gap: 10px; flex-wrap: wrap;">
-                        <button type="button" id="export-config-btn" class="browse-button">Export</button>
-                        <input type="file" id="import-config-input" accept=".json" style="display: none;" />
-                        <button type="button" id="import-config-btn" class="browse-button">Import</button>
-                        <button type="button" id="reset-config-btn" class="browse-button">Clear</button>
-                    </div>
-                    <div id="config-status" style="margin-top: 10px; font-size: 14px;"></div>
-                </fieldset>
-
-                <button type="submit">Run Inference</button>
-                <button type="button" id="add-to-queue-btn" class="queue-button" disabled
-                    title="Load an audio file first">Add to Queue</button>
-
-                <!-- Mapper List Section -->
-                <fieldset id="mapper_panel">
-                    <legend>Mapper List</legend>
-                    <div class="mapper-inline-controls">
-                        <input type="text" id="add-mapper-id" placeholder="Mapper ID" />
-                        <button type="button" id="add-mapper-btn" class="browse-button">Add</button>
-                    </div>
-                    <div id="mappers-list" class="mapper-list">
-                        <div class="mapper-empty">No mappers added. Add mappers to auto-generate queue tasks.</div>
-                    </div>
-                    <div class="mapper-actions">
-                        <button type="button" id="generate-from-mappers-btn" class="queue-button" disabled>Queue
-                            Tasks From Selected Mappers</button>
-                    </div>
-                </fieldset>
-
-                <!-- Generation Queue Section -->
-                <fieldset id="queue_panel">
-                    <legend>Generation Queue</legend>
-                    <div class="queue-inline-controls">
-                        <button type="button" id="run-queue-btn" class="browse-button" disabled>Run Queue</button>
-                        <button type="button" id="clear-queue-btn" class="browse-button danger">Clear Queue</button>
-                    </div>
-                    <div class="queue-options">
-                        <label class="checkbox-label">
-                            <input type="checkbox" id="compile-as-beatmapset" name="compile_as_beatmapset">
-                            Compile as Beatmap Set
-                        </label>
-                    </div>
-                    <div id="queue-list" class="queue-list">
-                        <div class="queue-empty">No tasks in queue. Add tasks using "Add to Queue" button.</div>
-                    </div>
-                    <div class="queue-status">
-                        <span id="queue-count">0 tasks</span>
-                        <span id="queue-progress" style="display:none;"></span>
-                    </div>
-                </fieldset>
-            </form>
-
-            <!-- Progress Output -->
-            <div id="progress_output" class="card" style="margin-top:20px; display:none;">
-                <h3>Progress</h3>
-                <div id="queue_progress_info"
-                    style="display:none; margin-bottom:10px; padding:8px; background:#2a2a3a; border-radius:4px;">
-                    <span id="queue_task_label">Task 1 of 1</span>
-                    <span id="queue_mapper_label" style="margin-left:10px;"></span>
-                </div>
-                <div id="init_message">Initializing process... This may take a moment.</div>
-                <div id="progressTitle" style="font-weight:bold; padding-bottom:5px;"></div>
-                <div id="progressBarContainer">
-                    <div id="progressBar"></div>
-                </div>
-                <div style="margin-top: 10px; text-align: center;">
-                    <button type="button" id="cancel-button" class="cancel-button" style="display:none;">Cancel</button>
-                </div>
-                <div id="beatmapLink" style="display:none; margin-top:10px;">
-                    <a id="beatmapLinkAnchor" href="#" target="_blank">Click Here to go to the created beatmap...</a>
-                </div>
-                <div id="renamedFileInfo" style="display:none; margin-top:10px;">
-                    <span>File renamed to: </span><span id="renamedFileName"></span>
-                </div>
-                <div id="errorLogLink" style="display:none; margin-top:10px;">
-                    <a id="errorLogLinkAnchor" href="#">See why... (opens error log)</a>
                 </div>
             </div>
-        </main>
-    </div>
 
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.6.0/jquery.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/select2/4.0.13/js/select2.min.js"></script>
-    <script src="{{ url_for('static', filename='queue_manager.js') }}"></script>
-    <script src="{{ url_for('static', filename='app.js') }}"></script>
+            <!-- Negative Descriptors -->
+            <div class="custom-dropdown-descriptors conditional-field" data-hide-for-model="v30">
+                <button class="dropdown-header">
+                    <span class="dropdown-title" data-i18n="sections.negative_descriptors" data-i18n-title="tooltips.negative_descriptors" title="List of negative descriptors for style to avoid (1 click = include, 2 clicks = exclude)">Negative Descriptors</span>
+                    <span class="dropdown-arrow">&#9660;</span>
+                </button>
+                <div class="dropdown-content" inert>
+                    <div class="descriptors-container">
+                        {% set negative_descriptor_groups = [
+                        { "title": "General", "items": [
+                        { "value": "gimmick", "title": "Focused on a single unique design or gameplay idea." },
+                        { "value": "2B", "title": "Includes gameplay elements with two or more objects placed simultaneously." },
+                        { "value": "slider only", "title": "Restricts object choice to sliders only." },
+                        { "value": "circle only", "title": "Restricts object choice to circles only." },
+                        { "value": "swing", "title": "Uses 1/3, 1/6, and 1/12 snap divisors for most/all objects." }
+                        ]},
+                        { "title": "Style", "items": [
+                        { "value": "messy", "title": "Visually chaotic and disorganised patterns." },
+                        { "value": "geometric", "title": "Incorporates geometric shapes within the design." },
+                        { "value": "grid snap", "title": "Objects are placed along a square grid." },
+                        { "value": "hexgrid", "title": "Objects are placed along a hexagonal grid." },
+                        { "value": "freeform", "title": "A loose approach to visual structure." },
+                        { "value": "symmetrical", "title": "Employs symmetry within the design." },
+                        { "value": "old-style revival", "title": "Emulates a style from early mapping." },
+                        { "value": "clean", "title": "Visually uncluttered and organised patterns." },
+                        { "value": "slidershapes", "title": "Uses a variety of slider designs." },
+                        { "value": "distance snapped", "title": "Uses osu's built-in distance snap feature." },
+                        { "value": "iNiS-style", "title": "Originates from the original DS games." },
+                        { "value": "avant-garde", "title": "Experimental design philosophies." },
+                        { "value": "perfect stacks", "title": "Features perfectly overlapped stacked notes." },
+                        { "value": "ninja spinners", "title": "Features very short spinners." }
+                        ]},
+                        { "title": "Skillsets", "items": [
+                        { "value": "tech", "title": "Tests uncommon skills." },
+                        { "value": "slider tech", "title": "Tests skills involving complex sliders." },
+                        { "value": "complex sv", "title": "Large changes in slider velocity to test reading." },
+                        { "value": "reading", "title": "Tests a player's reading skill." },
+                        { "value": "visually dense", "title": "Patterns with many visible notes that make reading hard." },
+                        { "value": "overlap reading", "title": "Overlapped objects obscure note order." }
+                        ]},
+                        { "title": "Aim", "items": [
+                        { "value": "jump aim", "title": "Focuses heavily on jumps." },
+                        { "value": "sharp aim", "title": "Heavy use of sharp angle movement." },
+                        { "value": "wide aim", "title": "Uses wide angle movement patterns." },
+                        { "value": "linear aim", "title": "Requires continuous straight movement." },
+                        { "value": "aim control", "title": "Features abrupt velocity or direction changes." },
+                        { "value": "flow aim", "title": "Encourages fully continuous cursor movement." },
+                        { "value": "precision", "title": "Requires fine, precise cursor movement." }
+                        ]},
+                        { "title": "Tap", "items": [
+                        { "value": "finger control", "title": "Tests complex tapping ability." },
+                        { "value": "complex snap divisors", "title": "Uses unusual snap divisors." },
+                        { "value": "bursts", "title": "Continuous alternating patterns, typically 9 notes or less." },
+                        { "value": "streams", "title": "Continuous alternating patterns, typically more than 9 notes." },
+                        { "value": "spaced streams", "title": "Streams with large spacing between notes." },
+                        { "value": "cutstreams", "title": "Streams with very uneven spacing." },
+                        { "value": "stamina", "title": "Tests endurance over long periods." }
+                        ]}
+                        ] %}
+
+                        {% for group in negative_descriptor_groups %}
+                        <div class="descriptor-group">
+                            {% set group_key = group.title|lower|replace(" ", "_") %}
+                            <h3 data-i18n="descriptors.groups.{{ group_key }}"> {{ group.title }}</h3>
+                            {% for item in group["items"] %}
+                            <div class="descriptor-item">
+                                {% set item_id = "neg-desc-" ~ item.value|replace(" ", "-") %}
+                                <input type="checkbox" id="{{ item_id }}" name="negative_descriptors" value="{{ item.value }}" />
+                                <label for="{{ item_id }}" 
+                                       data-i18n="descriptors.items.{{ item.value }}.label"
+                                       data-i18n-title="descriptors.items.{{ item.value }}.tooltip"
+                                       title="{{ item.title }}">{{ item.value }}</label>
+                            </div>
+                            {% endfor %}
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+            <!-- Config Section -->
+            <fieldset>
+                <legend data-i18n="sections.config">Config</legend>
+                <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                    <button type="button" id="export-config-btn" class="browse-button" data-i18n="buttons.export">Export</button>
+                    <input type="file" id="import-config-input" accept=".json" style="display: none;" />
+                    <button type="button" id="import-config-btn" class="browse-button" data-i18n="buttons.import">Import</button>
+                    <button type="button" id="reset-config-btn" class="browse-button" data-i18n="buttons.clear">Clear</button>
+                </div>
+                <div id="config-status" style="margin-top: 10px; font-size: 14px;"></div>
+            </fieldset>
+
+            <button type="submit" data-i18n="buttons.run_inference">Run Inference</button>
+            <button type="button" id="add-to-queue-btn" class="queue-button" disabled
+                title="Load an audio file first">Add to Queue</button>
+
+            <!-- Mapper List Section -->
+            <fieldset id="mapper_panel">
+                <legend>Mapper List</legend>
+                <div class="mapper-inline-controls">
+                    <input type="text" id="add-mapper-id" placeholder="Mapper ID" />
+                    <button type="button" id="add-mapper-btn" class="browse-button">Add</button>
+                </div>
+                <div id="mappers-list" class="mapper-list">
+                    <div class="mapper-empty">No mappers added. Add mappers to auto-generate queue tasks.</div>
+                </div>
+                <div class="mapper-actions">
+                    <button type="button" id="generate-from-mappers-btn" class="queue-button" disabled>Queue
+                        Tasks From Selected Mappers</button>
+                </div>
+            </fieldset>
+
+            <!-- Generation Queue Section -->
+            <fieldset id="queue_panel">
+                <legend>Generation Queue</legend>
+                <div class="queue-inline-controls">
+                    <button type="button" id="run-queue-btn" class="browse-button" disabled>Run Queue</button>
+                    <button type="button" id="clear-queue-btn" class="browse-button danger">Clear Queue</button>
+                </div>
+                <div class="queue-options">
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="compile-as-beatmapset" name="compile_as_beatmapset">
+                        Compile as Beatmap Set
+                    </label>
+                </div>
+                <div id="queue-list" class="queue-list">
+                    <div class="queue-empty">No tasks in queue. Add tasks using "Add to Queue" button.</div>
+                </div>
+                <div class="queue-status">
+                    <span id="queue-count">0 tasks</span>
+                    <span id="queue-progress" style="display:none;"></span>
+                </div>
+            </fieldset>
+        </form>
+
+        <!-- Progress Output -->
+        <div id="progress_output" class="card" style="margin-top:20px; display:none;">
+            <div class="progress-header">
+                <h3 data-i18n="progress.title">Progress</h3>
+            </div>
+            <div id="queue_progress_info"
+                style="display:none; margin-bottom:10px; padding:8px; background:#2a2a3a; border-radius:4px;">
+                <span id="queue_task_label">Task 1 of 1</span>
+                <span id="queue_mapper_label" style="margin-left:10px;"></span>
+            </div>
+            <div id="progressCards"></div>
+            <div id="init_message">Initializing process... This may take a moment.</div>
+            <div id="progressTitle" style="font-weight:bold; padding-bottom:5px;"></div>
+            <div id="progressBarContainer">
+                <div id="progressBar"></div>
+            </div>
+            <div style="margin-top: 10px; text-align: center;">
+                <button type="button" id="cancel-button" class="cancel-button" style="display:none;">Cancel</button>
+            </div>
+            <div id="beatmapLink" style="display:none; margin-top:10px;">
+                <a id="beatmapLinkAnchor" href="#" target="_blank">Click Here to go to the created beatmap...</a>
+            </div>
+            <div id="renamedFileInfo" style="display:none; margin-top:10px;">
+                <span>File renamed to: </span><span id="renamedFileName"></span>
+            </div>
+            <div id="errorLogLink" style="display:none; margin-top:10px;">
+                <a id="errorLogLinkAnchor" href="#">See why... (opens error log)</a>
+            </div>
+        </div>
+    </main>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.6.0/jquery.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/select2/4.0.13/js/select2.min.js"></script>
+<script src="{{ url_for('static', filename='i18n.js') }}"></script>
+<script src="{{ url_for('static', filename='queue_manager.js') }}"></script>
+<script src="{{ url_for('static', filename='app.js') }}"></script>
 </body>
-
 </html>

@@ -14,9 +14,9 @@ from osu_diffusion.config import DiffusionTrainConfig
 @dataclass
 class InferenceConfig:
     model_path: str = ''  # Path to trained model
-    audio_path: str = ''  # Path to input audio
-    output_path: str = ''  # Path to output directory
-    beatmap_path: str = ''  # Path to .osu file to autofill metadata and use as reference
+    audio_path: Optional[str] = None  # Path to input audio
+    output_path: Optional[str] = None  # Path to output directory
+    beatmap_path: Optional[str] = None  # Path to .osu file to autofill metadata and use as reference
     lora_path: Optional[str] = None  # Path to LoRA weights
 
     # Conditional generation settings
@@ -44,6 +44,7 @@ class InferenceConfig:
     seed: Optional[int] = None  # Random seed
     device: str = 'auto'  # Inference device (cpu/cuda/mps/auto)
     precision: str = 'fp32'         # Lower precision for speed (fp32/bf16/amp)
+    attn_implementation: str = 'auto'  # Attention implementation (auto/eager/sdpa/flash_attention_2)
     add_to_beatmap: bool = False  # Add generated content to the reference beatmap
     overwrite_reference_beatmap: bool = False  # Overwrite the reference beatmap instead of creating a new one
     export_osz: bool = False  # Export beatmap as .osz file
@@ -75,14 +76,18 @@ class InferenceConfig:
     resnap_events: bool = True  # Resnap notes to the timing after generation
 
     # Metadata settings
-    bpm: int = 120  # Beats per minute of input audio
-    offset: int = 0  # Start of beat, in miliseconds, from the beginning of input audio
-    title: str = ''  # Song title
-    artist: str = ''  # Song artist
-    creator: str = ''  # Beatmap creator
-    version: str = ''  # Beatmap version
-    background: Optional[str] = None  # File name of background image
-    preview_time: int = -1  # Time in milliseconds to start previewing the song
+    bpm: Optional[int] = None  # Beats per minute of input audio
+    offset: Optional[int] = None  # Start of beat, in miliseconds, from the beginning of input audio
+    title: Optional[str] = None  # Song title
+    title_unicode: Optional[str] = None  # Song title in Unicode/Japanese
+    artist: Optional[str] = None  # Song artist
+    artist_unicode: Optional[str] = None  # Song artist in Unicode/Japanese
+    creator: Optional[str] = None  # Beatmap creator
+    version: Optional[str] = None  # Beatmap version
+    source: Optional[str] = None  # Source (anime, game, etc.)
+    tags: Optional[str] = None  # Tags for searching and categorizing
+    background: Optional[str] = None  # Full path to background image
+    preview_time: Optional[int] = None  # Time in milliseconds to start previewing the song
 
     # Diffusion settings
     generate_positions: bool = True  # Use diffusion to generate object positions
@@ -106,15 +111,15 @@ class InferenceConfig:
 
 @dataclass
 class FidConfig:
-    device: str = 'auto'  # Inference device (cpu/cuda/mps/auto)
-    compile: bool = True
     num_processes: int = 3
-    seed: int = 0
+    device: str = 'auto'
+    compile: bool = False
 
     skip_generation: bool = False
     fid: bool = True
     fid_cm3p: bool = True
     rhythm_stats: bool = True
+    extra_stats: bool = True
 
     dataset_type: str = 'ors'
     dataset_path: str = '/workspace/datasets/ORS16291'

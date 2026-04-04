@@ -31,6 +31,7 @@ negative_descriptors: null # List of descriptors to avoid when using classifier-
 seed: null                # Random seed
 device: auto             # Inference device (cpu/cuda/mps/auto)
 precision: 'fp32'         # Lower precision for speed (fp32/bf16/amp)
+attn_implementation: 'auto'  # Attention implementation (auto/eager/sdpa/flash_attention_2)
 add_to_beatmap: false     # Add generated content to the reference beatmap
 overwrite_reference_beatmap: false # Overwrite the reference beatmap instead of creating a new one
 export_osz: false         # Export beatmap as .osz file
@@ -62,14 +63,14 @@ max_batch_size: 16       # Maximum batch size for inference
 resnap_events: true      # Resnap events to the timing after generation
 
 # Metadata settings
-bpm: 120                # Beats per minute of input audio
-offset: 0               # Start of beat, in miliseconds, from the beginning of input audio
-title: ''               # Song title
-artist: ''              # Song artist
+bpm: null                 # Beats per minute of input audio
+offset: null              # Start of beat, in miliseconds, from the beginning of input audio
+title: null               # Song title
+artist: null              # Song artist
 creator: 'Mapperatorinator'        # Beatmap creator
 version: 'Mapperatorinator'        # Beatmap version
-background: null          # File name of background image
-preview_time: -1        # Time in milliseconds to start previewing the song
+background: null          # Full path to background image
+preview_time: null        # Time in milliseconds to start previewing the song
 
 # Diffusion settings
 generate_positions: true      # Use diffusion to generate object positions

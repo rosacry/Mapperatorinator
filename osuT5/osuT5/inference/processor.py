@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Optional
 
+import rosu_pp_py as rosu
 import numpy as np
 import torch
 import torch.nn.functional as F
@@ -44,19 +45,23 @@ class GenerationConfig:
 
 
 # noinspection PyProtectedMember
-def generation_config_from_beatmap(beatmap: Beatmap, tokenizer: Tokenizer) -> GenerationConfig:
+def generation_config_from_beatmap(beatmap: Beatmap, beatmap_path, tokenizer: Optional[Tokenizer] = None) -> GenerationConfig:
     gamemode = int(beatmap.mode)
+
     difficulty = None
-    if gamemode == 0 and len(beatmap._hit_objects) > 0:  # We don't have diffcalc for other gamemodes
-        try:
-            difficulty = round(float(beatmap.stars()), 2)
-        except Exception:
-            pass
+    try:
+        rosu_map = rosu.Beatmap(path=str(beatmap_path))
+        rosu_diff = rosu.Difficulty()
+        rosu_attrs = rosu_diff.calculate(rosu_map)
+        difficulty = round(rosu_attrs.stars, 2)
+    except Exception as e:
+        print(f"Failed to calculate difficulty for beatmap {beatmap_path}: {e}")
+
     return GenerationConfig(
         gamemode=gamemode,
         beatmap_id=beatmap.beatmap_id,
         difficulty=difficulty,
-        mapper_id=tokenizer.beatmap_mapper.get(beatmap.beatmap_id, None),
+        mapper_id=tokenizer.beatmap_mapper.get(beatmap.beatmap_id, None) if tokenizer else None,
         hp_drain_rate=beatmap.hp_drain_rate,
         circle_size=beatmap.circle_size,
         overall_difficulty=beatmap.overall_difficulty,
@@ -67,7 +72,7 @@ def generation_config_from_beatmap(beatmap: Beatmap, tokenizer: Tokenizer) -> Ge
         keycount=int(beatmap.circle_size) if gamemode == 3 else 4,
         hold_note_ratio=get_hold_note_ratio(beatmap) if gamemode == 3 else None,
         scroll_speed_ratio=get_scroll_speed_ratio(beatmap) if gamemode in [1, 3] else None,
-        descriptors=[tokenizer.descriptor_name(idx) for idx in tokenizer.beatmap_descriptors.get(beatmap.beatmap_id, [])] if beatmap.beatmap_id in tokenizer.beatmap_descriptors else None,
+        descriptors=[tokenizer.descriptor_name(idx) for idx in tokenizer.beatmap_descriptors.get(beatmap.beatmap_id, [])] if tokenizer and beatmap.beatmap_id in tokenizer.beatmap_descriptors else None,
     )
 
 
@@ -132,6 +137,7 @@ class Processor(object):
 
         if self.add_positions:
             self.position_precision = args.train.data.position_precision
+            self.position_refinement = args.train.data.position_refinement
             x_min, x_max, y_min, y_max = args.train.data.position_range
             self.x_min = x_min // self.position_precision
             self.x_max = x_max // self.position_precision
@@ -406,6 +412,7 @@ class Processor(object):
                             sequence,
                             self.tokenizer.context_sos[context["context_type"]],
                             self.tokenizer.context_eos[context["context_type"]],
+                            strict=True,
                         )
                         self.add_predicted_tokens_to_context(context, sequence[start:end], frame_time)
                 else:
@@ -497,6 +504,7 @@ class Processor(object):
                             seq_prompt,
                             self.tokenizer.context_sos[context["context_type"]],
                             self.tokenizer.context_eos[context["context_type"]],
+                            strict=True,
                         )
                     else:
                         start, end = self._get_token_context(seq_prompt, self.tokenizer.sos_id, self.tokenizer.eos_id)
@@ -682,7 +690,7 @@ class Processor(object):
 
     def _batched_inference(
             self,
-            genereate_func,
+            generate_func,
             cond_prompts: list[torch.Tensor],
             uncond_prompts: list[torch.Tensor],
             frames: torch.Tensor,
@@ -708,7 +716,7 @@ class Processor(object):
                                   model_kwarg_keys}
 
             # Start generation
-            result = genereate_func(
+            result = generate_func(
                 model_kwargs_batch | dict(
                     inputs=frames_batch,
                     decoder_input_ids=cond_prompt_batch,
@@ -723,12 +731,14 @@ class Processor(object):
 
         torch.cuda.empty_cache()
 
-    def _get_token_context(self, tokens: torch.Tensor, sos, eos):
+    def _get_token_context(self, tokens: torch.Tensor, sos, eos, strict=False):
         """Get the start and end indices of the token context in the given tokens."""
         start = (tokens == sos).nonzero(as_tuple=True)[0]
-        start = start[0] + 1 if len(start) > 0 else 1
+        start = start[0] + 1 if len(start) > 0 else (None if strict else 0)
         end = (tokens == eos).nonzero(as_tuple=True)[0]
-        end = end[0] if len(end) > 0 else len(tokens)
+        end = end[0] if len(end) > 0 else (None if strict else len(tokens))
+        if start is None or end is None:
+            return 0, 0
         return start, end
 
     def split_into_batches(self, tensor, max_batch_size, batch_size=1):
@@ -811,7 +821,8 @@ class Processor(object):
                 beatmap = Beatmap.from_path(beatmap_path)
                 data["events"], data["event_times"] = parser.parse(beatmap, song_length=song_length)
                 if add_class:
-                    data["class"] = self.get_class_vector(generation_config_from_beatmap(beatmap, self.tokenizer), song_length)
+                    data["class"] = self.get_class_vector(
+                        generation_config_from_beatmap(beatmap, beatmap_path, self.tokenizer), song_length)
             elif context == ContextType.NO_HS:
                 beatmap = Beatmap.from_path(beatmap_path)
                 hs_events, hs_event_times = parser.parse(beatmap, song_length=song_length)
@@ -821,7 +832,8 @@ class Processor(object):
                 beatmap = Beatmap.from_path(beatmap_path)
                 data["events"], data["event_times"] = parser.parse(beatmap, song_length=song_length)
                 if add_class:
-                    data["class"] = self.get_class_vector(generation_config_from_beatmap(beatmap, self.tokenizer), song_length)
+                    data["class"] = self.get_class_vector(
+                        generation_config_from_beatmap(beatmap, beatmap_path, self.tokenizer), song_length)
             elif context == ContextType.KIAI:
                 beatmap = Beatmap.from_path(beatmap_path)
                 data["events"], data["event_times"] = parser.parse_kiai(beatmap)
@@ -1231,14 +1243,25 @@ class Processor(object):
     def _rescale_positions(self, events: list[Event], event_times: list[int]) -> tuple[list[Event], list[int]]:
         new_events = []
         new_event_times = []
-        offset = self.position_precision // 2 if self.position_precision > 1 else 0
+        default_offset = self.position_precision // 2 if self.position_precision > 1 else 0
+        default_offset = np.array([default_offset, default_offset], dtype=np.int32)
         for i, event in enumerate(events):
             if event.type == EventType.POS_X or event.type == EventType.POS_Y:
                 new_events.append(Event(type=event.type, value=event.value * self.position_precision))
                 new_event_times.append(event_times[i])
             elif event.type == EventType.POS:
-                new_events.append(Event(type=EventType.POS_X, value=((event.value % self.x_count) + self.x_min) * self.position_precision + offset))
-                new_events.append(Event(type=EventType.POS_Y, value=((event.value // self.x_count) + self.y_min) * self.position_precision + offset))
+                if i + 1 < len(events) and events[i + 1].type == EventType.POS_REFINE and self.position_refinement:
+                    refinement_range = self.position_precision // self.position_refinement
+                    refinement = events[i + 1].value
+                    offset = np.array([refinement % refinement_range, refinement // refinement_range], dtype=np.int32) * self.position_refinement
+                else:
+                    offset = default_offset
+
+                p = np.array([event.value % self.x_count + self.x_min, event.value // self.x_count + self.y_min], dtype=np.int32)
+                p *= self.position_precision
+                p += offset
+                new_events.append(Event(type=EventType.POS_X, value=p[0]))
+                new_events.append(Event(type=EventType.POS_Y, value=p[1]))
                 new_event_times.append(event_times[i])
                 new_event_times.append(event_times[i])
             else:

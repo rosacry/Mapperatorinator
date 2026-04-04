@@ -1,3 +1,6 @@
+import logging
+import sys
+
 import excepthook  # noqa
 import os.path
 import uuid
@@ -10,11 +13,13 @@ import torch
 from accelerate.utils import set_seed
 from omegaconf import OmegaConf, DictConfig
 from slider import Beatmap
-from transformers.utils import cached_file
+from transformers.utils import cached_file, is_flash_attn_2_available
+from importlib import metadata
+from packaging.version import Version
 
 import osu_diffusion
 import routed_pickle
-from config import InferenceConfig, FidConfig
+from config import InferenceConfig
 from diffusion_pipeline import DiffisionPipeline
 from osuT5.osuT5.config import TrainConfig
 from osuT5.osuT5.dataset.data_utils import events_of_type, TIMING_TYPES, merge_events
@@ -23,63 +28,116 @@ from osuT5.osuT5.inference import Preprocessor, Processor, Postprocessor, Beatma
 from osuT5.osuT5.inference.server import InferenceClient
 from osuT5.osuT5.inference.super_timing_generator import SuperTimingGenerator
 from osuT5.osuT5.model import Mapperatorinator
-from osuT5.osuT5.tokenizer import Tokenizer, ContextType
+from osuT5.osuT5.tokenizer import ContextType
 from osuT5.osuT5.utils import load_model_loaders
 from osu_diffusion import DiT_models
 from osu_diffusion.config import DiffusionTrainConfig
 
 
-def prepare_args(args: FidConfig | InferenceConfig):
+def get_default_logger():
+    logger = logging.getLogger(__name__)
+    logger.setLevel(logging.INFO)
+    handler = logging.StreamHandler(sys.stdout)
+    formatter = logging.Formatter('%(message)s')
+    handler.setFormatter(formatter)
+    logger.addHandler(handler)
+    logger.propagate = False
+    return logger
+
+
+def assert_package_version(package_name: str, required_version: str):
+    required_version = Version(required_version)
+    try:
+        installed_version = Version(metadata.version(package_name))
+    except metadata.PackageNotFoundError as e:
+        raise RuntimeError(
+            f"Missing dependency: '{package_name}' is not installed. "
+            "Please install requirements.txt."
+        ) from e
+
+    assert installed_version >= required_version, (
+        f"{package_name}>={required_version} is required, but {installed_version} is installed. "
+        f"Please install requirements.txt."
+    )
+
+
+def assert_package_versions():
+    assert_package_version("transformers", "4.57.3")
+
+
+def setup_inference_environment(seed: int):
+    assert_package_versions()
+    torch.set_grad_enabled(False)
+    torch.set_float32_matmul_precision('high')
+    set_seed(seed)
+
+
+def compile_device_and_seed(args: InferenceConfig, verbose=True):
+    message = None
     if args.device == "auto":
         if torch.cuda.is_available():
-            print("Using CUDA for inference (auto-selected).")
+            message = "Using CUDA for inference (auto-selected)."
             args.device = "cuda"
         elif torch.mps.is_available():
-            print("Using MPS for inference (auto-selected).")
+            message = "Using MPS for inference (auto-selected)."
             args.device = "mps"
         else:
-            print("Using CPU for inference (auto-selected fallback).")
+            message = "Using CPU for inference (auto-selected fallback)."
             args.device = "cpu"
     elif args.device != "cpu":
         if args.device == "cuda":
             if not torch.cuda.is_available():
-                print("CUDA is not available. Falling back to CPU.")
+                message = "CUDA is not available. Falling back to CPU."
                 args.device = "cpu"
         elif args.device == "mps":
             if not torch.mps.is_available():
-                print("MPS is not available. Falling back to CPU.")
+                message = "MPS is not available. Falling back to CPU."
                 args.device = "cpu"
         else:
-            print(
-                f"Requested device '{args.device}' not available. Falling back to CPU."
-            )
+            message = f"Requested device '{args.device}' not available. Falling back to CPU."
             args.device = "cpu"
-    torch.set_grad_enabled(False)
-    torch.set_float32_matmul_precision('high')
+
+    if verbose and message is not None:
+        print(message)
+
+    message = None
+    if args.attn_implementation == "auto":
+        if args.precision in ("bf16", "fp16") and args.device == "cuda" and is_flash_attn_2_available():
+            message = "Using Flash Attention for attention (auto-selected)."
+            args.attn_implementation = "flash_attention_2"
+        else:
+            message = "Using SDPA for attention (auto-selected)."
+            args.attn_implementation = "sdpa"
+    elif args.attn_implementation == "flash_attention_2":
+        if not is_flash_attn_2_available():
+            message = "Flash Attention is not available. Falling back to SDPA."
+            args.attn_implementation = "sdpa"
+        elif args.precision not in ("bf16", "fp16") or args.device != "cuda":
+            message = "Flash Attention requires bf16/fp16 precision and CUDA device. Falling back to SDPA."
+            args.attn_implementation = "sdpa"
+
+    if verbose and message is not None:
+        print(message)
+
     if args.seed is None:
         args.seed = random.randint(0, 2 ** 16)
-        print(f"Random seed: {args.seed}")
-    set_seed(args.seed)
+        if verbose:
+            print(f"Random seed: {args.seed}")
 
 
-def autofill_paths(args: InferenceConfig):
-    """Autofills audio_path and output_path. Can be used either in Web GUI or CLI."""
-    errors = []
-
+def compile_paths(args: InferenceConfig):
     # Convert paths to Path objects for easier manipulation
     beatmap_path = Path(args.beatmap_path) if args.beatmap_path else None
     output_path = Path(args.output_path) if args.output_path else None
     audio_path = Path(args.audio_path) if args.audio_path else None
 
-    # Helper function to validate beatmap file type
-    def is_valid_beatmap_file(path):
-        """Check if the file exists and has a valid beatmap extension (.osu)."""
-        if not path:
-            return True  # Empty path is valid (optional)
-        return path.exists() and path.suffix.lower() == '.osu'
-
     # Case 1: Beatmap path is provided - autofill audio and output
-    if beatmap_path and is_valid_beatmap_file(beatmap_path):
+    if beatmap_path:
+        if not beatmap_path.exists():
+            raise ValueError(f"Beatmap file not found: {beatmap_path}")
+        elif not beatmap_path.suffix.lower() == '.osu':
+            raise ValueError(f"Beatmap file must have .osu extension: {beatmap_path}")
+
         try:
             beatmap = Beatmap.from_path(beatmap_path)
 
@@ -92,8 +150,7 @@ def autofill_paths(args: InferenceConfig):
                 output_path = beatmap_path.parent
 
         except Exception as e:
-            error_msg = f"Error reading beatmap file: {e}"
-            errors.append(error_msg)
+            raise ValueError(f"Error reading beatmap file: {e}")
 
     # Case 2: Audio path is provided but no output path - autofill output
     elif audio_path and audio_path.exists() and not output_path:
@@ -102,131 +159,96 @@ def autofill_paths(args: InferenceConfig):
     # Validate all paths
     valid_audio_extensions = {'.mp3', '.wav', '.ogg', '.m4a', '.flac'}
     if not audio_path:
-        errors.append("Audio file path is required.")
+        raise ValueError("Audio file path is required.")
     elif not audio_path.exists():
-        errors.append(f"Audio file not found: {audio_path}")
+        raise ValueError(f"Audio file not found: {audio_path}")
     elif audio_path.suffix.lower() not in valid_audio_extensions:
-        errors.append(f"Audio file must have one of the following extensions: {', '.join(valid_audio_extensions)}: {audio_path}")
-
-    if beatmap_path:
-        if not beatmap_path.exists():
-            errors.append(f"Beatmap file not found: {beatmap_path}")
-        elif not is_valid_beatmap_file(beatmap_path):
-            errors.append(f"Beatmap file must have .osu extension: {beatmap_path}")
+        raise ValueError(
+            f"Audio file must have one of the following extensions: {', '.join(valid_audio_extensions)}: {audio_path}")
 
     # Update args
     args.audio_path = str(audio_path) if audio_path else ""
     args.output_path = str(output_path) if output_path else ""
     args.beatmap_path = str(beatmap_path) if beatmap_path else ""
 
-    return {
-        'success': len(errors) == 0,
-        'errors': errors
-    }
 
-
-def get_args_from_beatmap(args: InferenceConfig, tokenizer: Tokenizer):
-    result = autofill_paths(args)
-
-    if not result['success']:
-        for error in result['errors']:
-            print(f"Error: {error}")
-        raise ValueError("Invalid paths provided. Please check the errors above.")
-
-    if not args.beatmap_path:
-        # populate fair defaults for any inherited args that need to be filled
-        if args.gamemode is None:
-            args.gamemode = 0
-            print(f"Using game mode {args.gamemode}")
-        if args.hp_drain_rate is None:
-            args.hp_drain_rate = 5
-            print(f"Using HP drain rate {args.hp_drain_rate}")
-        if args.circle_size is None:
-            args.circle_size = 4
-            print(f"Using circle size {args.circle_size}")
-        if args.overall_difficulty is None:
-            args.overall_difficulty = 8
-            print(f"Using overall difficulty {args.overall_difficulty}")
-        if args.approach_rate is None:
-            args.approach_rate = 9
-            print(f"Using approach rate {args.approach_rate}")
-        if args.slider_multiplier is None:
-            args.slider_multiplier = 1.4
-            print(f"Using slider multiplier {args.slider_multiplier}")
-        if args.slider_tick_rate is None:
-            args.slider_tick_rate = 1
-            print(f"Using slider tick rate {args.slider_tick_rate}")
-        if args.hitsounded is None:
-            args.hitsounded = True
-            print(f"Using hitsounded {args.hitsounded}")
-        if args.keycount is None and args.gamemode == 3:
-            args.keycount = 4
-            print(f"Using keycount {args.keycount}")
-        return
-
+def compile_args_from_beatmap(args: InferenceConfig, verbose=True):
     beatmap_path = Path(args.beatmap_path)
     beatmap = Beatmap.from_path(beatmap_path)
 
-    if beatmap.mode not in args.train.data.gamemodes and (any(c in [ContextType.MAP, ContextType.GD, ContextType.NO_HS] for c in args.in_context) or args.add_to_beatmap):
-        raise ValueError(f"Beatmap mode {beatmap.mode} is not supported by the model. Supported modes: {args.train.data.gamemodes}")
+    if beatmap.mode not in args.train.data.gamemodes and (any(
+            c in [ContextType.MAP, ContextType.GD, ContextType.NO_HS] for c in args.in_context) or args.add_to_beatmap):
+        raise ValueError(
+            f"Reference beatmap mode {beatmap.mode} is not supported by the model. Supported modes: {args.train.data.gamemodes}")
 
-    print(f"Using metadata from beatmap: {beatmap.display_name}")
-    generation_config = generation_config_from_beatmap(beatmap, tokenizer)
-
-    if args.gamemode is None:
-        args.gamemode = generation_config.gamemode
-        print(f"Using game mode {args.gamemode}")
-    if args.beatmap_id is None and generation_config.beatmap_id:
-        args.beatmap_id = generation_config.beatmap_id
-        print(f"Using beatmap ID {args.beatmap_id}")
-    if args.difficulty is None and generation_config.difficulty != -1 and len(beatmap.hit_objects(stacking=False)) > 0:
-        args.difficulty = generation_config.difficulty
-        print(f"Using difficulty {args.difficulty}")
-    if args.mapper_id is None and beatmap.beatmap_id in tokenizer.beatmap_mapper:
-        args.mapper_id = generation_config.mapper_id
-        print(f"Using mapper ID {args.mapper_id}")
-    if args.descriptors is None and beatmap.beatmap_id in tokenizer.beatmap_descriptors:
-        args.descriptors = generation_config.descriptors
-        print(f"Using descriptors {args.descriptors}")
-    if args.hp_drain_rate is None:
-        args.hp_drain_rate = generation_config.hp_drain_rate
-        print(f"Using HP drain rate {args.hp_drain_rate}")
-    if args.circle_size is None:
-        args.circle_size = generation_config.circle_size
-        print(f"Using circle size {args.circle_size}")
-    if args.overall_difficulty is None:
-        args.overall_difficulty = generation_config.overall_difficulty
-        print(f"Using overall difficulty {args.overall_difficulty}")
-    if args.approach_rate is None:
-        args.approach_rate = generation_config.approach_rate
-        print(f"Using approach rate {args.approach_rate}")
-    if args.slider_multiplier is None:
-        args.slider_multiplier = generation_config.slider_multiplier
-        print(f"Using slider multiplier {args.slider_multiplier}")
-    if args.slider_tick_rate is None:
-        args.slider_tick_rate = generation_config.slider_tick_rate
-        print(f"Using slider tick rate {args.slider_tick_rate}")
-    if args.hitsounded is None:
-        args.hitsounded = generation_config.hitsounded
-        print(f"Using hitsounded {args.hitsounded}")
-    if args.keycount is None and args.gamemode == 3:
-        args.keycount = int(generation_config.keycount)
-        print(f"Using keycount {args.keycount}")
-    if args.hold_note_ratio is None and args.gamemode == 3:
-        args.hold_note_ratio = generation_config.hold_note_ratio
-        print(f"Using hold note ratio {args.hold_note_ratio}")
-    if args.scroll_speed_ratio is None and args.gamemode == 3:
-        args.scroll_speed_ratio = generation_config.scroll_speed_ratio
-        print(f"Using scroll speed ratio {args.scroll_speed_ratio}")
-
+    if verbose:
+        print(f"Using metadata from beatmap: {beatmap.display_name}")
+    generation_config = generation_config_from_beatmap(beatmap, beatmap_path)
     beatmap_config = beatmap_config_from_beatmap(beatmap)
 
-    args.title = beatmap_config.title
-    args.artist = beatmap_config.artist
-    args.bpm = beatmap_config.bpm
-    args.offset = beatmap_config.offset
-    args.background = beatmap.background
-    args.preview_time = beatmap_config.preview_time
+    beatmap_args = {
+        "gamemode": generation_config.gamemode,
+        "beatmap_id": generation_config.beatmap_id,
+        "difficulty": generation_config.difficulty,
+        "mapper_id": generation_config.mapper_id,
+        "descriptors": generation_config.descriptors,
+        "hp_drain_rate": generation_config.hp_drain_rate,
+        "circle_size": generation_config.circle_size,
+        "overall_difficulty": generation_config.overall_difficulty,
+        "approach_rate": generation_config.approach_rate,
+        "slider_multiplier": generation_config.slider_multiplier,
+        "slider_tick_rate": generation_config.slider_tick_rate,
+        "hitsounded": generation_config.hitsounded,
+        "keycount": generation_config.keycount,
+        "hold_note_ratio": generation_config.hold_note_ratio,
+        "scroll_speed_ratio": generation_config.scroll_speed_ratio,
+        "bpm": beatmap_config.bpm,
+        "offset": beatmap_config.offset,
+        "title": beatmap_config.title,
+        "title_unicode": beatmap_config.title_unicode,
+        "artist": beatmap_config.artist,
+        "artist_unicode": beatmap_config.artist_unicode,
+        "creator": beatmap_config.creator,
+        "version": beatmap_config.version,
+        "source": beatmap_config.source,
+        "background": str(beatmap_path.parent / beatmap.background),
+        "preview_time": beatmap_config.preview_time,
+    }
+
+    for key, value in beatmap_args.items():
+        if getattr(args, key) is None and value is not None:
+            setattr(args, key, value)
+            if verbose:
+                print(f"Using beatmap {key} {value}")
+
+
+def compile_default_args(args: InferenceConfig, verbose=True):
+    # Populate fair defaults for any inherited args that need to be filled
+    default_args = {
+        "gamemode": 0,
+        "hitsounded": True,
+        "keycount": 4,
+        "hp_drain_rate": 5,
+        "circle_size": 4,
+        "overall_difficulty": 8,
+        "approach_rate": 9,
+        "slider_multiplier": 1.4,
+        "slider_tick_rate": 1,
+        "bpm": 120,
+        "offset": 0,
+        "title": "Unknown Title",
+        "artist": "Unknown Artist",
+        "creator": "Mapperatorinator",
+        "version": "Mapperatorinator",
+        "source": "",
+        "preview_time": -1,
+    }
+
+    for key, value in default_args.items():
+        if getattr(args, key) is None:
+            setattr(args, key, value)
+            if verbose:
+                print(f"Using default {key} {value}")
 
 
 def get_tags_dict(args: DictConfig | InferenceConfig):
@@ -272,49 +294,76 @@ def get_tags_dict(args: DictConfig | InferenceConfig):
     )
 
 
-def get_config(args: InferenceConfig):
-    # Create tags that describes args
-    tags = get_tags_dict(args)
-    # Filter to all non-default values
-    defaults = get_tags_dict(OmegaConf.load("configs/inference/default.yaml"))
-    tags = {k: v for k, v in tags.items() if v != defaults[k]}
-    # To string separated by spaces
-    tags = " ".join(f"{k}={v}" for k, v in tags.items())
+def compile_derived_args(args: InferenceConfig):
+    # Any args that can be derived from other args
+    derived_args = {
+        "title_unicode": args.title,
+        "artist_unicode": args.artist,
+    }
 
+    for key, value in derived_args.items():
+        if getattr(args, key) is None:
+            setattr(args, key, value)
+
+    if args.tags is None:
+        # Create tags that describes args
+        tags = get_tags_dict(args)
+        # Filter to all non-default values
+        defaults = get_tags_dict(OmegaConf.load("configs/inference/default.yaml"))
+        tags = {k: v for k, v in tags.items() if v != defaults[k]}
+        # To string separated by spaces
+        args.tags = " ".join(f"{k}={v}" for k, v in tags.items())
+
+
+def compile_args(args: InferenceConfig, verbose=True):
+    """Validates and populates missing args."""
+    compile_device_and_seed(args, verbose=verbose)
+    compile_paths(args)
+
+    if args.beatmap_path:
+        compile_args_from_beatmap(args, verbose=verbose)
+    else:
+        compile_default_args(args, verbose=verbose)
+
+    compile_derived_args(args)
+
+
+def get_config(args: InferenceConfig):
     # Set defaults for generation config that does not allow an unknown value
     return GenerationConfig(
-        gamemode=args.gamemode if args.gamemode is not None else 0,
+        gamemode=args.gamemode,
         beatmap_id=args.beatmap_id,
         difficulty=args.difficulty,
         mapper_id=args.mapper_id,
         year=args.year,
-        hitsounded=args.hitsounded if args.hitsounded is not None else True,
+        hitsounded=args.hitsounded,
         hp_drain_rate=args.hp_drain_rate,
         circle_size=args.circle_size,
         overall_difficulty=args.overall_difficulty,
         approach_rate=args.approach_rate,
-        slider_multiplier=args.slider_multiplier or 1.4,
-        slider_tick_rate=args.slider_tick_rate or 1,
-        keycount=args.keycount if args.keycount is not None else 4,
+        slider_multiplier=args.slider_multiplier,
+        slider_tick_rate=args.slider_tick_rate,
+        keycount=args.keycount,
         hold_note_ratio=args.hold_note_ratio,
         scroll_speed_ratio=args.scroll_speed_ratio,
         descriptors=args.descriptors,
         negative_descriptors=args.negative_descriptors,
     ), BeatmapConfig(
         title=args.title,
+        title_unicode=args.title_unicode,
         artist=args.artist,
-        title_unicode=args.title,
-        artist_unicode=args.artist,
+        artist_unicode=args.artist_unicode,
         audio_filename=Path(args.audio_path).name,
-        hp_drain_rate=args.hp_drain_rate or 5,
+        hp_drain_rate=args.hp_drain_rate,
         circle_size=(args.keycount if args.gamemode == 3 else args.circle_size) or 4,
-        overall_difficulty=args.overall_difficulty or 8,
-        approach_rate=args.approach_rate or 9,
-        slider_multiplier=args.slider_multiplier or 1.4,
-        slider_tick_rate=args.slider_tick_rate or 1,
+        overall_difficulty=args.overall_difficulty,
+        approach_rate=args.approach_rate,
+        slider_multiplier=args.slider_multiplier,
+        slider_tick_rate=args.slider_tick_rate,
         creator=args.creator,
         version=args.version,
-        tags=tags,
+        source=args.source,
+        tags=args.tags,
         background_line=background_line(args.background),
         preview_time=args.preview_time,
         bpm=args.bpm,
@@ -337,10 +386,12 @@ def generate(
         diff_tokenizer=None,
         refine_model=None,
         verbose=True,
+        logger=None,
 ):
     audio_path = args.audio_path if audio_path is None else audio_path
     beatmap_path = args.beatmap_path if beatmap_path is None else beatmap_path
     output_path = args.output_path if output_path is None else output_path
+    logger = get_default_logger() if logger is None else logger.getChild(__name__)
 
     # Do some validation
     if not Path(audio_path).exists() or not Path(audio_path).is_file():
@@ -355,7 +406,7 @@ def generate(
 
     preprocessor = Preprocessor(args, parallel=args.parallel)
     processor = Processor(args, model, tokenizer)
-    postprocessor = Postprocessor(args)
+    postprocessor = Postprocessor(args, logger=logger)
 
     audio = preprocessor.load(audio_path)
     sequences = preprocessor.segment(audio)
@@ -372,7 +423,8 @@ def generate(
         if ContextType.TIMING in output_type:
             output_type.remove(ContextType.TIMING)
     elif (ContextType.NONE in args.in_context and ContextType.MAP in output_type and
-          not any((ContextType.NONE in ctx["in"] or len(ctx["in"]) == 0) and ContextType.MAP in ctx["out"] for ctx in args.train.data.context_types)):
+          not any((ContextType.NONE in ctx["in"] or len(ctx["in"]) == 0) and ContextType.MAP in ctx["out"] for ctx in
+                  args.train.data.context_types)):
         # Generate timing and convert in_context to timing context
         timing_events, timing_times = processor.generate(
             sequences=sequences,
@@ -433,7 +485,7 @@ def generate(
     if args.add_to_beatmap:
         result = postprocessor.add_to_beatmap(result, beatmap_path)
         if verbose:
-            print(f"Merged generated content with reference beatmap")
+            logger.info(f"Merged generated content with reference beatmap")
 
     result_path = None
     osz_path = None
@@ -445,7 +497,7 @@ def generate(
             result_path = os.path.join(output_path, f"beatmap{str(uuid.uuid4().hex)}.osu")
         postprocessor.write_result(result, result_path)
         if verbose:
-            print(f"Generated beatmap saved to {result_path}")
+            logger.info(f"Generated beatmap saved to {result_path}")
 
     if args.export_osz:
         # Create proper .osz filename from artist and title
@@ -456,7 +508,7 @@ def generate(
         # Pass background path for inclusion in .osz
         postprocessor.export_osz(result_path, audio_path, osz_path, args.background)
         if verbose:
-            print(f"Generated .osz saved to {osz_path}")
+            logger.info(f"Generated .osz saved to {osz_path}")
 
     return result, result_path, osz_path
 
@@ -468,6 +520,7 @@ def load_model_with_server(
         max_batch_size: int = 8,
         use_server: bool = False,
         precision: str = "fp32",
+        attn_implementation: str = "sdpa",
         eval_mode: bool = True,
         lora_path=None,
 ):
@@ -476,6 +529,7 @@ def load_model_with_server(
         t5_args=t5_args,
         device=device,
         precision=precision,
+        attn_implementation=attn_implementation,
         eval_mode=eval_mode,
         pickle_module=routed_pickle,
         lora_path=lora_path,
@@ -531,7 +585,9 @@ def load_diff_model(
 
 @hydra.main(config_path="configs/inference", config_name="v30", version_base="1.1")
 def main(args: InferenceConfig):
-    prepare_args(args)
+    args = OmegaConf.to_object(args) if isinstance(args, DictConfig) else args
+    compile_args(args)
+    setup_inference_environment(args.seed)
 
     model, tokenizer = load_model_with_server(
         args.model_path,
@@ -540,6 +596,7 @@ def main(args: InferenceConfig):
         max_batch_size=args.max_batch_size,
         use_server=args.use_server,
         precision=args.precision,
+        attn_implementation=args.attn_implementation,
         lora_path=args.lora_path,
     )
 
@@ -553,7 +610,6 @@ def main(args: InferenceConfig):
         if args.compile:
             diff_model.forward = torch.compile(diff_model.forward, mode="reduce-overhead", fullgraph=True)
 
-    get_args_from_beatmap(args, tokenizer)
     generation_config, beatmap_config = get_config(args)
 
     return generate(
