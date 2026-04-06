@@ -71,6 +71,11 @@ class Mapperatorinator(PreTrainedModel, GenerationMixin):
     def __init__(self, config: MapperatorinatorConfig, **kwargs):
         super().__init__(config, **kwargs)
 
+        # from_pretrained passes dtype as a model kwarg, but get_backbone_model
+        # reads it from config. Store it on config so the backbone gets the right dtype.
+        if not hasattr(config, 'dtype'):
+            config.dtype = kwargs.get('dtype', None)
+
         if not config.input_raw_wave:
             self.spectrogram = MelSpectrogram(
                 config.spectrogram_implementation,
