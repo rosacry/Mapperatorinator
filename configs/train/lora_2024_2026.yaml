@@ -1,0 +1,76 @@
+# LoRA fine-tune config for training Mapperatorinator V31 on 2024-2026 beatmap data.
+#
+# This inherits from the lora.yaml config but targets V31 and uses the new dataset.
+#
+# Usage (in Docker container):
+#   python osuT5/train.py -cn lora_2024_2026
+#
+# Or override dataset paths:
+#   python osuT5/train.py -cn lora_2024_2026 \
+#     data.train_dataset_path="/workspace/datasets/MMRS_2024_2026" \
+#     data.test_dataset_path="/workspace/datasets/MMRS_2024_2026" \
+#     data.train_dataset_end=TRAIN_END \
+#     data.test_dataset_start=TRAIN_END \
+#     data.test_dataset_end=TOTAL
+#
+# After training, test with:
+#   python inference.py lora_path="path/to/checkpoint" year=2025
+
+defaults:
+  - v31
+  - _self_
+
+compile: true
+precision: 'bf16'
+enable_lora: true
+
+# Fine-tune from V31 (the latest model that supports year tokens)
+pretrained_path: "OliBomby/Mapperatorinator-v31"
+
+data:
+  dataset_type: "mmrs"
+  # UPDATE THESE to your actual dataset paths and sizes:
+  train_dataset_path: "/workspace/datasets/MMRS_2024_2026"
+  test_dataset_path: "/workspace/datasets/MMRS_2024_2026"
+  train_dataset_start: 0
+  train_dataset_end: 0       # Set to 90% of total beatmap sets
+  test_dataset_start: 0      # Set to same as train_dataset_end
+  test_dataset_end: 0        # Set to total number of beatmap sets
+
+  # Only train on 2024-2026 data
+  min_year: 2024
+  max_year: 2026
+
+  # Keep all the V31 token settings (inherited from v31.yaml)
+  # Year token is critical for this fine-tune
+  add_year_token: true
+
+optim:
+  name: muon
+  base_lr: 0.0004
+  base_lr_2: 0.0001
+  batch_size: 32
+  grad_acc: 16
+  # More steps since we're teaching new year data
+  # Adjust based on dataset size: ~50 steps per 1000 beatmaps is a starting point
+  total_steps: 2000
+  warmup_steps: 100
+  sustain_steps: 0
+  weight_decay: 0.01
+  lr_scheduler: cosine
+  final_cosine: 0
+
+lora:
+  r: 64
+  lora_alpha: 128
+  target_modules: ['k_proj', 'v_proj', 'q_proj', 'out_proj']
+  lora_dropout: 0.05
+  bias: "none"
+  init_lora_weights: "pissa"
+
+eval:
+  every_steps: 200
+  steps: 100
+
+checkpoint:
+  every_steps: 500
