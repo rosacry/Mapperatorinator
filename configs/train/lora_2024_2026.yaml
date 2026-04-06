@@ -49,7 +49,10 @@ optim:
   name: muon
   base_lr: 0.0004
   base_lr_2: 0.0001
-  batch_size: 32
+  # Tuned for 12GB VRAM (3080 Ti / 3060 12GB / 4070 etc.)
+  # batch_size=2 with grad_acc=16 = effective batch of 32
+  # If you get OOM, reduce batch_size to 1 and increase grad_acc to 32
+  batch_size: 2
   grad_acc: 16
   # More steps since we're teaching new year data
   # Adjust based on dataset size: ~50 steps per 1000 beatmaps is a starting point

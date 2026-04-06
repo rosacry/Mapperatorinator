@@ -177,6 +177,8 @@ def main():
                         help="Only fetch metadata, don't download .osz files")
     parser.add_argument("--mappers-path", default=DEFAULT_MAPPERS_PATH,
                         help="Path to beatmap_users.json for mapper filtering (default: datasets/beatmap_users.json)")
+    parser.add_argument("--filter-mappers", action="store_true",
+                        help="Only download maps from mappers in beatmap_users.json")
     args = parser.parse_args()
 
     if not args.client_id or not args.client_secret:
@@ -192,9 +194,6 @@ def main():
     print("Authenticating with osu! API...")
     token = get_oauth_token(args.client_id, args.client_secret)
     print("Authenticated successfully.")
-
-    # Load mapper filter
-    mapper_ids = load_mapper_user_ids(args.mappers_path)
 
     # Search for beatmap sets
     all_sets = []
@@ -213,9 +212,11 @@ def main():
 
     print(f"\nTotal unique beatmap sets found: {len(all_sets)}")
 
-    # Filter to known mappers only
-    all_sets = filter_by_mappers(all_sets, mapper_ids)
-    print(f"After mapper filter: {len(all_sets)} sets")
+    # Optionally filter to known mappers only
+    if args.filter_mappers:
+        mapper_ids = load_mapper_user_ids(args.mappers_path)
+        all_sets = filter_by_mappers(all_sets, mapper_ids)
+        print(f"After mapper filter: {len(all_sets)} sets")
 
     # Save metadata
     metadata_path = output_dir / "beatmapset_metadata.json"
