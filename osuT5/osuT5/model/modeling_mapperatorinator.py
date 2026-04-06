@@ -68,8 +68,8 @@ class Mapperatorinator(PreTrainedModel, GenerationMixin):
     _supports_cache_class = True
     _supports_static_cache = True
 
-    def __init__(self, config: MapperatorinatorConfig):
-        super().__init__(config)
+    def __init__(self, config: MapperatorinatorConfig, **kwargs):
+        super().__init__(config, **kwargs)
 
         if not config.input_raw_wave:
             self.spectrogram = MelSpectrogram(
