@@ -31,6 +31,8 @@ from pathlib import Path
 import requests
 from tqdm import tqdm
 
+DEFAULT_MAPPERS_PATH = "datasets/beatmap_users.json"
+
 API_BASE = "https://osu.ppy.sh/api/v2"
 TOKEN_URL = "https://osu.ppy.sh/oauth/token"
 # catboy.best is a commonly used osu! beatmap mirror
@@ -106,6 +108,28 @@ def search_beatmapsets(token: str, year_start: int, year_end: int, status: str =
     return all_sets
 
 
+def load_mapper_user_ids(mappers_path: str) -> set[int]:
+    """Load unique mapper user IDs from beatmap_users.json."""
+    path = Path(mappers_path)
+    if not path.exists():
+        print(f"Error: Mappers file not found: {path}")
+        sys.exit(1)
+
+    with open(path, "r", encoding="utf-8") as f:
+        data = json.load(f)
+
+    user_ids = {entry["user_id"] for entry in data}
+    print(f"Loaded {len(user_ids)} unique mapper IDs from {path}")
+    return user_ids
+
+
+def filter_by_mappers(beatmapsets: list[dict], mapper_ids: set[int]) -> list[dict]:
+    """Filter beatmap sets to only those created by known mappers."""
+    filtered = [s for s in beatmapsets if s.get("user_id") in mapper_ids]
+    print(f"  Mapper filter: {len(filtered)}/{len(beatmapsets)} sets match known mappers")
+    return filtered
+
+
 def download_osz(beatmapset_id: int, output_dir: Path, existing_ids: set) -> bool:
     """Download a single .osz file from the mirror."""
     if beatmapset_id in existing_ids:
@@ -151,6 +175,8 @@ def main():
                         help="Beatmap statuses to download (ranked, loved, qualified)")
     parser.add_argument("--metadata-only", action="store_true",
                         help="Only fetch metadata, don't download .osz files")
+    parser.add_argument("--mappers-path", default=DEFAULT_MAPPERS_PATH,
+                        help="Path to beatmap_users.json for mapper filtering (default: datasets/beatmap_users.json)")
     args = parser.parse_args()
 
     if not args.client_id or not args.client_secret:
@@ -166,6 +192,9 @@ def main():
     print("Authenticating with osu! API...")
     token = get_oauth_token(args.client_id, args.client_secret)
     print("Authenticated successfully.")
+
+    # Load mapper filter
+    mapper_ids = load_mapper_user_ids(args.mappers_path)
 
     # Search for beatmap sets
     all_sets = []
@@ -183,6 +212,10 @@ def main():
     all_sets = unique_sets
 
     print(f"\nTotal unique beatmap sets found: {len(all_sets)}")
+
+    # Filter to known mappers only
+    all_sets = filter_by_mappers(all_sets, mapper_ids)
+    print(f"After mapper filter: {len(all_sets)} sets")
 
     # Save metadata
     metadata_path = output_dir / "beatmapset_metadata.json"
