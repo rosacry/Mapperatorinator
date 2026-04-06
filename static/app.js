@@ -1,4 +1,4 @@
-$(document).ready(function() {
+$(document).ready(function () {
     // Application state and configuration
     const AppState = {
         jobs: new Map(),
@@ -24,8 +24,8 @@ $(document).ready(function() {
         showFlashMessage(message, type = 'success') {
             const flashContainer = $('#flash-container');
             const alertClass = type === 'success' ? 'alert success' :
-                             type === 'cancel-success' ? 'alert alert-cancel-success' :
-                             'alert error';
+                type === 'cancel-success' ? 'alert alert-cancel-success' :
+                    'alert error';
             const messageDiv = $(`<div class="${alertClass}">${message}</div>`);
             flashContainer.append(messageDiv);
             setTimeout(() => messageDiv.remove(), 5000);
@@ -98,7 +98,7 @@ $(document).ready(function() {
             const beatmapPath = $('#beatmap_path').val().trim();
 
             // Handle gamemode-based visibility
-            $('.conditional-field[data-show-for-gamemode]').each(function() {
+            $('.conditional-field[data-show-for-gamemode]').each(function () {
                 const $field = $(this);
                 const supportedModes = $field.data('show-for-gamemode').toString().split(',');
                 const shouldShow = supportedModes.includes(selectedGamemode);
@@ -111,7 +111,7 @@ $(document).ready(function() {
             });
 
             // Handle model-based visibility
-            $('.conditional-field[data-hide-for-model]').each(function() {
+            $('.conditional-field[data-hide-for-model]').each(function () {
                 const $field = $(this);
                 const hiddenModels = $field.data('hide-for-model').toString().split(',');
                 const shouldHide = hiddenModels.includes(selectedModel);
@@ -149,7 +149,7 @@ $(document).ready(function() {
             const $gamemodeSelect = $("#gamemode");
             if (selectedModel === "v30") {
                 $gamemodeSelect.val('0').prop('disabled', true);
-                $gamemodeSelect.find("option").each(function() {
+                $gamemodeSelect.find("option").each(function () {
                     $(this).prop('disabled', $(this).val() !== '0');
                 });
             } else {
@@ -159,9 +159,9 @@ $(document).ready(function() {
 
             // Handle in-context options
             const supportedContext = capabilities.supportedInContextOptions ||
-                                   ['NONE', 'TIMING', 'KIAI', 'MAP', 'GD', 'NO_HS'];
+                ['NONE', 'TIMING', 'KIAI', 'MAP', 'GD', 'NO_HS'];
 
-            $('input[name="in_context_options"]').each(function() {
+            $('input[name="in_context_options"]').each(function () {
                 const $checkbox = $(this);
                 const value = $checkbox.val();
                 const $item = $checkbox.closest('.context-option-item');
@@ -193,7 +193,7 @@ $(document).ready(function() {
         },
 
         attachBrowseHandlers() {
-            $('.browse-button[data-browse-type]').click(async function() {
+            $('.browse-button[data-browse-type]').click(async function () {
                 const browseType = $(this).data('browse-type');
                 const targetId = $(this).data('target');
 
@@ -394,7 +394,7 @@ $(document).ready(function() {
         },
 
         attachDropdownHandler() {
-            $('.custom-dropdown-descriptors .dropdown-header').on('click', function() {
+            $('.custom-dropdown-descriptors .dropdown-header').on('click', function () {
                 const $dropdown = $(this).parent();
                 const dropdownContent = document.querySelector('.dropdown-content');
                 $dropdown.toggleClass('open');
@@ -408,7 +408,7 @@ $(document).ready(function() {
         },
 
         attachDescriptorClickHandlers() {
-            $('.descriptors-container').on('click', 'input[name="descriptors"]', function(e) {
+            $('.descriptors-container').on('click', 'input[name="descriptors"]', function (e) {
                 e.preventDefault();
                 const $checkbox = $(this);
 
@@ -449,15 +449,18 @@ $(document).ready(function() {
 
         buildConfigObject() {
             const config = {
-                version: "1.0",
+                version: "1.1",
                 timestamp: new Date().toISOString(),
                 settings: {},
                 descriptors: { positive: [], negative: [] },
-                inContextOptions: []
+                inContextOptions: [],
+                mapperList: [],
+                songMetadata: { artist: '', title: '' },
+                beatmapCustomization: { previewTime: '', backgroundPath: '' }
             };
 
             // Export form fields
-            $('#inferenceForm').find('input, select, textarea').each(function() {
+            $('#inferenceForm').find('input, select, textarea').each(function () {
                 const $field = $(this);
                 const name = $field.attr('name');
                 const type = $field.attr('type');
@@ -468,7 +471,7 @@ $(document).ready(function() {
             });
 
             // Export descriptors
-            $('input[name="descriptors"]').each(function() {
+            $('input[name="descriptors"]').each(function () {
                 const $checkbox = $(this);
                 const value = $checkbox.val();
                 if ($checkbox.hasClass('positive-check')) {
@@ -479,9 +482,22 @@ $(document).ready(function() {
             });
 
             // Export in-context options
-            $('input[name="in_context_options"]:checked').each(function() {
+            $('input[name="in_context_options"]:checked').each(function () {
                 config.inContextOptions.push($(this).val());
             });
+
+            // Export mapper list
+            if (typeof MapperManager !== 'undefined') {
+                config.mapperList = MapperManager.getAll();
+            }
+
+            // Export song metadata
+            config.songMetadata.artist = $('#artist').val() || '';
+            config.songMetadata.title = $('#title').val() || '';
+
+            // Export beatmap customization
+            config.beatmapCustomization.previewTime = $('#preview_time').val() || '';
+            config.beatmapCustomization.backgroundPath = $('#background_image').val() || '';
 
             return config;
         },
@@ -558,6 +574,14 @@ $(document).ready(function() {
             $(e.target).val(''); // Reset input
         },
 
+        // Map legacy field names from older config versions to current form field names
+        _fieldNameMap: {
+            'background_path': 'background_image',
+            'diff_name': 'version',
+            'detected_artist': null,  // skip, handled via songMetadata
+            'detected_title': null,   // skip, handled via songMetadata
+        },
+
         importConfiguration(content) {
             try {
                 const config = JSON.parse(content);
@@ -565,13 +589,16 @@ $(document).ready(function() {
                     throw new Error("Invalid configuration file format");
                 }
 
-                // Import settings
+                // Import settings with field name mapping
                 if (config.settings) {
                     Object.entries(config.settings).forEach(([name, value]) => {
-                        const $field = $(`[name="${name}"]`);
+                        // Apply field name mapping
+                        const mapped = this._fieldNameMap.hasOwnProperty(name) ? this._fieldNameMap[name] : name;
+                        if (mapped === null) return; // Explicitly skipped field
+                        const $field = $(`[name="${mapped}"]`);
                         if ($field.length) {
                             if ($field.attr('type') === 'checkbox') {
-                                $field.prop('checked', value);
+                                $field.prop('checked', !!value);
                             } else {
                                 $field.val(value);
                             }
@@ -598,10 +625,35 @@ $(document).ready(function() {
                     $(`input[name="in_context_options"][value="${value}"]`).prop('checked', true);
                 });
 
+                // Import mapper list
+                if (config.mapperList && Array.isArray(config.mapperList) && config.mapperList.length > 0) {
+                    if (typeof MapperManager !== 'undefined') {
+                        MapperManager.loadFromArray(config.mapperList);
+                    }
+                }
+
+                // Import song metadata
+                if (config.songMetadata) {
+                    if (config.songMetadata.artist) $('#artist').val(config.songMetadata.artist);
+                    if (config.songMetadata.title) $('#title').val(config.songMetadata.title);
+                }
+
+                // Import beatmap customization
+                if (config.beatmapCustomization) {
+                    if (config.beatmapCustomization.previewTime) {
+                        $('#preview_time').val(config.beatmapCustomization.previewTime);
+                        if (typeof BeatmapCustomization !== 'undefined') BeatmapCustomization.updatePreviewDisplay();
+                    }
+                    if (config.beatmapCustomization.backgroundPath) {
+                        $('#background_image').val(config.beatmapCustomization.backgroundPath);
+                    }
+                }
+
                 // Trigger updates
                 $("#model, #gamemode").trigger('change');
                 $(UIManager.clearable_inputs).trigger('blur');
                 $(UIManager.clearable_inputs).trigger('input');
+                if (typeof QueueUI !== 'undefined') QueueUI.updateUI();
 
                 this.showConfigStatus(`Configuration imported successfully! (${config.timestamp || 'Unknown date'})`, "success");
 
@@ -614,8 +666,8 @@ $(document).ready(function() {
         showConfigStatus(message, type) {
             const $status = $("#config-status");
             $status.text(message)
-                   .css('color', type === 'success' ? '#28a745' : '#dc3545')
-                   .fadeIn();
+                .css('color', type === 'success' ? '#28a745' : '#dc3545')
+                .fadeIn();
             setTimeout(() => $status.fadeOut(), 5000);
         }
     };
@@ -816,7 +868,7 @@ $(document).ready(function() {
             const positiveDescriptors = [];
             const negativeDescriptors = [];
 
-            $('input[name="descriptors"]').each(function() {
+            $('input[name="descriptors"]').each(function () {
                 const $cb = $(this);
                 if ($cb.hasClass('positive-check')) {
                     positiveDescriptors.push($cb.val());
@@ -893,9 +945,9 @@ $(document).ready(function() {
                         errorMsg = jqXHR.responseJSON.message;
                     } else if (jqXHR.responseText) {
                         try {
-                           const parsed = JSON.parse(jqXHR.responseText);
-                           if(parsed && parsed.message) errorMsg = parsed.message;
-                        } catch(e) { /* ignore parsing error */ }
+                            const parsed = JSON.parse(jqXHR.responseText);
+                            if (parsed && parsed.message) errorMsg = parsed.message;
+                        } catch (e) { /* ignore parsing error */ }
                     }
                     Utils.showFlashMessage(errorMsg, 'error');
                     this.removeJob(job.id, job.elements.$card);
@@ -1370,7 +1422,7 @@ $(document).ready(function() {
             }
 
             let wasPlaying = false;
-            $sliderTrack.on('mousedown', function(e) {
+            $sliderTrack.on('mousedown', function (e) {
                 e.preventDefault(); e.stopPropagation(); self.sliderDragging = true;
                 wasPlaying = !self.audioElement.paused;
                 if (wasPlaying) self.audioElement.pause();
@@ -1395,7 +1447,7 @@ $(document).ready(function() {
                 self.audioElement.volume = percent;
                 $volumeFill.css('width', (percent * 100) + '%'); $volumeThumb.css('left', (percent * 100) + '%');
             }
-            $volumeTrack.on('mousedown', function(e) {
+            $volumeTrack.on('mousedown', function (e) {
                 e.preventDefault(); handleVolumeInteraction(e);
                 function onMouseMove(moveEvent) { handleVolumeInteraction(moveEvent); }
                 function onMouseUp() { document.removeEventListener('mousemove', onMouseMove); document.removeEventListener('mouseup', onMouseUp); }
@@ -1622,14 +1674,14 @@ $(document).ready(function() {
                 Utils.showFlashMessage('Please wait for song detection to complete.', 'error'); return;
             }
             const formData = {};
-            $('#inferenceForm').find('input, select, textarea').each(function() {
+            $('#inferenceForm').find('input, select, textarea').each(function () {
                 const $field = $(this), name = $field.attr('name'), type = $field.attr('type');
                 if (name && type !== 'file') {
                     formData[name] = type === 'checkbox' ? $field.prop('checked') : ($field.val() || $field.attr('placeholder') || '');
                 }
             });
             formData.descriptors = { positive: [], negative: [] };
-            $('input[name="descriptors"]').each(function() {
+            $('input[name="descriptors"]').each(function () {
                 const $cb = $(this);
                 if ($cb.hasClass('positive-check')) formData.descriptors.positive.push($cb.val());
                 else if ($cb.hasClass('negative-check')) formData.descriptors.negative.push($cb.val());
@@ -1837,12 +1889,12 @@ $(document).ready(function() {
 
         addSingleMapperToQueue(mapperId, mapperName, count) {
             const templateData = {};
-            $('#inferenceForm').find('input, select, textarea').each(function() {
+            $('#inferenceForm').find('input, select, textarea').each(function () {
                 const $field = $(this), name = $field.attr('name'), type = $field.attr('type');
                 if (name && type !== 'file') templateData[name] = type === 'checkbox' ? $field.prop('checked') : ($field.val() || $field.attr('placeholder') || '');
             });
             templateData.descriptors = { positive: [], negative: [] };
-            $('input[name="descriptors"]').each(function() {
+            $('input[name="descriptors"]').each(function () {
                 const $cb = $(this);
                 if ($cb.hasClass('positive-check')) templateData.descriptors.positive.push($cb.val());
                 else if ($cb.hasClass('negative-check')) templateData.descriptors.negative.push($cb.val());
@@ -1869,12 +1921,12 @@ $(document).ready(function() {
             const mappers = MapperManager.getAll();
             if (mappers.length === 0) { Utils.showFlashMessage('No mappers in list!', 'error'); return; }
             const templateData = {};
-            $('#inferenceForm').find('input, select, textarea').each(function() {
+            $('#inferenceForm').find('input, select, textarea').each(function () {
                 const $field = $(this), name = $field.attr('name'), type = $field.attr('type');
                 if (name && type !== 'file') templateData[name] = type === 'checkbox' ? $field.prop('checked') : ($field.val() || $field.attr('placeholder') || '');
             });
             templateData.descriptors = { positive: [], negative: [] };
-            $('input[name="descriptors"]').each(function() {
+            $('input[name="descriptors"]').each(function () {
                 const $cb = $(this);
                 if ($cb.hasClass('positive-check')) templateData.descriptors.positive.push($cb.val());
                 else if ($cb.hasClass('negative-check')) templateData.descriptors.negative.push($cb.val());
@@ -1965,9 +2017,9 @@ $(document).ready(function() {
             // Set initial value from I18n
             const currentLang = I18n.getCurrentLanguage();
             $langSelector.val(currentLang);
-            
+
             // Handle language change
-            $langSelector.on('change', async function() {
+            $langSelector.on('change', async function () {
                 const newLang = $(this).val();
                 const success = await I18n.setLanguage(newLang);
                 if (!success) {
@@ -1978,7 +2030,7 @@ $(document).ready(function() {
         }
 
         // Check BF16 support on page load
-        $.get("/check_bf16_support", function(data) {
+        $.get("/check_bf16_support", function (data) {
             if (data.supported) {
                 $("#bf16-option").show();
                 if (data.gpu_name) {
