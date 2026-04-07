@@ -79,7 +79,8 @@ function Step-Dataset {
 
     python training/build_dataset.py `
         --input $OszDir `
-        --output $DatasetDir
+        --output $DatasetDir `
+        --delete-osz
 
     # Get split values and update config
     $splitInfo = python -c @"

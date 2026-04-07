@@ -85,7 +85,8 @@ step_dataset() {
 
     python training/build_dataset.py \
         --input "$OSZ_DIR" \
-        --output "$DATASET_DIR"
+        --output "$DATASET_DIR" \
+        --delete-osz
 
     echo ""
     echo "Dataset built in: $DATASET_DIR"

@@ -71,27 +71,21 @@ def extract_osz(osz_path: Path, output_dir: Path) -> list[dict]:
 
     try:
         with zipfile.ZipFile(osz_path, "r") as z:
-            # Extract everything
-            z.extractall(set_dir)
+            # Only extract .osu files and audio — skip images, videos, storyboards
+            osu_files = [n for n in z.namelist() if n.endswith(".osu")]
+            audio_files = [n for n in z.namelist()
+                           if n.lower().endswith((".mp3", ".ogg", ".wav"))]
 
-            # Find audio file
-            audio_file = None
-            for name in z.namelist():
-                if name.lower().endswith((".mp3", ".ogg", ".wav")):
-                    audio_file = name
-                    break
+            # Extract audio (just the first one found)
+            if audio_files:
+                z.extract(audio_files[0], set_dir)
 
-            # Rename audio to standard name if needed
-            if audio_file and audio_file != "audio.mp3":
-                src = set_dir / audio_file
-                dst = set_dir / "audio.mp3"
-                if src.exists() and not dst.exists():
-                    # Keep original, Mapperator expects original filenames
-                    pass
+            # Extract .osu files
+            for name in osu_files:
+                z.extract(name, set_dir)
 
             # Parse each .osu file
-            for name in z.namelist():
-                if name.endswith(".osu"):
+            for name in osu_files:
                     osu_path = set_dir / name
                     meta = parse_osu_metadata(osu_path)
 
@@ -222,6 +216,8 @@ def main():
                         help="Directory containing .osz files (from download_beatmaps.py)")
     parser.add_argument("--output", required=True,
                         help="Output directory for MMRS dataset")
+    parser.add_argument("--delete-osz", action="store_true",
+                        help="Delete each .osz file after successful extraction to save disk space")
     args = parser.parse_args()
 
     input_dir = Path(args.input)
@@ -240,6 +236,9 @@ def main():
     for osz_path in tqdm(osz_files, desc="Extracting .osz files"):
         records = extract_osz(osz_path, output_dir)
         all_records.extend(records)
+        # Delete .osz after successful extraction to free disk space
+        if args.delete_osz and records:
+            osz_path.unlink()
 
     # Also check already-extracted directories for records
     if not all_records:
